@@ -8,3 +8,4 @@ export default defineConfig({
   base: '/vibe-human/',
   plugins: [react(), tailwindcss()],
 })
+ 

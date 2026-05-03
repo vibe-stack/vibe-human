@@ -37,7 +37,7 @@ export type BoneDebug = {
   deltaRotation: [number, number, number]
 }
 
-const MODEL_URL = '/human2.glb?v=deform-bones-2026-05-03-2'
+const MODEL_URL = `${import.meta.env.BASE_URL}human2.glb?v=deform-bones-2026-05-03-2`
 const WORLD_POSITION_GAIN = 0.08
 const HEAD_LOOK_YAW = 1.05
 const HEAD_LOOK_PITCH = 0.58
