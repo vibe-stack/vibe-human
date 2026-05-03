@@ -30,7 +30,7 @@ export default function App() {
         <directionalLight position={[-1, 0, -1]} intensity={0.3} color="#8888ff" />
 
         <Suspense fallback={null}>
-          <Environment preset="city" />
+          <Environment files={`${import.meta.env.BASE_URL}potsdamer_platz_1k.hdr`} />
           <HumanModel
             emotion={emotion}
             intensity={intensity}
