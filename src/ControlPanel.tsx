@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { type BoneDebug } from './HumanModel'
 import { EMOTION_KEYS, EMOTIONS } from './emotions'
 
 type Props = {
@@ -6,11 +7,16 @@ type Props = {
   intensity: number
   wireframe: boolean
   showBones: boolean
+  eyeLook: boolean
+  focusLock: boolean
+  boneDebug: BoneDebug | null
   fov: number
   onEmotion: (e: string) => void
   onIntensity: (v: number) => void
   onWireframe: (v: boolean) => void
   onShowBones: (v: boolean) => void
+  onEyeLook: (v: boolean) => void
+  onFocusLock: (v: boolean) => void
   onFov: (v: number) => void
 }
 
@@ -19,11 +25,16 @@ export default function ControlPanel({
   intensity,
   wireframe,
   showBones,
+  eyeLook,
+  focusLock,
+  boneDebug,
   fov,
   onEmotion,
   onIntensity,
   onWireframe,
   onShowBones,
+  onEyeLook,
+  onFocusLock,
   onFov,
 }: Props) {
   const [collapsed, setCollapsed] = useState(false)
@@ -132,11 +143,55 @@ export default function ControlPanel({
               <Toggle active={showBones} onClick={() => onShowBones(!showBones)}>
                 Bones
               </Toggle>
+              <Toggle active={eyeLook} onClick={() => onEyeLook(!eyeLook)}>
+                Eye Look
+              </Toggle>
             </div>
+            <div className="flex gap-2">
+              <Toggle active={focusLock} onClick={() => onFocusLock(!focusLock)}>
+                Focus Lock
+              </Toggle>
+            </div>
+
+            {showBones && (
+              <div
+                className="rounded-xl p-3 text-xs"
+                style={{
+                  background: 'rgba(255,255,255,0.04)',
+                  border: '1px solid rgba(255,255,255,0.06)',
+                  color: 'rgba(255,255,255,0.55)',
+                }}
+              >
+                <Label>Selected Bone</Label>
+                {boneDebug ? (
+                  <div className="mt-2 flex flex-col gap-1 font-mono leading-relaxed">
+                    <span style={{ color: 'rgba(255,255,255,0.85)' }}>{boneDebug.name}</span>
+                    <DebugLine label="pos" value={boneDebug.position} />
+                    <DebugLine label="rest" value={boneDebug.restPosition} />
+                    <DebugLine label="delta" value={boneDebug.deltaPosition} />
+                    <DebugLine label="rot" value={boneDebug.rotation} />
+                    <DebugLine label="drot" value={boneDebug.deltaRotation} />
+                  </div>
+                ) : (
+                  <div className="mt-2" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                    Click a bone handle
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
     </div>
+  )
+}
+
+function DebugLine({ label, value }: { label: string; value: [number, number, number] }) {
+  return (
+    <span>
+      <span style={{ color: 'rgba(255,255,255,0.35)' }}>{label}</span>{' '}
+      [{value.map((n) => n.toFixed(5)).join(', ')}]
+    </span>
   )
 }
 

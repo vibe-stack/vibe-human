@@ -9,16 +9,44 @@ type Props = {
   intensity: number
   wireframe: boolean
   showBones: boolean
+  eyeLook: boolean
+  focusLock: boolean
+  onBoneDebug: (debug: BoneDebug | null) => void
+  onTransformingChange: (isTransforming: boolean) => void
 }
 
 type BoneRest = {
   position: THREE.Vector3
   quaternion: THREE.Quaternion
+  worldPosition: THREE.Vector3
   parentWorldQuaternion: THREE.Quaternion
+  worldQuaternion: THREE.Quaternion
 }
 
-const MODEL_URL = '/human.glb?v=deform-bones-2026-05-03-2'
-const WORLD_POSITION_GAIN = 2.2
+type ObjectRest = {
+  quaternion: THREE.Quaternion
+  worldQuaternion: THREE.Quaternion
+}
+
+export type BoneDebug = {
+  name: string
+  position: [number, number, number]
+  restPosition: [number, number, number]
+  deltaPosition: [number, number, number]
+  rotation: [number, number, number]
+  deltaRotation: [number, number, number]
+}
+
+const MODEL_URL = '/human2.glb?v=deform-bones-2026-05-03-2'
+const WORLD_POSITION_GAIN = 0.08
+const HEAD_LOOK_YAW = 1.05
+const HEAD_LOOK_PITCH = 0.58
+const NECK_LOOK_YAW = 0.18
+const NECK_LOOK_PITCH = 0.1
+const EYE_LOOK_ALPHA = 0.45
+const FOCUS_LOCK_EYE_ALPHA = 0.18
+const EYE_FORWARD = new THREE.Vector3(0, 0, 1)
+const EYE_OBJECT_NAMES = ['Eye_L', 'Eye_R']
 
 const DEFORM_ALIASES: Record<string, string[]> = {
   jaw_master: ['DEF-jaw_master'],
@@ -27,18 +55,38 @@ const DEFORM_ALIASES: Record<string, string[]> = {
   nose_master: ['DEF-nose'],
 }
 
+function normalizeBoneName(name: string) {
+  return name.replace(/^DEF-/, '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase()
+}
+
+function getBoneByName(bones: Record<string, THREE.Bone>, name: string) {
+  return (
+    bones[name] ??
+    Object.values(bones).find((bone) => normalizeBoneName(bone.name) === normalizeBoneName(name))
+  )
+}
+
 function getRuntimePose(
   boneName: string,
   poses: Record<string, BonePose>,
-  bones: Record<string, THREE.Bone>,
 ) {
   const directPose = poses[boneName]
-  const deformBoneName = `DEF-${boneName}`
-  const hasRetarget = Boolean(bones[deformBoneName] || DEFORM_ALIASES[boneName])
+  if (directPose) return directPose
 
-  // Rigify control bones export without Blender's constraint evaluation.
-  // If a matching deform bone exists, only drive the deform bone at runtime.
-  if (directPose && !hasRetarget) return directPose
+  const normalizedBoneName = normalizeBoneName(boneName)
+  const normalizedControlName = normalizeBoneName(boneName.replace(/^DEF-/, ''))
+  const normalizedPose = Object.entries(poses).find(([poseBoneName]) => {
+    const normalizedPoseName = normalizeBoneName(poseBoneName)
+    const normalizedDeformPoseName = normalizeBoneName(`DEF-${poseBoneName}`)
+
+    return (
+      normalizedPoseName === normalizedBoneName ||
+      normalizedPoseName === normalizedControlName ||
+      normalizedDeformPoseName === normalizedBoneName
+    )
+  })?.[1]
+
+  if (normalizedPose) return normalizedPose
 
   if (boneName.startsWith('DEF-')) {
     const controlName = boneName.slice(4)
@@ -46,7 +94,9 @@ function getRuntimePose(
   }
 
   for (const [controlName, targets] of Object.entries(DEFORM_ALIASES)) {
-    if (targets.includes(boneName)) return poses[controlName]
+    if (targets.some((target) => normalizeBoneName(target) === normalizedBoneName)) {
+      return poses[controlName]
+    }
   }
 
   return undefined
@@ -100,12 +150,95 @@ function BoneHandle({
   )
 }
 
-export default function HumanModel({ emotion, intensity, wireframe, showBones }: Props) {
+function roundTuple(vector: THREE.Vector3): [number, number, number] {
+  return [vector.x, vector.y, vector.z].map((value) => Number(value.toFixed(5))) as [
+    number,
+    number,
+    number,
+  ]
+}
+
+function getBoneDebug(bone: THREE.Bone, rest: BoneRest): BoneDebug {
+  const rotation = new THREE.Euler().setFromQuaternion(bone.quaternion)
+  const restRotation = new THREE.Euler().setFromQuaternion(rest.quaternion)
+
+  return {
+    name: bone.name,
+    position: roundTuple(bone.position),
+    restPosition: roundTuple(rest.position),
+    deltaPosition: roundTuple(bone.position.clone().sub(rest.position)),
+    rotation: roundTuple(new THREE.Vector3(rotation.x, rotation.y, rotation.z)),
+    deltaRotation: roundTuple(
+      new THREE.Vector3(
+        rotation.x - restRotation.x,
+        rotation.y - restRotation.y,
+        rotation.z - restRotation.z,
+      ),
+    ),
+  }
+}
+
+function getLookFactors(origin: THREE.Vector3, target: THREE.Vector3) {
+  const delta = target.clone().sub(origin)
+  const zDistance = Math.max(Math.abs(delta.z), 0.25)
+
+  return {
+    x: THREE.MathUtils.clamp(delta.x / (zDistance * 0.75), -1, 1),
+    y: THREE.MathUtils.clamp(delta.y / (zDistance * 0.55), -1, 1),
+  }
+}
+
+function getWorldLookQuaternion(lookX: number, lookY: number, yawAmount: number, pitchAmount: number) {
+  const yaw = new THREE.Quaternion().setFromAxisAngle(
+    new THREE.Vector3(0, 1, 0),
+    lookX * yawAmount,
+  )
+  const pitch = new THREE.Quaternion().setFromAxisAngle(
+    new THREE.Vector3(1, 0, 0),
+    -lookY * pitchAmount,
+  )
+
+  return yaw.multiply(pitch)
+}
+
+function aimObjectForwardAtTarget(
+  object: THREE.Object3D,
+  rest: ObjectRest,
+  target: THREE.Vector3,
+  alpha: number,
+) {
+  const parentWorldQuaternion = new THREE.Quaternion()
+  object.parent?.getWorldQuaternion(parentWorldQuaternion)
+
+  const objectPosition = object.getWorldPosition(new THREE.Vector3())
+  const targetDirectionWorld = target.clone().sub(objectPosition).normalize()
+  const targetDirectionParent = targetDirectionWorld.applyQuaternion(
+    parentWorldQuaternion.clone().invert(),
+  )
+  const restForwardParent = EYE_FORWARD.clone().applyQuaternion(rest.quaternion)
+  const delta = new THREE.Quaternion().setFromUnitVectors(restForwardParent, targetDirectionParent)
+
+  object.quaternion.slerp(delta.multiply(rest.quaternion), alpha)
+}
+
+export default function HumanModel({
+  emotion,
+  intensity,
+  wireframe,
+  showBones,
+  eyeLook,
+  focusLock,
+  onBoneDebug,
+  onTransformingChange,
+}: Props) {
   const { scene } = useGLTF(MODEL_URL)
 
+  const [lookTargetObject, setLookTargetObject] = useState<THREE.Group | null>(null)
   const bonesRef = useRef<Record<string, THREE.Bone>>({})
+  const eyeObjectsRef = useRef<Record<string, THREE.Object3D>>({})
   const skeletonsRef = useRef<THREE.Skeleton[]>([])
   const restRef = useRef<Record<string, BoneRest>>({})
+  const objectRestRef = useRef<Record<string, ObjectRest>>({})
   const tRef = useRef(1) // lerp progress, 1 = at target
   const [debugBones, setDebugBones] = useState<THREE.Bone[]>([])
   const [selectedBone, setSelectedBone] = useState<THREE.Bone | null>(null)
@@ -120,13 +253,28 @@ export default function HumanModel({ emotion, intensity, wireframe, showBones }:
     tRef.current = 0 // restart lerp
   }, [emotion, intensity])
 
+  useEffect(() => {
+    if (!showBones) {
+      setSelectedBone(null)
+      onBoneDebug(null)
+    }
+    if (!showBones && !eyeLook && !focusLock) {
+      onTransformingChange(false)
+    }
+  }, [eyeLook, focusLock, onBoneDebug, onTransformingChange, showBones])
+
   // Collect bones and snapshot rest pose once
   useEffect(() => {
     const bones: Record<string, THREE.Bone> = {}
+    const eyeObjects: Record<string, THREE.Object3D> = {}
     const skeletons: THREE.Skeleton[] = []
 
     scene.traverse((obj) => {
       const mesh = obj as THREE.SkinnedMesh
+
+      if (EYE_OBJECT_NAMES.includes(obj.name)) {
+        eyeObjects[obj.name] = obj
+      }
 
       if (mesh.isSkinnedMesh) {
         skeletons.push(mesh.skeleton)
@@ -138,6 +286,7 @@ export default function HumanModel({ emotion, intensity, wireframe, showBones }:
     })
 
     bonesRef.current = bones
+    eyeObjectsRef.current = eyeObjects
     skeletonsRef.current = skeletons
     setDebugBones(
       Object.values(bones)
@@ -154,10 +303,21 @@ export default function HumanModel({ emotion, intensity, wireframe, showBones }:
       rest[name] = {
         position: bone.position.clone(),
         quaternion: bone.quaternion.clone(),
+        worldPosition: bone.getWorldPosition(new THREE.Vector3()),
         parentWorldQuaternion,
+        worldQuaternion: bone.getWorldQuaternion(new THREE.Quaternion()),
       }
     }
     restRef.current = rest
+    objectRestRef.current = Object.fromEntries(
+      Object.entries(eyeObjects).map(([name, object]) => [
+        name,
+        {
+          quaternion: object.quaternion.clone(),
+          worldQuaternion: object.getWorldQuaternion(new THREE.Quaternion()),
+        },
+      ]),
+    )
     tRef.current = 1
   }, [scene])
 
@@ -171,13 +331,19 @@ export default function HumanModel({ emotion, intensity, wireframe, showBones }:
 
     const emo = EMOTIONS[emotionRef.current] ?? EMOTIONS['neutral']
     const scale = intensityRef.current
+    const lookEnabled = (eyeLook || focusLock) && !showBones
+    const lookTarget = lookTargetObject?.getWorldPosition(new THREE.Vector3()) ?? null
+    const headBone = getBoneByName(bones, 'RT_Head') ?? getBoneByName(bones, 'head')
+    const headOrigin =
+      headBone?.getWorldPosition(new THREE.Vector3()) ?? new THREE.Vector3(0, 0.1, 0.15)
+    const look = lookEnabled && lookTarget ? getLookFactors(headOrigin, lookTarget) : null
 
     if (!showBones) {
       for (const [name, bone] of Object.entries(bones)) {
         const r = rest[name]
         if (!r) continue
 
-        const pose = getRuntimePose(name, emo.bones, bones)
+        const pose = getRuntimePose(name, emo.bones)
 
         // Target position
         let targetPos = r.position
@@ -210,11 +376,74 @@ export default function HumanModel({ emotion, intensity, wireframe, showBones }:
         bone.position.lerp(targetPos, t)
         bone.quaternion.slerp(targetQ, t)
       }
+
+      if (look && lookTarget) {
+        const headDelta = getWorldLookQuaternion(
+          look.x,
+          look.y,
+          HEAD_LOOK_YAW,
+          HEAD_LOOK_PITCH,
+        )
+        const neckDelta = getWorldLookQuaternion(
+          look.x,
+          look.y,
+          NECK_LOOK_YAW,
+          NECK_LOOK_PITCH,
+        )
+
+        if (focusLock) {
+          const rtHead = getBoneByName(bones, 'RT_Head')
+          const rtHeadRest = rtHead ? restRef.current[rtHead.name] : undefined
+          if (rtHead && rtHeadRest) {
+            rtHead.quaternion.slerp(rtHeadRest.quaternion.clone().multiply(headDelta), 0.35)
+          }
+
+          for (const [name, delta] of [
+            ['DEF-spine.006', neckDelta],
+            ['DEF-spine.005', neckDelta],
+            ['DEF-spine.004', neckDelta],
+          ] as const) {
+            const bone = getBoneByName(bones, name)
+            const rest = bone ? restRef.current[bone.name] : undefined
+            if (!bone || !rest) continue
+
+            bone.quaternion.slerp(rest.quaternion.clone().multiply(delta), 0.3)
+          }
+        }
+
+        scene.updateMatrixWorld(true)
+
+        for (const [name, object] of Object.entries(eyeObjectsRef.current)) {
+          const rest = objectRestRef.current[name]
+          if (!rest) continue
+
+          aimObjectForwardAtTarget(
+            object,
+            rest,
+            lookTarget,
+            focusLock ? FOCUS_LOCK_EYE_ALPHA : EYE_LOOK_ALPHA,
+          )
+        }
+      } else {
+        for (const [name, object] of Object.entries(eyeObjectsRef.current)) {
+          const rest = objectRestRef.current[name]
+          if (!rest) continue
+
+          object.quaternion.slerp(rest.quaternion, 0.25)
+        }
+      }
     }
 
     scene.updateMatrixWorld(true)
     for (const skeleton of skeletonsRef.current) {
       skeleton.update()
+    }
+
+    if (showBones && selectedBone) {
+      const rest = restRef.current[selectedBone.name]
+      if (!rest) return
+
+      onBoneDebug(getBoneDebug(selectedBone, rest))
     }
   })
 
@@ -235,6 +464,32 @@ export default function HumanModel({ emotion, intensity, wireframe, showBones }:
     <>
       <primitive object={scene} position={[0, -3.1, 0]} />
 
+      {(eyeLook || focusLock) && !showBones && (
+        <>
+          <group
+            ref={(node) => {
+              if (node && node !== lookTargetObject) setLookTargetObject(node)
+            }}
+            position={[0, 0.14, 0.68]}
+          >
+            <mesh renderOrder={1000}>
+              <sphereGeometry args={[0.025, 24, 24]} />
+              <meshBasicMaterial color="#ef4444" depthTest={false} depthWrite={false} />
+            </mesh>
+          </group>
+          {lookTargetObject && (
+            <TransformControls
+              object={lookTargetObject}
+              mode="translate"
+              space="world"
+              size={0.5}
+              onMouseDown={() => onTransformingChange(true)}
+              onMouseUp={() => onTransformingChange(false)}
+            />
+          )}
+        </>
+      )}
+
       {showBones &&
         debugBones.map((bone) => (
           <BoneHandle
@@ -251,11 +506,24 @@ export default function HumanModel({ emotion, intensity, wireframe, showBones }:
           mode="translate"
           space="local"
           size={0.35}
+          onMouseDown={() => onTransformingChange(true)}
           onObjectChange={() => {
             scene.updateMatrixWorld(true)
             for (const skeleton of skeletonsRef.current) {
               skeleton.update()
             }
+          }}
+          onMouseUp={() => {
+            onTransformingChange(false)
+            const rest = restRef.current[selectedBone.name]
+            if (!rest) return
+
+            const debug = getBoneDebug(selectedBone, rest)
+            const poseKey = selectedBone.name.replace(/^DEF-/, '')
+            console.log(
+              `'${poseKey}': { position: [${debug.deltaPosition.join(', ')}] },`,
+              debug,
+            )
           }}
         />
       )}
