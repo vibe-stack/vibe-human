@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react'
-import { useGLTF } from '@react-three/drei'
+import { useEffect, useRef, useState } from 'react'
+import { TransformControls, useGLTF } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { type BonePose, EMOTIONS } from './emotions'
@@ -8,6 +8,7 @@ type Props = {
   emotion: string
   intensity: number
   wireframe: boolean
+  showBones: boolean
 }
 
 type BoneRest = {
@@ -15,6 +16,9 @@ type BoneRest = {
   quaternion: THREE.Quaternion
   parentWorldQuaternion: THREE.Quaternion
 }
+
+const MODEL_URL = '/human.glb?v=deform-bones-2026-05-03-2'
+const WORLD_POSITION_GAIN = 2.2
 
 const DEFORM_ALIASES: Record<string, string[]> = {
   jaw_master: ['DEF-jaw_master'],
@@ -48,12 +52,63 @@ function getRuntimePose(
   return undefined
 }
 
-export default function HumanModel({ emotion, intensity, wireframe }: Props) {
-  const { scene } = useGLTF('/human.glb')
+const FACE_BONE_PATTERN = /^DEF-(brow|cheek|chin|eye|forehead|jaw|lid|lip|nose|teeth)/
+
+function getBoneColor(name: string, selected: boolean) {
+  if (selected) return '#fbbf24'
+  if (name.includes('brow') || name.includes('forehead')) return '#a78bfa'
+  if (name.includes('lid') || name.includes('eye')) return '#38bdf8'
+  if (name.includes('lip') || name.includes('jaw') || name.includes('chin')) return '#fb7185'
+  if (name.includes('cheek') || name.includes('nose')) return '#34d399'
+  return '#f8fafc'
+}
+
+function BoneHandle({
+  bone,
+  selected,
+  onSelect,
+}: {
+  bone: THREE.Bone
+  selected: boolean
+  onSelect: (bone: THREE.Bone) => void
+}) {
+  const ref = useRef<THREE.Mesh>(null)
+
+  useFrame(() => {
+    if (!ref.current) return
+    bone.getWorldPosition(ref.current.position)
+  })
+
+  return (
+    <mesh
+      ref={ref}
+      renderOrder={1000}
+      onPointerDown={(event) => {
+        event.stopPropagation()
+        onSelect(bone)
+      }}
+    >
+      <sphereGeometry args={[selected ? 0.011 : 0.007, 12, 12]} />
+      <meshBasicMaterial
+        color={getBoneColor(bone.name, selected)}
+        depthTest={false}
+        depthWrite={false}
+        transparent
+        opacity={selected ? 1 : 0.72}
+      />
+    </mesh>
+  )
+}
+
+export default function HumanModel({ emotion, intensity, wireframe, showBones }: Props) {
+  const { scene } = useGLTF(MODEL_URL)
 
   const bonesRef = useRef<Record<string, THREE.Bone>>({})
+  const skeletonsRef = useRef<THREE.Skeleton[]>([])
   const restRef = useRef<Record<string, BoneRest>>({})
   const tRef = useRef(1) // lerp progress, 1 = at target
+  const [debugBones, setDebugBones] = useState<THREE.Bone[]>([])
+  const [selectedBone, setSelectedBone] = useState<THREE.Bone | null>(null)
 
   const emotionRef = useRef(emotion)
   const intensityRef = useRef(intensity)
@@ -68,12 +123,27 @@ export default function HumanModel({ emotion, intensity, wireframe }: Props) {
   // Collect bones and snapshot rest pose once
   useEffect(() => {
     const bones: Record<string, THREE.Bone> = {}
+    const skeletons: THREE.Skeleton[] = []
+
     scene.traverse((obj) => {
-      if ((obj as THREE.Bone).isBone) {
-        bones[obj.name] = obj as THREE.Bone
+      const mesh = obj as THREE.SkinnedMesh
+
+      if (mesh.isSkinnedMesh) {
+        skeletons.push(mesh.skeleton)
+
+        for (const bone of mesh.skeleton.bones) {
+          bones[bone.name] = bone
+        }
       }
     })
+
     bonesRef.current = bones
+    skeletonsRef.current = skeletons
+    setDebugBones(
+      Object.values(bones)
+        .filter((bone) => FACE_BONE_PATTERN.test(bone.name))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    )
 
     scene.updateMatrixWorld(true)
     const rest: Record<string, BoneRest> = {}
@@ -102,39 +172,49 @@ export default function HumanModel({ emotion, intensity, wireframe }: Props) {
     const emo = EMOTIONS[emotionRef.current] ?? EMOTIONS['neutral']
     const scale = intensityRef.current
 
-    for (const [name, bone] of Object.entries(bones)) {
-      const r = rest[name]
-      if (!r) continue
+    if (!showBones) {
+      for (const [name, bone] of Object.entries(bones)) {
+        const r = rest[name]
+        if (!r) continue
 
-      const pose = getRuntimePose(name, emo.bones, bones)
+        const pose = getRuntimePose(name, emo.bones, bones)
 
-      // Target position
-      let targetPos = r.position
-      if (pose?.position || pose?.worldPosition) {
-        const delta = new THREE.Vector3(...(pose.position ?? pose.worldPosition ?? [0, 0, 0]))
+        // Target position
+        let targetPos = r.position
+        if (pose?.position || pose?.worldPosition) {
+          const delta = new THREE.Vector3(...(pose.position ?? pose.worldPosition ?? [0, 0, 0]))
 
-        if (pose.worldPosition) {
-          delta.applyQuaternion(r.parentWorldQuaternion.clone().invert())
+          if (pose.worldPosition) {
+            delta.applyQuaternion(r.parentWorldQuaternion.clone().invert())
+          }
+
+          targetPos = r.position.clone().addScaledVector(
+            delta,
+            scale * (pose.worldPosition ? WORLD_POSITION_GAIN : 1),
+          )
         }
 
-        targetPos = r.position.clone().addScaledVector(delta, scale)
-      }
-
-      // Target rotation
-      let targetQ = r.quaternion
-      if (pose?.rotation) {
-        const delta_q = new THREE.Quaternion().setFromEuler(
-          new THREE.Euler(
-            pose.rotation[0] * scale,
-            pose.rotation[1] * scale,
-            pose.rotation[2] * scale,
+        // Target rotation
+        let targetQ = r.quaternion
+        if (pose?.rotation) {
+          const delta_q = new THREE.Quaternion().setFromEuler(
+            new THREE.Euler(
+              pose.rotation[0] * scale,
+              pose.rotation[1] * scale,
+              pose.rotation[2] * scale,
+            )
           )
-        )
-        targetQ = r.quaternion.clone().multiply(delta_q)
-      }
+          targetQ = r.quaternion.clone().multiply(delta_q)
+        }
 
-      bone.position.lerp(targetPos, t)
-      bone.quaternion.slerp(targetQ, t)
+        bone.position.lerp(targetPos, t)
+        bone.quaternion.slerp(targetQ, t)
+      }
+    }
+
+    scene.updateMatrixWorld(true)
+    for (const skeleton of skeletonsRef.current) {
+      skeleton.update()
     }
   })
 
@@ -151,7 +231,36 @@ export default function HumanModel({ emotion, intensity, wireframe }: Props) {
   }, [scene, wireframe])
 
   // Head bounding box is Y=[2.76, 3.49]; shift -3.1 to center at origin
-  return <primitive object={scene} position={[0, -3.1, 0]} />
+  return (
+    <>
+      <primitive object={scene} position={[0, -3.1, 0]} />
+
+      {showBones &&
+        debugBones.map((bone) => (
+          <BoneHandle
+            key={bone.uuid}
+            bone={bone}
+            selected={selectedBone === bone}
+            onSelect={setSelectedBone}
+          />
+        ))}
+
+      {showBones && selectedBone && (
+        <TransformControls
+          object={selectedBone}
+          mode="translate"
+          space="local"
+          size={0.35}
+          onObjectChange={() => {
+            scene.updateMatrixWorld(true)
+            for (const skeleton of skeletonsRef.current) {
+              skeleton.update()
+            }
+          }}
+        />
+      )}
+    </>
+  )
 }
 
-useGLTF.preload('/human.glb')
+useGLTF.preload(MODEL_URL)

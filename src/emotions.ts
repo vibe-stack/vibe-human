@@ -46,6 +46,28 @@ export const EMOTIONS: Record<string, Emotion> = {
     bones: {},
   },
 
+  diagnostic: {
+    label: 'Face Test',
+    bones: combine(
+      assign(browLeft, move([0, 0.18, 0.02])),
+      assign(browRight, move([0, 0.18, 0.02])),
+      assign(browTopLeft, move([0, 0.22, 0.02])),
+      assign(browTopRight, move([0, 0.22, 0.02])),
+      assign(lidTopLeft, move([0, 0.12, 0.02])),
+      assign(lidTopRight, move([0, 0.12, 0.02])),
+      assign(lidBottomLeft, move([0, -0.1, 0.02])),
+      assign(lidBottomRight, move([0, -0.1, 0.02])),
+      assign(cheekLeft, move([0.08, 0.14, 0.04])),
+      assign(cheekRight, move([-0.08, 0.14, 0.04])),
+      {
+        'lip.T.L': move([0.04, 0.12, 0.04]),
+        'lip.T.R': move([-0.04, 0.12, 0.04]),
+        'lip.T.L.001': move([0.12, 0.14, 0.05]),
+        'lip.T.R.001': move([-0.12, 0.14, 0.05]),
+      },
+    ),
+  },
+
   smile: {
     label: 'Smile',
     bones: combine(

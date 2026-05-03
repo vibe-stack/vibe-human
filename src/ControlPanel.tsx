@@ -5,10 +5,12 @@ type Props = {
   emotion: string
   intensity: number
   wireframe: boolean
+  showBones: boolean
   fov: number
   onEmotion: (e: string) => void
   onIntensity: (v: number) => void
   onWireframe: (v: boolean) => void
+  onShowBones: (v: boolean) => void
   onFov: (v: number) => void
 }
 
@@ -16,10 +18,12 @@ export default function ControlPanel({
   emotion,
   intensity,
   wireframe,
+  showBones,
   fov,
   onEmotion,
   onIntensity,
   onWireframe,
+  onShowBones,
   onFov,
 }: Props) {
   const [collapsed, setCollapsed] = useState(false)
@@ -124,6 +128,9 @@ export default function ControlPanel({
             <div className="flex gap-2">
               <Toggle active={wireframe} onClick={() => onWireframe(!wireframe)}>
                 Wireframe
+              </Toggle>
+              <Toggle active={showBones} onClick={() => onShowBones(!showBones)}>
+                Bones
               </Toggle>
             </div>
           </div>

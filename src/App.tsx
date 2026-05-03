@@ -8,6 +8,7 @@ export default function App() {
   const [emotion, setEmotion] = useState('neutral')
   const [intensity, setIntensity] = useState(1)
   const [wireframe, setWireframe] = useState(false)
+  const [showBones, setShowBones] = useState(false)
   const [fov, setFov] = useState(45)
 
   return (
@@ -26,10 +27,16 @@ export default function App() {
 
         <Suspense fallback={null}>
           <Environment preset="city" />
-          <HumanModel emotion={emotion} intensity={intensity} wireframe={wireframe} />
+          <HumanModel
+            emotion={emotion}
+            intensity={intensity}
+            wireframe={wireframe}
+            showBones={showBones}
+          />
         </Suspense>
 
         <OrbitControls
+          enabled={!showBones}
           enablePan={false}
           minDistance={0.2}
           maxDistance={1.5}
@@ -43,10 +50,12 @@ export default function App() {
         emotion={emotion}
         intensity={intensity}
         wireframe={wireframe}
+        showBones={showBones}
         fov={fov}
         onEmotion={setEmotion}
         onIntensity={setIntensity}
         onWireframe={setWireframe}
+        onShowBones={setShowBones}
         onFov={setFov}
       />
     </div>
