@@ -2,11 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import { TransformControls, useGLTF } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { type BonePose, EMOTIONS } from './emotions'
+import { buildFacsPose, type BonePose, type FacsValues } from './facs'
 
 type Props = {
-  emotion: string
-  intensity: number
+  facsValues: FacsValues
   wireframe: boolean
   showBones: boolean
   eyeLook: boolean
@@ -38,7 +37,7 @@ export type BoneDebug = {
 }
 
 const MODEL_URL = `${import.meta.env.BASE_URL}human2.glb?v=deform-bones-2026-05-03-2`
-const WORLD_POSITION_GAIN = 0.08
+const WORLD_POSITION_GAIN = 0.25
 const HEAD_LOOK_YAW = 1.05
 const HEAD_LOOK_PITCH = 0.58
 const NECK_LOOK_YAW = 0.18
@@ -222,8 +221,7 @@ function aimObjectForwardAtTarget(
 }
 
 export default function HumanModel({
-  emotion,
-  intensity,
+  facsValues,
   wireframe,
   showBones,
   eyeLook,
@@ -243,19 +241,16 @@ export default function HumanModel({
   const [debugBones, setDebugBones] = useState<THREE.Bone[]>([])
   const [selectedBone, setSelectedBone] = useState<THREE.Bone | null>(null)
 
-  const emotionRef = useRef(emotion)
-  const intensityRef = useRef(intensity)
+  const facsValuesRef = useRef(facsValues)
 
   // Sync refs so useFrame sees latest values without re-triggering effects
   useEffect(() => {
-    emotionRef.current = emotion
-    intensityRef.current = intensity
+    facsValuesRef.current = facsValues
     tRef.current = 0 // restart lerp
-  }, [emotion, intensity])
+  }, [facsValues])
 
   useEffect(() => {
     if (!showBones) {
-      setSelectedBone(null)
       onBoneDebug(null)
     }
     if (!showBones && !eyeLook && !focusLock) {
@@ -288,11 +283,9 @@ export default function HumanModel({
     bonesRef.current = bones
     eyeObjectsRef.current = eyeObjects
     skeletonsRef.current = skeletons
-    setDebugBones(
-      Object.values(bones)
-        .filter((bone) => FACE_BONE_PATTERN.test(bone.name))
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    )
+    const nextDebugBones = Object.values(bones)
+      .filter((bone) => FACE_BONE_PATTERN.test(bone.name))
+      .sort((a, b) => a.name.localeCompare(b.name))
 
     scene.updateMatrixWorld(true)
     const rest: Record<string, BoneRest> = {}
@@ -319,6 +312,15 @@ export default function HumanModel({
       ]),
     )
     tRef.current = 1
+
+    let cancelled = false
+    queueMicrotask(() => {
+      if (!cancelled) setDebugBones(nextDebugBones)
+    })
+
+    return () => {
+      cancelled = true
+    }
   }, [scene])
 
   useFrame((_, delta) => {
@@ -329,8 +331,7 @@ export default function HumanModel({
     tRef.current = Math.min(1, tRef.current + delta * 5)
     const t = tRef.current
 
-    const emo = EMOTIONS[emotionRef.current] ?? EMOTIONS['neutral']
-    const scale = intensityRef.current
+    const facsPose = buildFacsPose(facsValuesRef.current)
     const lookEnabled = (eyeLook || focusLock) && !showBones
     const lookTarget = lookTargetObject?.getWorldPosition(new THREE.Vector3()) ?? null
     const headBone = getBoneByName(bones, 'RT_Head') ?? getBoneByName(bones, 'head')
@@ -343,7 +344,7 @@ export default function HumanModel({
         const r = rest[name]
         if (!r) continue
 
-        const pose = getRuntimePose(name, emo.bones)
+        const pose = getRuntimePose(name, facsPose)
 
         // Target position
         let targetPos = r.position
@@ -356,7 +357,7 @@ export default function HumanModel({
 
           targetPos = r.position.clone().addScaledVector(
             delta,
-            scale * (pose.worldPosition ? WORLD_POSITION_GAIN : 1),
+            pose.worldPosition ? WORLD_POSITION_GAIN : 1,
           )
         }
 
@@ -365,9 +366,9 @@ export default function HumanModel({
         if (pose?.rotation) {
           const delta_q = new THREE.Quaternion().setFromEuler(
             new THREE.Euler(
-              pose.rotation[0] * scale,
-              pose.rotation[1] * scale,
-              pose.rotation[2] * scale,
+              pose.rotation[0],
+              pose.rotation[1],
+              pose.rotation[2],
             )
           )
           targetQ = r.quaternion.clone().multiply(delta_q)

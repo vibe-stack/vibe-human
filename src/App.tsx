@@ -3,10 +3,10 @@ import { Canvas } from '@react-three/fiber'
 import { OrbitControls, Environment } from '@react-three/drei'
 import HumanModel, { type BoneDebug } from './HumanModel'
 import ControlPanel from './ControlPanel'
+import { createNeutralFacsValues } from './facs'
 
 export default function App() {
-  const [emotion, setEmotion] = useState('neutral')
-  const [intensity, setIntensity] = useState(1)
+  const [facsValues, setFacsValues] = useState(createNeutralFacsValues)
   const [wireframe, setWireframe] = useState(false)
   const [showBones, setShowBones] = useState(false)
   const [eyeLook, setEyeLook] = useState(false)
@@ -32,8 +32,7 @@ export default function App() {
         <Suspense fallback={null}>
           <Environment files={`${import.meta.env.BASE_URL}potsdamer_platz_1k.hdr`} />
           <HumanModel
-            emotion={emotion}
-            intensity={intensity}
+            facsValues={facsValues}
             wireframe={wireframe}
             showBones={showBones}
             eyeLook={eyeLook}
@@ -55,16 +54,14 @@ export default function App() {
       </Canvas>
 
       <ControlPanel
-        emotion={emotion}
-        intensity={intensity}
+        facsValues={facsValues}
         wireframe={wireframe}
         showBones={showBones}
         eyeLook={eyeLook}
         focusLock={focusLock}
         boneDebug={boneDebug}
         fov={fov}
-        onEmotion={setEmotion}
-        onIntensity={setIntensity}
+        onFacsValues={setFacsValues}
         onWireframe={setWireframe}
         onShowBones={setShowBones}
         onEyeLook={setEyeLook}
