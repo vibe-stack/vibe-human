@@ -1091,7 +1091,6 @@ export function buildFacsMorphs(values: FacsValues): MorphPose {
   const rollLower = saturate(r('au24_lip_pressor') * 0.5 + r('au23_lip_tightener') * 0.4 + r('lip_roll_lower') + r('lips_bite') * 0.7)
   const rollUpper = saturate(r('au24_lip_pressor') * 0.5 + r('au23_lip_tightener') * 0.4 + r('lip_roll_upper'))
   const shrugLower = saturate(r('au17_chin_raiser') * 0.6 + r('mouth_suck') * 0.5)
-  const shrugUpper = r('au09_nose_wrinkler') * 0.38
   const noseSneerL = Math.max(r('au09_nose_wrinkler'), r('snarl_l') * 0.72)
   const noseSneerR = Math.max(r('au09_nose_wrinkler'), r('snarl_r') * 0.72)
   const cheekSquintL = Math.max(r('au06_cheek_raiser_l'), r('au12_lip_corner_puller_l') * 0.44)
