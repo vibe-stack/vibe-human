@@ -3,10 +3,11 @@ import { Canvas } from '@react-three/fiber'
 import { OrbitControls, Environment } from '@react-three/drei'
 import HumanModel, { type BoneDebug } from './HumanModel'
 import ControlPanel from './ControlPanel'
-import { createNeutralFacsValues } from './facs'
+import { createNeutralEyeLook, createNeutralFacsValues } from './facs'
 
 export default function App() {
   const [facsValues, setFacsValues] = useState(createNeutralFacsValues)
+  const [eyeLook2D, setEyeLook2D] = useState(createNeutralEyeLook)
   const [wireframe, setWireframe] = useState(false)
   const [showBones, setShowBones] = useState(false)
   const [eyeLook, setEyeLook] = useState(false)
@@ -33,6 +34,7 @@ export default function App() {
           <Environment files={`${import.meta.env.BASE_URL}potsdamer_platz_1k.hdr`} />
           <HumanModel
             facsValues={facsValues}
+            eyeLook2D={eyeLook2D}
             wireframe={wireframe}
             showBones={showBones}
             eyeLook={eyeLook}
@@ -44,7 +46,7 @@ export default function App() {
 
         <OrbitControls
           enabled={!isTransforming}
-          enablePan={false}
+          mouseButtons={{ LEFT: 0, MIDDLE: 2, RIGHT: 1 }}
           minDistance={0.2}
           maxDistance={5}
           minPolarAngle={Math.PI * 0.2}
@@ -55,6 +57,7 @@ export default function App() {
 
       <ControlPanel
         facsValues={facsValues}
+        eyeLook2D={eyeLook2D}
         wireframe={wireframe}
         showBones={showBones}
         eyeLook={eyeLook}
@@ -62,6 +65,7 @@ export default function App() {
         boneDebug={boneDebug}
         fov={fov}
         onFacsValues={setFacsValues}
+        onEyeLook2D={setEyeLook2D}
         onWireframe={setWireframe}
         onShowBones={setShowBones}
         onEyeLook={setEyeLook}

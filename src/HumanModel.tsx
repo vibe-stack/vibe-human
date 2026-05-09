@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { TransformControls, useGLTF } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { buildFacsMorphs, buildFacsPose, type BonePose, type FacsValues } from './facs'
+import { buildFacsMorphs, buildFacsPose, type BonePose, type EyeLookValues, type FacsValues } from './facs'
 
 type Props = {
   facsValues: FacsValues
+  eyeLook2D: EyeLookValues
   wireframe: boolean
   showBones: boolean
   eyeLook: boolean
@@ -244,6 +245,7 @@ function applyMorphTargets(
 
 export default function HumanModel({
   facsValues,
+  eyeLook2D,
   wireframe,
   showBones,
   eyeLook,
@@ -265,12 +267,17 @@ export default function HumanModel({
   const [selectedBone, setSelectedBone] = useState<THREE.Bone | null>(null)
 
   const facsValuesRef = useRef(facsValues)
+  const eyeLook2DRef = useRef(eyeLook2D)
 
   // Sync refs so useFrame sees latest values without re-triggering effects
   useEffect(() => {
     facsValuesRef.current = facsValues
     tRef.current = 0 // restart lerp
   }, [facsValues])
+
+  useEffect(() => {
+    eyeLook2DRef.current = eyeLook2D
+  }, [eyeLook2D])
 
   useEffect(() => {
     if (!showBones) {
@@ -465,6 +472,25 @@ export default function HumanModel({
 
           object.quaternion.slerp(rest.quaternion, 0.25)
         }
+      }
+
+      // 2D eye look overlay (driven by FaceOverlay XY pad)
+      const eLook = eyeLook2DRef.current
+      const eyeL = eyeObjectsRef.current['Eye_L']
+      const restL = objectRestRef.current['Eye_L']
+      if (eyeL && restL && (Math.abs(eLook.leftX) > 0.001 || Math.abs(eLook.leftY) > 0.001)) {
+        const q = new THREE.Quaternion().setFromEuler(
+          new THREE.Euler(eLook.leftY * -0.38, eLook.leftX * 0.42, 0),
+        )
+        eyeL.quaternion.copy(restL.quaternion.clone().multiply(q))
+      }
+      const eyeR = eyeObjectsRef.current['Eye_R']
+      const restR = objectRestRef.current['Eye_R']
+      if (eyeR && restR && (Math.abs(eLook.rightX) > 0.001 || Math.abs(eLook.rightY) > 0.001)) {
+        const q = new THREE.Quaternion().setFromEuler(
+          new THREE.Euler(eLook.rightY * -0.38, eLook.rightX * 0.42, 0),
+        )
+        eyeR.quaternion.copy(restR.quaternion.clone().multiply(q))
       }
     }
 

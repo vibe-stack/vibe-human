@@ -1,7 +1,10 @@
 import {
+  useEffect,
+  useRef,
   useState,
   type CSSProperties,
   type Dispatch,
+  type PointerEvent,
   type ReactNode,
   type SetStateAction,
 } from 'react'
@@ -14,6 +17,7 @@ import {
   FACS_GROUPS,
   FACS_PRESETS,
   FACS_VALUE_MAX,
+  type EyeLookValues,
   type FacsControl,
   type FacsGroup,
   type FacsSide,
@@ -22,6 +26,7 @@ import {
 
 type Props = {
   facsValues: FacsValues
+  eyeLook2D: EyeLookValues
   wireframe: boolean
   showBones: boolean
   eyeLook: boolean
@@ -29,6 +34,7 @@ type Props = {
   boneDebug: BoneDebug | null
   fov: number
   onFacsValues: Dispatch<SetStateAction<FacsValues>>
+  onEyeLook2D: (v: EyeLookValues) => void
   onWireframe: (v: boolean) => void
   onShowBones: (v: boolean) => void
   onEyeLook: (v: boolean) => void
@@ -37,8 +43,8 @@ type Props = {
 }
 
 const panel: CSSProperties = {
-  background: 'rgba(14, 14, 18, 0.95)',
-  backdropFilter: 'blur(20px)',
+  background: 'rgba(14, 14, 18, 0.5)',
+  backdropFilter: 'blur(10px)',
   border: '1px solid rgba(255,255,255,0.1)',
   boxShadow: '0 24px 64px rgba(0,0,0,0.7)',
   borderRadius: 8,
@@ -46,6 +52,7 @@ const panel: CSSProperties = {
 
 export default function ControlPanel({
   facsValues,
+  eyeLook2D,
   wireframe,
   showBones,
   eyeLook,
@@ -53,6 +60,7 @@ export default function ControlPanel({
   boneDebug,
   fov,
   onFacsValues,
+  onEyeLook2D,
   onWireframe,
   onShowBones,
   onEyeLook,
@@ -61,6 +69,14 @@ export default function ControlPanel({
 }: Props) {
   const [detailGroup, setDetailGroup] = useState<FacsGroup | null>(null)
   const [showSettings, setShowSettings] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
+  const [pos, setPos] = useState({ x: 16, y: -1 })      // y=-1 means vertically centred (CSS); ≥0 means absolute top
+  const [size, setSize] = useState({ w: 0, h: 0 })       // 0 = auto (use CSS defaults)
+
+  const dragState = useRef<{ startX: number; startY: number; startPX: number; startPY: number } | null>(null)
+  const resizeState = useRef<{ startX: number; startY: number; startW: number; startH: number; panelW: number; panelH: number } | null>(null)
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const panelWidthRef = useRef(900)
 
   const setControl = (id: string, value: number) => {
     onFacsValues((prev) => ({ ...prev, [id]: value }))
@@ -80,59 +96,159 @@ export default function ControlPanel({
 
   const activeCount = FACS_CONTROLS.filter((c) => (facsValues[c.id] ?? 0) > 0.001).length
 
+  // ── global pointermove/up on window so fast drags never escape ────────────
+  useEffect(() => {
+    const onMove = (e: globalThis.PointerEvent) => {
+      if (dragState.current) {
+        const { startX, startY, startPX, startPY } = dragState.current
+        // write directly to DOM — no React re-render per frame
+        if (panelRef.current) {
+          panelRef.current.style.left = `${startPX + (e.clientX - startX)}px`
+          panelRef.current.style.top = `${startPY + (e.clientY - startY)}px`
+          panelRef.current.style.transform = 'none'
+          panelRef.current.style.transition = 'none'
+        }
+      }
+      if (resizeState.current) {
+        const { startX, startY, startW, startH } = resizeState.current
+        const nw = Math.max(320, startW + (e.clientX - startX))
+        const nh = Math.max(280, startH + (e.clientY - startY))
+        if (panelRef.current) {
+          panelRef.current.style.width = `${nw}px`
+          panelRef.current.style.height = `${nh}px`
+        }
+      }
+    }
+    const onUp = (e: globalThis.PointerEvent) => {
+      if (dragState.current && panelRef.current) {
+        // commit final position to React state so subsequent renders are correct
+        const { startX, startY, startPX, startPY } = dragState.current
+        setPos({ x: startPX + (e.clientX - startX), y: startPY + (e.clientY - startY) })
+      }
+      if (resizeState.current && panelRef.current) {
+        const { startX, startY, startW, startH } = resizeState.current
+        const nw = Math.max(320, startW + (e.clientX - startX))
+        const nh = Math.max(280, startH + (e.clientY - startY))
+        setSize({ w: nw, h: nh })
+        panelWidthRef.current = nw
+      }
+      dragState.current = null
+      resizeState.current = null
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    return () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp) }
+  }, [])
+
+  // ── drag handlers (header) ─────────────────────────────────────────────────
+  const onHeaderPointerDown = (e: PointerEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest('button')) return
+    const rect = panelRef.current?.getBoundingClientRect()
+    const currentTop = rect ? rect.top : 0
+    const currentLeft = rect ? rect.left : pos.x
+    dragState.current = { startX: e.clientX, startY: e.clientY, startPX: currentLeft, startPY: currentTop }
+  }
+
+  // ── resize handlers (bottom-right corner) ─────────────────────────────────
+  const onResizePointerDown = (e: PointerEvent<HTMLDivElement>) => {
+    e.stopPropagation()
+    const el = panelRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    resizeState.current = {
+      startX: e.clientX, startY: e.clientY,
+      startW: rect.width, startH: rect.height,
+      panelW: rect.width, panelH: rect.height,
+    }
+  }
+
+  const isDragging = dragState.current !== null
+
+  const panelStyle: CSSProperties = {
+    position: 'fixed',
+    left: collapsed ? -(panelWidthRef.current + 16) : pos.x,
+    top: pos.y < 0 ? '50%' : pos.y,
+    transform: pos.y < 0 ? 'translateY(-50%)' : 'none',
+    transition: isDragging ? 'none' : 'left 0.28s cubic-bezier(0.4,0,0.2,1)',
+    pointerEvents: 'auto',
+    userSelect: 'none',
+    display: 'flex',
+    flexDirection: 'column',
+    ...(size.w ? { width: size.w } : {}),
+    ...(size.h ? { height: size.h } : {}),
+    ...panel,
+    overflow: 'hidden',
+    maxHeight: size.h ? 'none' : 'calc(100vh - 32px)',
+    zIndex: 11,
+  }
+
   return (
     <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 10 }}>
 
-      {/* ── Main face rig panel ─────────────────────────────────────────────── */}
+      {/* ── Collapse tab (visible when panel is hidden) ────────────────────── */}
       <div
+        onClick={() => setCollapsed(false)}
         style={{
-          position: 'absolute',
-          left: 16,
-          top: 0,
-          bottom: 0,
+          position: 'fixed',
+          left: collapsed ? 0 : -48,
+          top: '50%',
+          transform: 'translateY(-50%)',
+          transition: 'left 0.28s cubic-bezier(0.4,0,0.2,1)',
+          pointerEvents: collapsed ? 'auto' : 'none',
+          ...panel,
+          borderRadius: '0 6px 6px 0',
+          padding: '12px 8px',
+          cursor: 'pointer',
           display: 'flex',
           flexDirection: 'column',
-          justifyContent: 'center',
-          pointerEvents: 'none',
-          gap: 8,
+          alignItems: 'center',
+          gap: 4,
+          zIndex: 12,
         }}
       >
+        <span style={{ fontSize: 8, fontWeight: 700, color: 'rgba(255,255,255,0.4)', fontFamily: "'Courier New', monospace", writingMode: 'vertical-rl', letterSpacing: '0.1em' }}>FACS</span>
+        <span style={{ fontSize: 12, color: 'rgba(240,224,64,0.7)' }}>▶</span>
+      </div>
+
+      {/* ── Main face rig panel ─────────────────────────────────────────────── */}
+      <div ref={panelRef} style={panelStyle}>
+        {/* Header — drag handle */}
         <div
+          onPointerDown={onHeaderPointerDown}
           style={{
-            pointerEvents: 'auto',
-            userSelect: 'none',
             display: 'flex',
-            flexDirection: 'column',
-            ...panel,
-            overflow: 'hidden',
-            maxHeight: 'calc(100vh - 32px)',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '8px 14px',
+            borderBottom: '1px solid rgba(255,255,255,0.07)',
+            flexShrink: 0,
+            cursor: 'grab',
           }}
         >
-          {/* Header */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '8px 14px',
-              borderBottom: '1px solid rgba(255,255,255,0.07)',
-              flexShrink: 0,
-            }}
-          >
-            <span style={{
-              fontSize: 10, fontWeight: 700, letterSpacing: '0.14em',
-              color: 'rgba(255,255,255,0.45)', fontFamily: "'Courier New', monospace",
-            }}>
-              FACS RIG
-            </span>
+          <span style={{
+            fontSize: 10, fontWeight: 700, letterSpacing: '0.14em',
+            color: 'rgba(255,255,255,0.45)', fontFamily: "'Courier New', monospace",
+          }}>
+            FACS RIG
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 9, color: 'rgba(232,224,32,0.6)', fontFamily: 'monospace' }}>
               {activeCount > 0 ? `${activeCount} ACTIVE` : 'NEUTRAL'}
             </span>
+            <button
+              onClick={() => { if (panelRef.current) panelWidthRef.current = panelRef.current.getBoundingClientRect().width; setCollapsed(true) }}
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                color: 'rgba(255,255,255,0.3)', fontSize: 12, padding: '0 2px', lineHeight: 1,
+              }}
+              title="Collapse panel"
+            >◀</button>
           </div>
+        </div>
 
           {/* Face overlay — fills available height */}
-          <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <FaceOverlaySized facsValues={facsValues} onChange={setControl} />
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px 8px' }}>
+            <FaceOverlaySized facsValues={facsValues} eyeLook2D={eyeLook2D} onChange={setControl} onEyeLook2D={onEyeLook2D} />
           </div>
 
           {/* Preset strip */}
@@ -219,6 +335,28 @@ export default function ControlPanel({
               )}
             </div>
           )}
+
+        {/* Resize handle — bottom-right corner */}
+        <div
+          onPointerDown={onResizePointerDown}
+          style={{
+            position: 'absolute',
+            right: 0,
+            bottom: 0,
+            width: 18,
+            height: 18,
+            cursor: 'nwse-resize',
+            display: 'flex',
+            alignItems: 'flex-end',
+            justifyContent: 'flex-end',
+            padding: '3px 3px',
+          }}
+        >
+          <svg width={10} height={10} style={{ opacity: 0.3 }}>
+            <line x1={10} y1={0} x2={0} y2={10} stroke="white" strokeWidth={1.5} strokeLinecap="round" />
+            <line x1={10} y1={4} x2={4} y2={10} stroke="white" strokeWidth={1.5} strokeLinecap="round" />
+            <line x1={10} y1={8} x2={8} y2={10} stroke="white" strokeWidth={1.5} strokeLinecap="round" />
+          </svg>
         </div>
       </div>
 
@@ -278,16 +416,15 @@ export default function ControlPanel({
   )
 }
 
-// ── Sized wrapper — SVG aspect ratio 460:580 = ~0.793 ────────────────────────
-function FaceOverlaySized({ facsValues, onChange }: { facsValues: FacsValues; onChange: (id: string, v: number) => void }) {
+// ── Sized wrapper — two panels side by side, 920:700 total ratio ─────────────
+function FaceOverlaySized({ facsValues, eyeLook2D, onChange, onEyeLook2D }: { facsValues: FacsValues; eyeLook2D: EyeLookValues; onChange: (id: string, v: number) => void; onEyeLook2D: (v: EyeLookValues) => void }) {
   return (
     <div style={{
-      // Height drives layout; width follows via aspect-ratio.
-      height: 'min(58vh, 520px)',
-      aspectRatio: '460 / 580',
-      minHeight: 320,
+      height: 'min(72vh, 620px)',
+      aspectRatio: '920 / 700',
+      minHeight: 360,
     }}>
-      <FaceOverlay facsValues={facsValues} onChange={onChange} />
+      <FaceOverlay facsValues={facsValues} eyeLook2D={eyeLook2D} onChange={onChange} onEyeLook2D={onEyeLook2D} />
     </div>
   )
 }

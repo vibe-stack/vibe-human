@@ -27,6 +27,14 @@ export type FacsPreset = {
   values: Partial<FacsValues>
 }
 
+export type EyeLookValues = {
+  leftX: number   // -1 (look right from model's perspective) to +1 (look left)
+  leftY: number   // -1 (look down) to +1 (look up)
+  rightX: number
+  rightY: number
+}
+export const createNeutralEyeLook = (): EyeLookValues => ({ leftX: 0, leftY: 0, rightX: 0, rightY: 0 })
+
 const move = (worldPosition: [number, number, number]): BonePose => ({ worldPosition })
 
 const assign = (names: string[], pose: BonePose): PoseMap =>
@@ -657,6 +665,98 @@ const controls: FacsControl[] = [
       'lid.B.L.002': move([0, 0.007, 0]),
     }),
   },
+  {
+    id: 'tongue_out',
+    au: 'CTRL',
+    label: 'Tongue Out',
+    group: 'Mouth',
+    side: 'C',
+    bones: { tongue: move([0, 0, 0.04]) },
+  },
+  {
+    id: 'cheek_puff',
+    au: 'AU33',
+    label: 'Cheek Puff',
+    group: 'Midface',
+    side: 'B',
+    bones: combine(
+      assign(['cheek.B.L', 'cheek.B.L.001', 'cheek.T.L', 'cheek.T.L.001'], move([0.02, 0.01, 0.015])),
+      assign(['cheek.B.R', 'cheek.B.R.001', 'cheek.T.R', 'cheek.T.R.001'], move([-0.02, 0.01, 0.015])),
+    ),
+  },
+  {
+    id: 'mouth_funnel',
+    au: 'CTRL',
+    label: 'Mouth Funnel',
+    group: 'Mouth',
+    side: 'C',
+    bones: {
+      'lip.T.L': move([0.006, 0.01, 0.012]),
+      'lip.T.R': move([-0.006, 0.01, 0.012]),
+      'lip.T.L.001': move([-0.018, 0.006, 0.014]),
+      'lip.T.R.001': move([0.018, 0.006, 0.014]),
+      'lip.B.L': move([0.006, -0.01, 0.012]),
+      'lip.B.R': move([-0.006, -0.01, 0.012]),
+      'lip.B.L.001': move([-0.018, -0.006, 0.014]),
+      'lip.B.R.001': move([0.018, -0.006, 0.014]),
+    },
+  },
+  {
+    id: 'mouth_suck',
+    au: 'CTRL',
+    label: 'Mouth Suck',
+    group: 'Mouth',
+    side: 'C',
+    bones: {
+      'lip.T.L': move([0.004, -0.004, -0.014]),
+      'lip.T.R': move([-0.004, -0.004, -0.014]),
+      'lip.T.L.001': move([-0.01, -0.002, -0.016]),
+      'lip.T.R.001': move([0.01, -0.002, -0.016]),
+      'lip.B.L': move([0.004, 0.004, -0.014]),
+      'lip.B.R': move([-0.004, 0.004, -0.014]),
+      'lip.B.L.001': move([-0.01, 0.002, -0.016]),
+      'lip.B.R.001': move([0.01, 0.002, -0.016]),
+    },
+  },
+  {
+    id: 'lips_bite',
+    au: 'CTRL',
+    label: 'Lips Bite',
+    group: 'Mouth',
+    side: 'C',
+    bones: {
+      'lip.B.L': move([0.003, 0.018, -0.01]),
+      'lip.B.R': move([-0.003, 0.018, -0.01]),
+      'lip.B.L.001': move([0.006, 0.022, -0.014]),
+      'lip.B.R.001': move([-0.006, 0.022, -0.014]),
+    },
+  },
+  {
+    id: 'lip_roll_lower',
+    au: 'CTRL',
+    label: 'Roll Lower',
+    group: 'Mouth',
+    side: 'C',
+    bones: {
+      'lip.B.L': move([0.002, 0.012, -0.008]),
+      'lip.B.R': move([-0.002, 0.012, -0.008]),
+      'lip.B.L.001': move([0.004, 0.014, -0.012]),
+      'lip.B.R.001': move([-0.004, 0.014, -0.012]),
+    },
+  },
+  {
+    id: 'lip_roll_upper',
+    au: 'CTRL',
+    label: 'Roll Upper',
+    group: 'Mouth',
+    side: 'C',
+    bones: {
+      'lip.T.L': move([0.002, -0.012, -0.008]),
+      'lip.T.R': move([-0.002, -0.012, -0.008]),
+      'lip.T.L.001': move([0.004, -0.014, -0.012]),
+      'lip.T.R.001': move([-0.004, -0.014, -0.012]),
+    },
+  },
 ]
 
 export const FACS_CONTROLS = controls
@@ -678,82 +778,82 @@ export const FACS_PRESETS: FacsPreset[] = [
     id: 'happy',
     label: 'Happy',
     values: {
-      au06_cheek_raiser: 2.4,
+      au06_cheek_raiser: 2.2,
       au07_lid_tightener: 0.8,
-      au12_lip_corner_puller_l: 3.2,
-      au12_lip_corner_puller_r: 3.2,
-      au25_lips_part: 0.7,
+      au12_lip_corner_puller_l: 2.6,
+      au12_lip_corner_puller_r: 2.6,
     },
   },
   {
     id: 'angry',
     label: 'Angry',
     values: {
-      au04_brow_lowerer: 2.6,
-      brow_compress: 2.2,
-      glare: 2.4,
-      au24_lip_pressor: 1.7,
-      au23_lip_tightener: 1.3,
-      scowl: 2.7,
-      au38_nostril_dilator: 1.1,
+      au04_brow_lowerer: 2.4,
+      brow_compress: 2.0,
+      glare: 1.6,
+      scowl: 1.8,
+      au23_lip_tightener: 0.4,
+      au38_nostril_dilator: 1.0,
     },
   },
   {
     id: 'sad',
     label: 'Sad',
     values: {
-      au01_inner_brow_raiser: 2.3,
-      au15_lip_corner_depressor_l: 2.6,
-      au15_lip_corner_depressor_r: 2.6,
-      au17_chin_raiser: 1,
-      au43_eye_closure: 0.45,
+      au01_inner_brow_raiser: 1.8,
+      au04_brow_lowerer: 0.6,
+      au15_lip_corner_depressor_l: 1.6,
+      au15_lip_corner_depressor_r: 1.6,
+      au17_chin_raiser: 0.8,
+      au43_eye_closure: 0.4,
     },
   },
   {
     id: 'surprise',
     label: 'Surprise',
     values: {
-      au01_inner_brow_raiser: 2.2,
-      au02_outer_brow_raiser: 2.5,
-      au05_upper_lid_raiser: 2.8,
-      au25_lips_part: 1.6,
-      au26_jaw_drop: 2.7,
+      au01_inner_brow_raiser: 2.0,
+      au02_outer_brow_raiser: 2.2,
+      au05_upper_lid_raiser: 2.0,
+      au25_lips_part: 1.2,
+      au26_jaw_drop: 1.8,
     },
   },
   {
     id: 'fear',
     label: 'Fear',
     values: {
-      au01_inner_brow_raiser: 2.4,
-      au02_outer_brow_raiser: 1.7,
-      au05_upper_lid_raiser: 2.5,
-      au20_lip_stretcher: 1.9,
-      au25_lips_part: 1.3,
-      au26_jaw_drop: 1.1,
+      au01_inner_brow_raiser: 2.2,
+      au02_outer_brow_raiser: 1.4,
+      au04_brow_lowerer: 0.5,
+      au05_upper_lid_raiser: 1.8,
+      au20_lip_stretcher: 1.4,
+      au25_lips_part: 1.0,
+      au26_jaw_drop: 0.8,
     },
   },
   {
     id: 'disgust',
     label: 'Disgust',
     values: {
-      au09_nose_wrinkler: 2.7,
-      au10_upper_lip_raiser_l: 2,
-      au10_upper_lip_raiser_r: 1.3,
-      snarl_l: 2.1,
-      au04_brow_lowerer: 1,
-      au15_lip_corner_depressor_r: 1.1,
+      au09_nose_wrinkler: 1.8,
+      au10_upper_lip_raiser_l: 1.4,
+      au10_upper_lip_raiser_r: 0.8,
+      snarl_l: 1.4,
+      au04_brow_lowerer: 0.8,
+      au15_lip_corner_depressor_r: 0.9,
     },
   },
   {
     id: 'snarl',
     label: 'Snarl',
     values: {
-      scowl: 1.9,
-      glare: 1.7,
-      au09_nose_wrinkler: 1.7,
-      snarl_l: 3,
-      au24_lip_pressor: 0.8,
-      au26_jaw_drop: 0.7,
+      scowl: 1.4,
+      glare: 1.2,
+      au09_nose_wrinkler: 1.4,
+      snarl_l: 2.0,
+      au24_lip_pressor: 0.6,
+      au26_jaw_drop: 0.5,
     },
   },
 ]
@@ -871,20 +971,21 @@ export function buildFacsMorphs(values: FacsValues): MorphPose {
   const lowerDownL = r('au16_lower_lip_depressor')
   const lowerDownR = r('au16_lower_lip_depressor')
   const pucker = r('au18_lip_pucker')
-  const funnel = r('au18_lip_pucker') * 0.6
+  const funnel = saturate(Math.max(r('mouth_funnel'), r('au18_lip_pucker') * 0.55))
   const stretch = r('au20_lip_stretcher')
   const press = r('au24_lip_pressor')
   const dimple = r('au14_dimpler')
-  const rollLower = r('au24_lip_pressor') * 0.5 + r('au23_lip_tightener') * 0.4
-  const rollUpper = r('au24_lip_pressor') * 0.5 + r('au23_lip_tightener') * 0.4
-  const shrugLower = r('au17_chin_raiser') * 0.6
+  const rollLower = saturate(r('au24_lip_pressor') * 0.5 + r('au23_lip_tightener') * 0.4 + r('lip_roll_lower') + r('lips_bite') * 0.7)
+  const rollUpper = saturate(r('au24_lip_pressor') * 0.5 + r('au23_lip_tightener') * 0.4 + r('lip_roll_upper'))
+  const shrugLower = saturate(r('au17_chin_raiser') * 0.6 + r('mouth_suck') * 0.5)
   const shrugUpper = r('au09_nose_wrinkler') * 0.38
   const noseSneerL = Math.max(r('au09_nose_wrinkler'), r('snarl_l') * 0.72)
   const noseSneerR = Math.max(r('au09_nose_wrinkler'), r('snarl_r') * 0.72)
   const cheekSquintL = Math.max(r('au06_cheek_raiser'), r('au12_lip_corner_puller_l') * 0.44)
   const cheekSquintR = Math.max(r('au06_cheek_raiser'), r('au12_lip_corner_puller_r') * 0.44)
-  const cheekPuff = r('au18_lip_pucker') * 0.28
-  const mouthClose = r('au24_lip_pressor') * 0.45 + r('au23_lip_tightener') * 0.35
+  const cheekPuff = saturate(Math.max(r('cheek_puff'), r('au18_lip_pucker') * 0.25))
+  const mouthClose = saturate(r('au24_lip_pressor') * 0.45 + r('au23_lip_tightener') * 0.35 + r('tongue_out') * -0.3)
+  const tongue = saturate(r('tongue_out'))
   const mouthLeft = saturate(jawLR > 0 ? jawLR * 0.5 : 0)
   const mouthRight = saturate(jawLR < 0 ? -jawLR * 0.5 : 0)
 
@@ -931,6 +1032,7 @@ export function buildFacsMorphs(values: FacsValues): MorphPose {
     cheekSquintLeft: saturate(cheekSquintL),
     cheekSquintRight: saturate(cheekSquintR),
     cheekPuff: saturate(cheekPuff),
+    tongue: saturate(tongue),
   }
 }
 
