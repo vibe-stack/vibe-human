@@ -1,5 +1,4 @@
 import {
-  useMemo,
   useState,
   type CSSProperties,
   type Dispatch,
@@ -7,6 +6,7 @@ import {
   type SetStateAction,
 } from 'react'
 import { type BoneDebug } from './HumanModel'
+import FaceOverlay from './FaceOverlay'
 import {
   createFacsPresetValues,
   createNeutralFacsValues,
@@ -14,6 +14,7 @@ import {
   FACS_GROUPS,
   FACS_PRESETS,
   FACS_VALUE_MAX,
+  type FacsControl,
   type FacsGroup,
   type FacsSide,
   type FacsValues,
@@ -35,14 +36,13 @@ type Props = {
   onFov: (v: number) => void
 }
 
-const panelStyle = {
-  background: 'rgba(9, 10, 13, 0.82)',
-  backdropFilter: 'blur(22px)',
-  border: '1px solid rgba(255,255,255,0.08)',
-  boxShadow: '0 18px 54px rgba(0,0,0,0.48)',
-  width: 392,
-  maxWidth: 'calc(100vw - 32px)',
-} satisfies CSSProperties
+const panel: CSSProperties = {
+  background: 'rgba(14, 14, 18, 0.95)',
+  backdropFilter: 'blur(20px)',
+  border: '1px solid rgba(255,255,255,0.1)',
+  boxShadow: '0 24px 64px rgba(0,0,0,0.7)',
+  borderRadius: 8,
+}
 
 export default function ControlPanel({
   facsValues,
@@ -59,230 +59,270 @@ export default function ControlPanel({
   onFocusLock,
   onFov,
 }: Props) {
-  const [collapsed, setCollapsed] = useState(false)
-  const activeCount = useMemo(
-    () => FACS_CONTROLS.filter((control) => (facsValues[control.id] ?? 0) > 0.001).length,
-    [facsValues],
-  )
+  const [detailGroup, setDetailGroup] = useState<FacsGroup | null>(null)
+  const [showSettings, setShowSettings] = useState(false)
 
-  const setControlValue = (id: string, value: number) => {
-    onFacsValues((current) => ({ ...current, [id]: value }))
+  const setControl = (id: string, value: number) => {
+    onFacsValues((prev) => ({ ...prev, [id]: value }))
   }
 
+  const resetAll = () => onFacsValues(createNeutralFacsValues())
+
   const resetGroup = (group: FacsGroup) => {
-    onFacsValues((current) => {
-      const next = { ...current }
-      for (const control of FACS_CONTROLS) {
-        if (control.group === group) next[control.id] = 0
+    onFacsValues((prev) => {
+      const next = { ...prev }
+      for (const c of FACS_CONTROLS) {
+        if (c.group === group) next[c.id] = 0
       }
       return next
     })
   }
 
+  const activeCount = FACS_CONTROLS.filter((c) => (facsValues[c.id] ?? 0) > 0.001).length
+
   return (
-    <div className="fixed bottom-4 right-4 z-10 sm:bottom-6 sm:right-6" style={{ userSelect: 'none' }}>
-      <div className="overflow-hidden rounded-lg" style={panelStyle}>
-        <button
-          className="flex w-full cursor-pointer items-center justify-between px-4 py-3"
-          onClick={() => setCollapsed((value) => !value)}
-          style={{ background: 'transparent', border: 'none', color: 'inherit' }}
+    <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 10 }}>
+
+      {/* ── Main face rig panel ─────────────────────────────────────────────── */}
+      <div
+        style={{
+          position: 'absolute',
+          left: 16,
+          top: 0,
+          bottom: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          pointerEvents: 'none',
+          gap: 8,
+        }}
+      >
+        <div
+          style={{
+            pointerEvents: 'auto',
+            userSelect: 'none',
+            display: 'flex',
+            flexDirection: 'column',
+            ...panel,
+            overflow: 'hidden',
+            maxHeight: 'calc(100vh - 32px)',
+          }}
         >
-          <div className="flex items-baseline gap-2">
-            <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'rgba(255,255,255,0.52)' }}>
-              FACS Rig
-            </span>
-            <span className="text-[11px]" style={{ color: 'rgba(255,255,255,0.28)' }}>
-              {activeCount} active
-            </span>
-          </div>
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 12 12"
-            fill="none"
+          {/* Header */}
+          <div
             style={{
-              opacity: 0.42,
-              transform: collapsed ? 'rotate(180deg)' : 'rotate(0deg)',
-              transition: 'transform 0.2s',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '8px 14px',
+              borderBottom: '1px solid rgba(255,255,255,0.07)',
+              flexShrink: 0,
             }}
           >
-            <path d="M2 4l4 4 4-4" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
+            <span style={{
+              fontSize: 10, fontWeight: 700, letterSpacing: '0.14em',
+              color: 'rgba(255,255,255,0.45)', fontFamily: "'Courier New', monospace",
+            }}>
+              FACS RIG
+            </span>
+            <span style={{ fontSize: 9, color: 'rgba(232,224,32,0.6)', fontFamily: 'monospace' }}>
+              {activeCount > 0 ? `${activeCount} ACTIVE` : 'NEUTRAL'}
+            </span>
+          </div>
 
-        {!collapsed && (
-          <div className="flex max-h-[calc(100vh-112px)] min-h-0 flex-col overflow-hidden">
-            <div className="flex items-center gap-2 border-y border-white/[0.06] px-4 py-3">
-              <button
-                onClick={() => onFacsValues(createNeutralFacsValues())}
-                className="rounded-md px-3 py-1.5 text-xs font-semibold transition-colors"
-                style={{
-                  background: 'rgba(255,255,255,0.08)',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  color: 'rgba(255,255,255,0.7)',
-                  cursor: 'pointer',
-                }}
+          {/* Face overlay — fills available height */}
+          <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <FaceOverlaySized facsValues={facsValues} onChange={setControl} />
+          </div>
+
+          {/* Preset strip */}
+          <div
+            style={{
+              display: 'flex',
+              gap: 4,
+              padding: '7px 10px',
+              borderTop: '1px solid rgba(255,255,255,0.07)',
+              flexShrink: 0,
+              flexWrap: 'wrap',
+            }}
+          >
+            <Chip onClick={resetAll} bright>RESET</Chip>
+            {FACS_PRESETS.map((p) => (
+              <Chip key={p.id} onClick={() => onFacsValues(createFacsPresetValues(p.values))}>
+                {p.label.toUpperCase()}
+              </Chip>
+            ))}
+          </div>
+
+          {/* Group detail strip */}
+          <div
+            style={{
+              display: 'flex',
+              gap: 3,
+              padding: '5px 10px',
+              borderTop: '1px solid rgba(255,255,255,0.05)',
+              flexShrink: 0,
+            }}
+          >
+            {FACS_GROUPS.map((g) => (
+              <Chip
+                key={g}
+                onClick={() => setDetailGroup(detailGroup === g ? null : g)}
+                active={detailGroup === g}
               >
-                Reset All
-              </button>
-              <SliderReadout label="FOV" value={`${fov}°`} />
-              <input
-                type="range"
-                min={20}
-                max={90}
-                step={1}
-                value={fov}
-                onChange={(event) => onFov(parseInt(event.target.value))}
-                className="range-slider"
-                aria-label="Field of View"
-              />
-            </div>
+                {g.toUpperCase()}
+              </Chip>
+            ))}
+            <div style={{ flex: 1 }} />
+            <Chip onClick={() => setShowSettings((v) => !v)} active={showSettings}>⚙</Chip>
+          </div>
 
-            <div className="facs-scroll flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
-              {FACS_GROUPS.map((group) => (
-                <section key={group} className="flex flex-col gap-2">
-                  <div className="flex items-center justify-between">
-                    <Label>{group}</Label>
-                    <button
-                      onClick={() => resetGroup(group)}
-                      className="rounded-md px-2 py-1 text-[11px] font-medium"
-                      style={{
-                        background: 'rgba(255,255,255,0.045)',
-                        border: '1px solid rgba(255,255,255,0.06)',
-                        color: 'rgba(255,255,255,0.38)',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      Reset
-                    </button>
-                  </div>
-
-                  <div className="flex flex-col gap-2">
-                    {FACS_CONTROLS.filter((control) => control.group === group).map((control) => (
-                      <FacsSlider
-                        key={control.id}
-                        au={control.au}
-                        label={control.label}
-                        max={control.max ?? FACS_VALUE_MAX}
-                        side={control.side}
-                        value={facsValues[control.id] ?? 0}
-                        onChange={(value) => setControlValue(control.id, value)}
-                      />
-                    ))}
-                  </div>
-                </section>
-              ))}
-
-              <section className="flex flex-col gap-2">
-                <Label>Viewport</Label>
-                <div className="grid grid-cols-2 gap-2">
-                  <Toggle active={wireframe} onClick={() => onWireframe(!wireframe)}>
-                    Wireframe
-                  </Toggle>
-                  <Toggle active={showBones} onClick={() => onShowBones(!showBones)}>
-                    Bones
-                  </Toggle>
-                  <Toggle active={eyeLook} onClick={() => onEyeLook(!eyeLook)}>
-                    Eye Look
-                  </Toggle>
-                  <Toggle active={focusLock} onClick={() => onFocusLock(!focusLock)}>
-                    Focus Lock
-                  </Toggle>
+          {/* Settings row */}
+          {showSettings && (
+            <div
+              style={{
+                padding: '8px 10px',
+                borderTop: '1px solid rgba(255,255,255,0.05)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 6,
+                flexShrink: 0,
+              }}
+            >
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 4 }}>
+                <Toggle active={wireframe} onClick={() => onWireframe(!wireframe)}>WIRE</Toggle>
+                <Toggle active={showBones} onClick={() => onShowBones(!showBones)}>BONES</Toggle>
+                <Toggle active={eyeLook} onClick={() => onEyeLook(!eyeLook)}>EYE</Toggle>
+                <Toggle active={focusLock} onClick={() => onFocusLock(!focusLock)}>LOCK</Toggle>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', fontFamily: 'monospace', minWidth: 42 }}>
+                  FOV {fov}°
+                </span>
+                <input
+                  type="range" min={20} max={90} step={1} value={fov}
+                  onChange={(e) => onFov(parseInt(e.target.value))}
+                  className="range-slider"
+                  style={{ flex: 1 }}
+                />
+              </div>
+              {showBones && boneDebug && (
+                <div style={{
+                  fontSize: 9, fontFamily: 'monospace',
+                  color: 'rgba(255,255,255,0.45)',
+                  lineHeight: 1.7,
+                }}>
+                  <div style={{ color: 'rgba(232,224,32,0.8)' }}>{boneDebug.name}</div>
+                  <div>pos [{boneDebug.position.map((n) => n.toFixed(4)).join(', ')}]</div>
+                  <div>Δ   [{boneDebug.deltaPosition.map((n) => n.toFixed(4)).join(', ')}]</div>
                 </div>
-              </section>
-
-              {showBones && (
-                <section
-                  className="rounded-lg p-3 text-xs"
-                  style={{
-                    background: 'rgba(255,255,255,0.045)',
-                    border: '1px solid rgba(255,255,255,0.06)',
-                    color: 'rgba(255,255,255,0.55)',
-                  }}
-                >
-                  <Label>Selected Bone</Label>
-                  {boneDebug ? (
-                    <div className="mt-2 flex flex-col gap-1 font-mono leading-relaxed">
-                      <span style={{ color: 'rgba(255,255,255,0.85)' }}>{boneDebug.name}</span>
-                      <DebugLine label="pos" value={boneDebug.position} />
-                      <DebugLine label="rest" value={boneDebug.restPosition} />
-                      <DebugLine label="delta" value={boneDebug.deltaPosition} />
-                      <DebugLine label="rot" value={boneDebug.rotation} />
-                      <DebugLine label="drot" value={boneDebug.deltaRotation} />
-                    </div>
-                  ) : (
-                    <div className="mt-2" style={{ color: 'rgba(255,255,255,0.35)' }}>
-                      Click a bone handle
-                    </div>
-                  )}
-                </section>
               )}
             </div>
+          )}
+        </div>
+      </div>
 
-            <div className="border-t border-white/[0.06] px-4 py-3">
-              <div className="mb-2 flex items-center justify-between">
-                <Label>Presets</Label>
-                <span className="text-[11px]" style={{ color: 'rgba(255,255,255,0.3)' }}>
-                  editable starting points
-                </span>
-              </div>
-              <div className="grid grid-cols-4 gap-2">
-                {FACS_PRESETS.map((preset) => (
-                  <button
-                    key={preset.id}
-                    onClick={() => onFacsValues(createFacsPresetValues(preset.values))}
-                    className="rounded-md px-2 py-1.5 text-xs font-medium transition-colors"
-                    style={{
-                      background: 'rgba(255,255,255,0.055)',
-                      border: '1px solid rgba(255,255,255,0.07)',
-                      color: 'rgba(255,255,255,0.58)',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {preset.label}
-                  </button>
-                ))}
-              </div>
+      {/* ── Group detail panel (right side) ──────────────────────────────────── */}
+      {detailGroup && (
+        <div
+          style={{
+            position: 'absolute',
+            right: 16,
+            top: '50%',
+            transform: 'translateY(-50%)',
+            width: 280,
+            maxHeight: 'calc(100vh - 32px)',
+            overflowY: 'auto',
+            pointerEvents: 'auto',
+            userSelect: 'none',
+            ...panel,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 0,
+          }}
+          className="facs-scroll"
+        >
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '8px 12px',
+            borderBottom: '1px solid rgba(255,255,255,0.07)',
+          }}>
+            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', color: 'rgba(255,255,255,0.42)', fontFamily: 'monospace' }}>
+              {detailGroup.toUpperCase()}
+            </span>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button
+                onClick={() => resetGroup(detailGroup)}
+                style={chipStyle(false)}
+              >RESET</button>
+              <button
+                onClick={() => setDetailGroup(null)}
+                style={{ ...chipStyle(false), color: 'rgba(255,255,255,0.5)' }}
+              >✕</button>
             </div>
           </div>
-        )}
-      </div>
+
+          <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {FACS_CONTROLS.filter((c) => c.group === detailGroup).map((control) => (
+              <FacsSlider
+                key={control.id}
+                control={control}
+                value={facsValues[control.id] ?? 0}
+                onChange={(v) => setControl(control.id, v)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
+// ── Sized wrapper — SVG aspect ratio 460:580 = ~0.793 ────────────────────────
+function FaceOverlaySized({ facsValues, onChange }: { facsValues: FacsValues; onChange: (id: string, v: number) => void }) {
+  return (
+    <div style={{
+      // Height drives layout; width follows via aspect-ratio.
+      height: 'min(58vh, 520px)',
+      aspectRatio: '460 / 580',
+      minHeight: 320,
+    }}>
+      <FaceOverlay facsValues={facsValues} onChange={onChange} />
+    </div>
+  )
+}
+
+// ── Slider ────────────────────────────────────────────────────────────────────
 function FacsSlider({
-  au,
-  label,
-  max,
-  side,
+  control,
   value,
   onChange,
 }: {
-  au: string
-  label: string
-  max: number
-  side: FacsSide
+  control: FacsControl
   value: number
-  onChange: (value: number) => void
+  onChange: (v: number) => void
 }) {
+  const max = control.max ?? FACS_VALUE_MAX
+  const active = value > 0.001
+
   return (
     <div
-      className="rounded-lg px-3 py-2"
       style={{
-        background: value > 0 ? 'rgba(71, 132, 152, 0.18)' : 'rgba(255,255,255,0.035)',
-        border: value > 0 ? '1px solid rgba(104, 190, 210, 0.28)' : '1px solid rgba(255,255,255,0.055)',
+        borderRadius: 6,
+        padding: '6px 9px',
+        background: active ? 'rgba(232,224,32,0.07)' : 'rgba(255,255,255,0.025)',
+        border: active ? '1px solid rgba(232,224,32,0.2)' : '1px solid rgba(255,255,255,0.05)',
       }}
     >
-      <div className="mb-1.5 grid grid-cols-[44px_1fr_32px_42px] items-center gap-2">
-        <span className="text-[11px] font-semibold tabular-nums" style={{ color: 'rgba(126, 213, 226, 0.88)' }}>
-          {au}
+      <div style={{ display: 'grid', gridTemplateColumns: '32px 1fr 22px 34px', gap: 5, alignItems: 'center', marginBottom: 4 }}>
+        <span style={{ fontSize: 8, fontWeight: 700, color: 'rgba(232,224,32,0.75)', fontFamily: 'monospace', letterSpacing: '0.05em' }}>
+          {control.au}
         </span>
-        <span className="truncate text-xs font-medium" style={{ color: 'rgba(255,255,255,0.74)' }}>
-          {label}
+        <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.7)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {control.label}
         </span>
-        <SideBadge side={side} />
-        <span className="text-right text-[11px] tabular-nums" style={{ color: 'rgba(255,255,255,0.42)' }}>
+        <SideBadge side={control.side} />
+        <span style={{ fontSize: 8, textAlign: 'right', color: 'rgba(255,255,255,0.38)', fontFamily: 'monospace' }}>
           {value.toFixed(2)}
         </span>
       </div>
@@ -292,9 +332,9 @@ function FacsSlider({
         max={max}
         step={0.01}
         value={value}
-        onChange={(event) => onChange(parseFloat(event.target.value))}
+        onChange={(e) => onChange(parseFloat(e.target.value))}
         className="range-slider facs-range"
-        aria-label={`${au} ${label}`}
+        aria-label={`${control.au} ${control.label}`}
       />
     </div>
   )
@@ -302,45 +342,40 @@ function FacsSlider({
 
 function SideBadge({ side }: { side: FacsSide }) {
   return (
-    <span
-      className="rounded-sm py-0.5 text-center text-[10px] font-semibold"
-      style={{
-        background: 'rgba(255,255,255,0.07)',
-        color: 'rgba(255,255,255,0.42)',
-      }}
-    >
+    <span style={{
+      borderRadius: 3, padding: '1px 0', textAlign: 'center',
+      fontSize: 8, fontWeight: 700,
+      background: 'rgba(255,255,255,0.06)',
+      color: 'rgba(255,255,255,0.35)',
+      display: 'block',
+      fontFamily: 'monospace',
+    }}>
       {side}
     </span>
   )
 }
 
-function SliderReadout({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="ml-auto flex min-w-16 items-baseline justify-end gap-1">
-      <span className="text-[11px]" style={{ color: 'rgba(255,255,255,0.32)' }}>
-        {label}
-      </span>
-      <span className="text-[11px] tabular-nums" style={{ color: 'rgba(255,255,255,0.54)' }}>
-        {value}
-      </span>
-    </div>
-  )
+function chipStyle(active: boolean): CSSProperties {
+  return {
+    fontSize: 9, fontWeight: 700, padding: '3px 8px', borderRadius: 4,
+    border: active ? '1px solid rgba(232,224,32,0.4)' : '1px solid rgba(255,255,255,0.08)',
+    background: active ? 'rgba(232,224,32,0.12)' : 'rgba(255,255,255,0.04)',
+    color: active ? 'rgba(232,224,32,0.88)' : 'rgba(255,255,255,0.38)',
+    cursor: 'pointer',
+    fontFamily: "'Courier New', monospace",
+    letterSpacing: '0.06em',
+  }
 }
 
-function DebugLine({ label, value }: { label: string; value: [number, number, number] }) {
+function Chip({ onClick, children, active, bright }: { onClick: () => void; children: ReactNode; active?: boolean; bright?: boolean }) {
   return (
-    <span>
-      <span style={{ color: 'rgba(255,255,255,0.35)' }}>{label}</span>{' '}
-      [{value.map((n) => n.toFixed(5)).join(', ')}]
-    </span>
-  )
-}
-
-function Label({ children }: { children: ReactNode }) {
-  return (
-    <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'rgba(255,255,255,0.38)' }}>
+    <button onClick={onClick} style={bright ? {
+      ...chipStyle(false),
+      color: 'rgba(255,255,255,0.65)',
+      border: '1px solid rgba(255,255,255,0.14)',
+    } : chipStyle(!!active)}>
       {children}
-    </span>
+    </button>
   )
 }
 
@@ -348,12 +383,13 @@ function Toggle({ active, onClick, children }: { active: boolean; onClick: () =>
   return (
     <button
       onClick={onClick}
-      className="rounded-md py-2 text-xs font-medium transition-colors"
       style={{
-        background: active ? 'rgba(71, 132, 152, 0.26)' : 'rgba(255,255,255,0.045)',
-        border: active ? '1px solid rgba(104, 190, 210, 0.45)' : '1px solid rgba(255,255,255,0.06)',
-        color: active ? 'rgba(184, 244, 250, 0.92)' : 'rgba(255,255,255,0.44)',
-        cursor: 'pointer',
+        borderRadius: 4, padding: '4px 0', fontSize: 8, fontWeight: 700, cursor: 'pointer',
+        background: active ? 'rgba(232,224,32,0.14)' : 'rgba(255,255,255,0.04)',
+        border: active ? '1px solid rgba(232,224,32,0.35)' : '1px solid rgba(255,255,255,0.07)',
+        color: active ? 'rgba(232,224,32,0.9)' : 'rgba(255,255,255,0.35)',
+        fontFamily: "'Courier New', monospace",
+        letterSpacing: '0.08em',
       }}
     >
       {children}

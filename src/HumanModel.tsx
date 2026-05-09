@@ -41,8 +41,8 @@ export type BoneDebug = {
   deltaRotation: [number, number, number]
 }
 
-const MODEL_URL = `${import.meta.env.BASE_URL}human3.glb?v=shape-key-facs-2026-05-09-1`
-const WORLD_POSITION_GAIN = 0.25
+const MODEL_URL = `${import.meta.env.BASE_URL}human3.glb?v=shape-key-facs-2026-05-09-2`
+const WORLD_POSITION_GAIN = 0.5
 const HEAD_LOOK_YAW = 1.05
 const HEAD_LOOK_PITCH = 0.58
 const NECK_LOOK_YAW = 0.18

@@ -1,7 +1,5 @@
 export type BonePose = {
-  // LOCAL bone-space delta. Use sparingly; exported deform bones have mixed axes.
   position?: [number, number, number]
-  // Model/world-facing delta converted into each bone parent's local space at runtime.
   worldPosition?: [number, number, number]
   rotation?: [number, number, number]
 }
@@ -54,12 +52,10 @@ const mirrorMap = (map: PoseMap): PoseMap =>
 
 const leftRight = (left: PoseMap): PoseMap => combine(left, mirrorMap(left))
 
-// UI range is intentionally larger than the authored full-strength value.
-// 5.0 is authored full strength; values above 5.0 are deliberate overdrive.
+// Authored value = slider value that produces "natural full expression".
+// Response at authored value is 1.0 (normalised). Values above authored drive into overdrive.
 export const FACS_AUTHORED_VALUE = 5
 export const FACS_VALUE_MAX = 5
-const FACS_AUTHORED_RESPONSE = 1.55
-const FACS_OVERDRIVE_RESPONSE = 0.85
 
 // In this rig, the lower brow chain runs lateral-to-medial:
 // brow.B.L is the outside tail, brow.B.L.004 is closest to the nose.
@@ -74,6 +70,10 @@ const cheekLeft = ['cheek.B.L', 'cheek.B.L.001', 'cheek.T.L', 'cheek.T.L.001']
 const noseCenter = ['nose', 'nose.001', 'nose.002', 'nose.003', 'nose.004']
 const noseLeft = ['nose.L', 'nose.L.001']
 const chin = ['chin', 'chin.001', 'chin.L', 'chin.R']
+
+// All bone deltas are in world-space metres. WORLD_POSITION_GAIN scales them down.
+// Calibration: full expression (response=1.0) × WORLD_POSITION_GAIN = actual bone travel.
+// Brow travel: ~3-4 mm. Lid: ~2-3 mm. Lip corners: ~6-8 mm. Jaw open: ~15-20 mm.
 
 const upperLidRaiseLeft = {
   'lid.T.L': move([0, 0.024, 0.002]),
@@ -117,9 +117,9 @@ const controls: FacsControl[] = [
     side: 'B',
     bones: leftRight(
       combine(
-        assign(browInnerLeft, move([0.016, 0.128, 0.014])),
-        assign(browMidLeft, move([0.004, 0.044, 0.006])),
-        assign(foreheadLeft, move([0.006, 0.052, 0.006])),
+        assign(browInnerLeft, move([0.008, 0.06, 0.008])),
+        assign(browMidLeft, move([0.002, 0.022, 0.003])),
+        assign(foreheadLeft, move([0.003, 0.026, 0.003])),
       ),
     ),
   },
@@ -131,9 +131,9 @@ const controls: FacsControl[] = [
     side: 'B',
     bones: leftRight(
       combine(
-        assign(browOuterLeft, move([0.018, 0.138, 0.016])),
-        assign(browMidLeft, move([0.006, 0.052, 0.008])),
-        assign(foreheadLeft, move([0.014, 0.058, 0.006])),
+        assign(browOuterLeft, move([0.009, 0.065, 0.008])),
+        assign(browMidLeft, move([0.003, 0.026, 0.004])),
+        assign(foreheadLeft, move([0.007, 0.028, 0.003])),
       ),
     ),
   },
@@ -145,10 +145,10 @@ const controls: FacsControl[] = [
     side: 'B',
     bones: leftRight(
       combine(
-        assign(browInnerLeft, move([-0.052, -0.116, 0.004])),
-        assign(browMidLeft, move([-0.026, -0.064, 0])),
-        assign(browOuterLeft, move([0.018, -0.048, 0])),
-        assign(foreheadLeft, move([-0.018, -0.046, 0.004])),
+        assign(browInnerLeft, move([-0.026, -0.058, 0.002])),
+        assign(browMidLeft, move([-0.013, -0.032, 0])),
+        assign(browOuterLeft, move([0.009, -0.024, 0])),
+        assign(foreheadLeft, move([-0.009, -0.023, 0.002])),
       ),
     ),
   },
@@ -160,9 +160,9 @@ const controls: FacsControl[] = [
     side: 'B',
     bones: leftRight(
       combine(
-        assign(browInnerLeft, move([-0.032, -0.082, 0.004])),
-        assign(browMidLeft, move([-0.018, -0.052, 0])),
-        assign(foreheadLeft, move([-0.012, -0.034, 0.002])),
+        assign(browInnerLeft, move([-0.016, -0.041, 0.002])),
+        assign(browMidLeft, move([-0.009, -0.026, 0])),
+        assign(foreheadLeft, move([-0.006, -0.017, 0.001])),
       ),
     ),
   },
@@ -175,7 +175,7 @@ const controls: FacsControl[] = [
     bones: leftRight(
       combine(
         upperLidRaiseLeft,
-        assign(browMidLeft, move([0.004, 0.024, 0])),
+        assign(browMidLeft, move([0.002, 0.012, 0])),
       ),
     ),
   },
@@ -187,9 +187,9 @@ const controls: FacsControl[] = [
     side: 'B',
     bones: leftRight(
       combine(
-        assign(cheekLeft, move([0.052, 0.104, 0.034])),
-        assign(lidBottomLeft, move([0.002, 0.052, 0.004])),
-        assign(lidTopLeft, move([0, -0.026, 0.002])),
+        assign(cheekLeft, move([0.026, 0.052, 0.017])),
+        assign(lidBottomLeft, move([0.001, 0.026, 0.002])),
+        assign(lidTopLeft, move([0, -0.013, 0.001])),
       ),
     ),
   },
@@ -202,7 +202,7 @@ const controls: FacsControl[] = [
     bones: leftRight(
       combine(
         lidTightenLeft,
-        assign(cheekLeft, move([0.018, 0.036, 0.01])),
+        assign(cheekLeft, move([0.009, 0.018, 0.005])),
       ),
     ),
   },
@@ -215,9 +215,9 @@ const controls: FacsControl[] = [
     bones: leftRight(
       combine(
         lidTightenLeft,
-        assign(browInnerLeft, move([-0.018, -0.05, 0.002])),
-        assign(browMidLeft, move([-0.012, -0.038, 0])),
-        assign(cheekLeft, move([0.01, 0.022, 0.004])),
+        assign(browInnerLeft, move([-0.009, -0.025, 0.001])),
+        assign(browMidLeft, move([-0.006, -0.019, 0])),
+        assign(cheekLeft, move([0.005, 0.011, 0.002])),
       ),
     ),
   },
@@ -228,12 +228,12 @@ const controls: FacsControl[] = [
     group: 'Midface',
     side: 'B',
     bones: combine(
-      assign(noseCenter, move([0, 0.06, -0.02])),
+      assign(noseCenter, move([0, 0.03, -0.01])),
       leftRight(
         combine(
-          assign(noseLeft, move([0.042, 0.088, -0.018])),
-          assign(cheekLeft, move([0.034, 0.072, 0.014])),
-          assign(lidBottomLeft, move([0, 0.028, 0.002])),
+          assign(noseLeft, move([0.021, 0.044, -0.009])),
+          assign(cheekLeft, move([0.017, 0.036, 0.007])),
+          assign(lidBottomLeft, move([0, 0.014, 0.001])),
         ),
       ),
     ),
@@ -245,11 +245,11 @@ const controls: FacsControl[] = [
     group: 'Midface',
     side: 'B',
     bones: combine(
-      assign(noseCenter, move([0, -0.012, 0.006])),
+      assign(noseCenter, move([0, -0.006, 0.003])),
       leftRight(
         combine(
-          assign(noseLeft, move([0.052, -0.012, 0.018])),
-          assign(['cheek.B.L', 'cheek.T.L.001'], move([0.018, -0.012, 0.008])),
+          assign(noseLeft, move([0.026, -0.006, 0.009])),
+          assign(['cheek.B.L', 'cheek.T.L.001'], move([0.009, -0.006, 0.004])),
         ),
       ),
     ),
@@ -262,12 +262,12 @@ const controls: FacsControl[] = [
     side: 'L',
     bones: combine(
       {
-        'lip.T.L': move([0.022, 0.08, 0.018]),
-        'lip.T.L.001': move([0.056, 0.114, 0.026]),
-        'lip.B.L': move([0.016, 0.036, -0.006]),
+        'lip.T.L': move([0.011, 0.04, 0.009]),
+        'lip.T.L.001': move([0.028, 0.057, 0.013]),
+        'lip.B.L': move([0.008, 0.018, -0.003]),
       },
-      assign(noseLeft, move([0.022, 0.046, -0.008])),
-      assign(['cheek.B.L', 'cheek.T.L'], move([0.036, 0.07, 0.02])),
+      assign(noseLeft, move([0.011, 0.023, -0.004])),
+      assign(['cheek.B.L', 'cheek.T.L'], move([0.018, 0.035, 0.01])),
     ),
   },
   {
@@ -277,13 +277,13 @@ const controls: FacsControl[] = [
     group: 'Mouth',
     side: 'R',
     bones: mirrorMap({
-      'lip.T.L': move([0.022, 0.08, 0.018]),
-      'lip.T.L.001': move([0.056, 0.114, 0.026]),
-      'lip.B.L': move([0.016, 0.036, -0.006]),
-      'nose.L': move([0.022, 0.046, -0.008]),
-      'nose.L.001': move([0.022, 0.046, -0.008]),
-      'cheek.B.L': move([0.036, 0.07, 0.02]),
-      'cheek.T.L': move([0.036, 0.07, 0.02]),
+      'lip.T.L': move([0.011, 0.04, 0.009]),
+      'lip.T.L.001': move([0.028, 0.057, 0.013]),
+      'lip.B.L': move([0.008, 0.018, -0.003]),
+      'nose.L': move([0.011, 0.023, -0.004]),
+      'nose.L.001': move([0.011, 0.023, -0.004]),
+      'cheek.B.L': move([0.018, 0.035, 0.01]),
+      'cheek.T.L': move([0.018, 0.035, 0.01]),
     }),
   },
   {
@@ -294,13 +294,13 @@ const controls: FacsControl[] = [
     side: 'L',
     bones: combine(
       {
-        'lip.T.L': move([0.018, 0.024, 0.01]),
-        'lip.T.L.001': move([0.082, 0.074, 0.026]),
-        'lip.B.L': move([0.014, 0.02, 0.008]),
-        'lip.B.L.001': move([0.072, 0.062, 0.022]),
+        'lip.T.L': move([0.009, 0.012, 0.005]),
+        'lip.T.L.001': move([0.041, 0.037, 0.013]),
+        'lip.B.L': move([0.007, 0.01, 0.004]),
+        'lip.B.L.001': move([0.036, 0.031, 0.011]),
       },
-      assign(cheekLeft, move([0.052, 0.096, 0.032])),
-      assign(lidBottomLeft, move([0, 0.034, 0.002])),
+      assign(cheekLeft, move([0.026, 0.048, 0.016])),
+      assign(lidBottomLeft, move([0, 0.017, 0.001])),
     ),
   },
   {
@@ -310,18 +310,18 @@ const controls: FacsControl[] = [
     group: 'Mouth',
     side: 'R',
     bones: mirrorMap({
-      'lip.T.L': move([0.018, 0.024, 0.01]),
-      'lip.T.L.001': move([0.082, 0.074, 0.026]),
-      'lip.B.L': move([0.014, 0.02, 0.008]),
-      'lip.B.L.001': move([0.072, 0.062, 0.022]),
-      'cheek.B.L': move([0.052, 0.096, 0.032]),
-      'cheek.B.L.001': move([0.052, 0.096, 0.032]),
-      'cheek.T.L': move([0.052, 0.096, 0.032]),
-      'cheek.T.L.001': move([0.052, 0.096, 0.032]),
-      'lid.B.L': move([0, 0.034, 0.002]),
-      'lid.B.L.001': move([0, 0.034, 0.002]),
-      'lid.B.L.002': move([0, 0.034, 0.002]),
-      'lid.B.L.003': move([0, 0.034, 0.002]),
+      'lip.T.L': move([0.009, 0.012, 0.005]),
+      'lip.T.L.001': move([0.041, 0.037, 0.013]),
+      'lip.B.L': move([0.007, 0.01, 0.004]),
+      'lip.B.L.001': move([0.036, 0.031, 0.011]),
+      'cheek.B.L': move([0.026, 0.048, 0.016]),
+      'cheek.B.L.001': move([0.026, 0.048, 0.016]),
+      'cheek.T.L': move([0.026, 0.048, 0.016]),
+      'cheek.T.L.001': move([0.026, 0.048, 0.016]),
+      'lid.B.L': move([0, 0.017, 0.001]),
+      'lid.B.L.001': move([0, 0.017, 0.001]),
+      'lid.B.L.002': move([0, 0.017, 0.001]),
+      'lid.B.L.003': move([0, 0.017, 0.001]),
     }),
   },
   {
@@ -331,10 +331,10 @@ const controls: FacsControl[] = [
     group: 'Mouth',
     side: 'B',
     bones: leftRight({
-      'lip.T.L.001': move([0.044, -0.012, -0.018]),
-      'lip.B.L.001': move([0.052, -0.012, -0.018]),
-      'cheek.B.L': move([0.028, 0.024, -0.012]),
-      'cheek.T.L': move([0.022, 0.026, -0.012]),
+      'lip.T.L.001': move([0.022, -0.006, -0.009]),
+      'lip.B.L.001': move([0.026, -0.006, -0.009]),
+      'cheek.B.L': move([0.014, 0.012, -0.006]),
+      'cheek.T.L': move([0.011, 0.013, -0.006]),
     }),
   },
   {
@@ -345,11 +345,11 @@ const controls: FacsControl[] = [
     side: 'L',
     bones: combine(
       {
-        'lip.T.L.001': move([-0.046, -0.034, -0.016]),
-        'lip.B.L.001': move([-0.06, -0.078, -0.014]),
-        'lip.B.L': move([-0.014, -0.034, -0.008]),
+        'lip.T.L.001': move([-0.023, -0.017, -0.008]),
+        'lip.B.L.001': move([-0.03, -0.039, -0.007]),
+        'lip.B.L': move([-0.007, -0.017, -0.004]),
       },
-      assign(['chin.L', 'chin.001'], move([-0.012, -0.034, -0.006])),
+      assign(['chin.L', 'chin.001'], move([-0.006, -0.017, -0.003])),
     ),
   },
   {
@@ -359,11 +359,11 @@ const controls: FacsControl[] = [
     group: 'Mouth',
     side: 'R',
     bones: mirrorMap({
-      'lip.T.L.001': move([-0.046, -0.034, -0.016]),
-      'lip.B.L.001': move([-0.06, -0.078, -0.014]),
-      'lip.B.L': move([-0.014, -0.034, -0.008]),
-      'chin.L': move([-0.012, -0.034, -0.006]),
-      'chin.001': move([-0.012, -0.034, -0.006]),
+      'lip.T.L.001': move([-0.023, -0.017, -0.008]),
+      'lip.B.L.001': move([-0.03, -0.039, -0.007]),
+      'lip.B.L': move([-0.007, -0.017, -0.004]),
+      'chin.L': move([-0.006, -0.017, -0.003]),
+      'chin.001': move([-0.006, -0.017, -0.003]),
     }),
   },
   {
@@ -373,12 +373,12 @@ const controls: FacsControl[] = [
     group: 'Mouth',
     side: 'C',
     bones: combine(
-      assign(chin, move([0, 0.064, 0.01])),
+      assign(chin, move([0, 0.032, 0.005])),
       {
-        'lip.B.L': move([0.012, 0.038, 0.01]),
-        'lip.B.R': move([-0.012, 0.038, 0.01]),
-        'lip.B.L.001': move([0.028, 0.044, 0.012]),
-        'lip.B.R.001': move([-0.028, 0.044, 0.012]),
+        'lip.B.L': move([0.006, 0.019, 0.005]),
+        'lip.B.R': move([-0.006, 0.019, 0.005]),
+        'lip.B.L.001': move([0.014, 0.022, 0.006]),
+        'lip.B.R.001': move([-0.014, 0.022, 0.006]),
       },
     ),
   },
@@ -389,10 +389,10 @@ const controls: FacsControl[] = [
     group: 'Mouth',
     side: 'B',
     bones: leftRight({
-      'lip.B.L': move([0.01, -0.052, 0.01]),
-      'lip.B.L.001': move([0.03, -0.082, 0.012]),
-      'chin.L': move([0.012, -0.03, 0.002]),
-      'chin.001': move([0, -0.024, 0.002]),
+      'lip.B.L': move([0.005, -0.026, 0.005]),
+      'lip.B.L.001': move([0.015, -0.041, 0.006]),
+      'chin.L': move([0.006, -0.015, 0.001]),
+      'chin.001': move([0, -0.012, 0.001]),
     }),
   },
   {
@@ -402,15 +402,15 @@ const controls: FacsControl[] = [
     group: 'Mouth',
     side: 'C',
     bones: {
-      'lip.T.L': move([0.008, 0.012, 0.03]),
-      'lip.T.R': move([-0.008, 0.012, 0.03]),
-      'lip.T.L.001': move([-0.03, 0.004, 0.036]),
-      'lip.T.R.001': move([0.03, 0.004, 0.036]),
-      'lip.B.L': move([0.008, -0.008, 0.032]),
-      'lip.B.R': move([-0.008, -0.008, 0.032]),
-      'lip.B.L.001': move([-0.032, -0.006, 0.038]),
-      'lip.B.R.001': move([0.032, -0.006, 0.038]),
-      chin: move([0, 0.012, 0.006]),
+      'lip.T.L': move([0.004, 0.006, 0.015]),
+      'lip.T.R': move([-0.004, 0.006, 0.015]),
+      'lip.T.L.001': move([-0.015, 0.002, 0.018]),
+      'lip.T.R.001': move([0.015, 0.002, 0.018]),
+      'lip.B.L': move([0.004, -0.004, 0.016]),
+      'lip.B.R': move([-0.004, -0.004, 0.016]),
+      'lip.B.L.001': move([-0.016, -0.003, 0.019]),
+      'lip.B.R.001': move([0.016, -0.003, 0.019]),
+      chin: move([0, 0.006, 0.003]),
     },
   },
   {
@@ -420,11 +420,11 @@ const controls: FacsControl[] = [
     group: 'Mouth',
     side: 'B',
     bones: leftRight({
-      'lip.T.L': move([0.024, -0.01, -0.014]),
-      'lip.T.L.001': move([0.096, -0.034, -0.03]),
-      'lip.B.L': move([0.024, -0.026, -0.004]),
-      'lip.B.L.001': move([0.09, -0.044, -0.026]),
-      'cheek.B.L': move([0.036, -0.038, -0.018]),
+      'lip.T.L': move([0.012, -0.005, -0.007]),
+      'lip.T.L.001': move([0.048, -0.017, -0.015]),
+      'lip.B.L': move([0.012, -0.013, -0.002]),
+      'lip.B.L.001': move([0.045, -0.022, -0.013]),
+      'cheek.B.L': move([0.018, -0.019, -0.009]),
     }),
   },
   {
@@ -434,10 +434,10 @@ const controls: FacsControl[] = [
     group: 'Mouth',
     side: 'B',
     bones: leftRight({
-      'lip.T.L': move([0.02, -0.022, -0.018]),
-      'lip.T.L.001': move([0.052, -0.034, -0.026]),
-      'lip.B.L': move([0.02, 0.024, -0.018]),
-      'lip.B.L.001': move([0.052, 0.028, -0.026]),
+      'lip.T.L': move([0.01, -0.011, -0.009]),
+      'lip.T.L.001': move([0.026, -0.017, -0.013]),
+      'lip.B.L': move([0.01, 0.012, -0.009]),
+      'lip.B.L.001': move([0.026, 0.014, -0.013]),
     }),
   },
   {
@@ -447,12 +447,12 @@ const controls: FacsControl[] = [
     group: 'Mouth',
     side: 'B',
     bones: leftRight({
-      'lip.T.L': move([0.006, -0.024, -0.018]),
-      'lip.T.L.001': move([0.028, -0.032, -0.028]),
-      'lip.B.L': move([0.006, 0.03, -0.018]),
-      'lip.B.L.001': move([0.03, 0.038, -0.028]),
-      chin: move([0, 0.02, -0.006]),
-      'chin.001': move([0, 0.024, -0.008]),
+      'lip.T.L': move([0.003, -0.012, -0.009]),
+      'lip.T.L.001': move([0.014, -0.016, -0.014]),
+      'lip.B.L': move([0.003, 0.015, -0.009]),
+      'lip.B.L.001': move([0.015, 0.019, -0.014]),
+      chin: move([0, 0.01, -0.003]),
+      'chin.001': move([0, 0.012, -0.004]),
     }),
   },
   {
@@ -462,18 +462,18 @@ const controls: FacsControl[] = [
     group: 'Jaw',
     side: 'C',
     bones: {
-      'lip.T.L': move([0, 0.028, 0.008]),
-      'lip.T.R': move([0, 0.028, 0.008]),
-      'lip.T.L.001': move([0, 0.016, 0.008]),
-      'lip.T.R.001': move([0, 0.016, 0.008]),
-      'lip.B.L': move([0, -0.046, 0.01]),
-      'lip.B.R': move([0, -0.046, 0.01]),
-      'lip.B.L.001': move([0, -0.038, 0.01]),
-      'lip.B.R.001': move([0, -0.038, 0.01]),
-      jaw: move([0, -0.018, -0.006]),
-      jaw_master: move([0, -0.01, -0.004]),
-      chin: move([0, -0.036, -0.002]),
-      'chin.001': move([0, -0.03, -0.002]),
+      'lip.T.L': move([0, 0.014, 0.004]),
+      'lip.T.R': move([0, 0.014, 0.004]),
+      'lip.T.L.001': move([0, 0.008, 0.004]),
+      'lip.T.R.001': move([0, 0.008, 0.004]),
+      'lip.B.L': move([0, -0.023, 0.005]),
+      'lip.B.R': move([0, -0.023, 0.005]),
+      'lip.B.L.001': move([0, -0.019, 0.005]),
+      'lip.B.R.001': move([0, -0.019, 0.005]),
+      jaw: move([0, -0.009, -0.003]),
+      jaw_master: move([0, -0.005, -0.002]),
+      chin: move([0, -0.018, -0.001]),
+      'chin.001': move([0, -0.015, -0.001]),
     },
   },
   {
@@ -484,20 +484,20 @@ const controls: FacsControl[] = [
     side: 'C',
     bones: combine(
       {
-        jaw: move([0, -0.048, -0.014]),
-        jaw_master: move([0, -0.026, -0.01]),
-        'jaw.L': move([0.008, -0.034, -0.01]),
-        'jaw.R': move([-0.008, -0.034, -0.01]),
-        'jaw.L.001': move([0.006, -0.056, -0.014]),
-        'jaw.R.001': move([-0.006, -0.056, -0.014]),
-        'lip.B.L': move([0.006, -0.104, 0.012]),
-        'lip.B.R': move([-0.006, -0.104, 0.012]),
-        'lip.B.L.001': move([0.006, -0.084, 0.014]),
-        'lip.B.R.001': move([-0.006, -0.084, 0.014]),
-        'lip.T.L': move([0.006, 0.034, 0.008]),
-        'lip.T.R': move([-0.006, 0.034, 0.008]),
+        jaw: move([0, -0.024, -0.007]),
+        jaw_master: move([0, -0.013, -0.005]),
+        'jaw.L': move([0.004, -0.017, -0.005]),
+        'jaw.R': move([-0.004, -0.017, -0.005]),
+        'jaw.L.001': move([0.003, -0.028, -0.007]),
+        'jaw.R.001': move([-0.003, -0.028, -0.007]),
+        'lip.B.L': move([0.003, -0.052, 0.006]),
+        'lip.B.R': move([-0.003, -0.052, 0.006]),
+        'lip.B.L.001': move([0.003, -0.042, 0.007]),
+        'lip.B.R.001': move([-0.003, -0.042, 0.007]),
+        'lip.T.L': move([0.003, 0.017, 0.004]),
+        'lip.T.R': move([-0.003, 0.017, 0.004]),
       },
-      assign(chin, move([0, -0.088, -0.01])),
+      assign(chin, move([0, -0.044, -0.005])),
     ),
   },
   {
@@ -507,24 +507,24 @@ const controls: FacsControl[] = [
     group: 'Jaw',
     side: 'C',
     bones: {
-      jaw: move([0, -0.06, -0.018]),
-      jaw_master: move([0, -0.032, -0.012]),
-      'jaw.L': move([0.01, -0.044, -0.012]),
-      'jaw.R': move([-0.01, -0.044, -0.012]),
-      'jaw.L.001': move([0.01, -0.07, -0.018]),
-      'jaw.R.001': move([-0.01, -0.07, -0.018]),
-      'lip.T.L': move([0.018, 0.052, 0.012]),
-      'lip.T.R': move([-0.018, 0.052, 0.012]),
-      'lip.T.L.001': move([0.026, 0.034, 0.014]),
-      'lip.T.R.001': move([-0.026, 0.034, 0.014]),
-      'lip.B.L': move([0.018, -0.128, 0.016]),
-      'lip.B.R': move([-0.018, -0.128, 0.016]),
-      'lip.B.L.001': move([0.024, -0.104, 0.018]),
-      'lip.B.R.001': move([-0.024, -0.104, 0.018]),
-      chin: move([0, -0.112, -0.014]),
-      'chin.001': move([0, -0.1, -0.012]),
-      'chin.L': move([0.018, -0.094, -0.012]),
-      'chin.R': move([-0.018, -0.094, -0.012]),
+      jaw: move([0, -0.03, -0.009]),
+      jaw_master: move([0, -0.016, -0.006]),
+      'jaw.L': move([0.005, -0.022, -0.006]),
+      'jaw.R': move([-0.005, -0.022, -0.006]),
+      'jaw.L.001': move([0.005, -0.035, -0.009]),
+      'jaw.R.001': move([-0.005, -0.035, -0.009]),
+      'lip.T.L': move([0.009, 0.026, 0.006]),
+      'lip.T.R': move([-0.009, 0.026, 0.006]),
+      'lip.T.L.001': move([0.013, 0.017, 0.007]),
+      'lip.T.R.001': move([-0.013, 0.017, 0.007]),
+      'lip.B.L': move([0.009, -0.064, 0.008]),
+      'lip.B.R': move([-0.009, -0.064, 0.008]),
+      'lip.B.L.001': move([0.012, -0.052, 0.009]),
+      'lip.B.R.001': move([-0.012, -0.052, 0.009]),
+      chin: move([0, -0.056, -0.007]),
+      'chin.001': move([0, -0.05, -0.006]),
+      'chin.L': move([0.009, -0.047, -0.006]),
+      'chin.R': move([-0.009, -0.047, -0.006]),
     },
   },
   {
@@ -536,7 +536,7 @@ const controls: FacsControl[] = [
     bones: leftRight(
       combine(
         eyeClosureLeft,
-        assign(cheekLeft, move([0.008, 0.018, 0.004])),
+        assign(cheekLeft, move([0.004, 0.009, 0.002])),
       ),
     ),
   },
@@ -548,14 +548,14 @@ const controls: FacsControl[] = [
     side: 'C',
     bones: combine(
       {
-        jaw: move([0, -0.004, 0.05]),
-        jaw_master: move([0, 0, 0.032]),
-        'jaw.L': move([0, -0.002, 0.034]),
-        'jaw.R': move([0, -0.002, 0.034]),
-        'jaw.L.001': move([0, -0.004, 0.042]),
-        'jaw.R.001': move([0, -0.004, 0.042]),
+        jaw: move([0, -0.002, 0.025]),
+        jaw_master: move([0, 0, 0.016]),
+        'jaw.L': move([0, -0.001, 0.017]),
+        'jaw.R': move([0, -0.001, 0.017]),
+        'jaw.L.001': move([0, -0.002, 0.021]),
+        'jaw.R.001': move([0, -0.002, 0.021]),
       },
-      assign(chin, move([0, -0.004, 0.04])),
+      assign(chin, move([0, -0.002, 0.02])),
     ),
   },
   {
@@ -566,14 +566,14 @@ const controls: FacsControl[] = [
     side: 'C',
     bones: combine(
       {
-        jaw: move([0.038, 0, 0]),
-        jaw_master: move([0.026, 0, 0]),
-        'jaw.L': move([0.036, 0, 0]),
-        'jaw.R': move([0.03, 0, 0]),
-        'jaw.L.001': move([0.042, 0, 0]),
-        'jaw.R.001': move([0.034, 0, 0]),
+        jaw: move([0.019, 0, 0]),
+        jaw_master: move([0.013, 0, 0]),
+        'jaw.L': move([0.018, 0, 0]),
+        'jaw.R': move([0.015, 0, 0]),
+        'jaw.L.001': move([0.021, 0, 0]),
+        'jaw.R.001': move([0.017, 0, 0]),
       },
-      assign(chin, move([0.036, 0, 0])),
+      assign(chin, move([0.018, 0, 0])),
     ),
   },
   {
@@ -584,14 +584,14 @@ const controls: FacsControl[] = [
     side: 'C',
     bones: combine(
       {
-        jaw: move([-0.038, 0, 0]),
-        jaw_master: move([-0.026, 0, 0]),
-        'jaw.L': move([-0.03, 0, 0]),
-        'jaw.R': move([-0.036, 0, 0]),
-        'jaw.L.001': move([-0.034, 0, 0]),
-        'jaw.R.001': move([-0.042, 0, 0]),
+        jaw: move([-0.019, 0, 0]),
+        jaw_master: move([-0.013, 0, 0]),
+        'jaw.L': move([-0.015, 0, 0]),
+        'jaw.R': move([-0.018, 0, 0]),
+        'jaw.L.001': move([-0.017, 0, 0]),
+        'jaw.R.001': move([-0.021, 0, 0]),
       },
-      assign(chin, move([-0.036, 0, 0])),
+      assign(chin, move([-0.018, 0, 0])),
     ),
   },
   {
@@ -603,20 +603,20 @@ const controls: FacsControl[] = [
     bones: combine(
       leftRight(
         combine(
-          assign(browInnerLeft, move([-0.04, -0.092, 0.006])),
-          assign(browMidLeft, move([-0.026, -0.056, 0])),
-          assign(browOuterLeft, move([0.012, -0.03, 0])),
+          assign(browInnerLeft, move([-0.02, -0.046, 0.003])),
+          assign(browMidLeft, move([-0.013, -0.028, 0])),
+          assign(browOuterLeft, move([0.006, -0.015, 0])),
           lidTightenLeft,
-          assign(cheekLeft, move([0.01, 0.016, 0.002])),
+          assign(cheekLeft, move([0.005, 0.008, 0.001])),
         ),
       ),
       {
-        'lip.T.L': move([-0.006, -0.018, -0.006]),
-        'lip.T.R': move([0.006, -0.018, -0.006]),
-        'lip.B.L': move([-0.008, 0.012, -0.008]),
-        'lip.B.R': move([0.008, 0.012, -0.008]),
-        chin: move([0, 0.02, -0.006]),
-        'chin.001': move([0, 0.018, -0.006]),
+        'lip.T.L': move([-0.003, -0.009, -0.003]),
+        'lip.T.R': move([0.003, -0.009, -0.003]),
+        'lip.B.L': move([-0.004, 0.006, -0.004]),
+        'lip.B.R': move([0.004, 0.006, -0.004]),
+        chin: move([0, 0.01, -0.003]),
+        'chin.001': move([0, 0.009, -0.003]),
       },
     ),
   },
@@ -628,14 +628,14 @@ const controls: FacsControl[] = [
     side: 'L',
     bones: combine(
       {
-        'lip.T.L': move([0.024, 0.076, 0.018]),
-        'lip.T.L.001': move([0.062, 0.114, 0.024]),
-        'lip.B.L': move([0.012, 0.018, -0.008]),
-        'lip.B.L.001': move([0.028, -0.026, -0.014]),
+        'lip.T.L': move([0.012, 0.038, 0.009]),
+        'lip.T.L.001': move([0.031, 0.057, 0.012]),
+        'lip.B.L': move([0.006, 0.009, -0.004]),
+        'lip.B.L.001': move([0.014, -0.013, -0.007]),
       },
-      assign(noseLeft, move([0.034, 0.06, -0.01])),
-      assign(['cheek.B.L', 'cheek.T.L'], move([0.036, 0.066, 0.014])),
-      assign(['lid.B.L.001', 'lid.B.L.002'], move([0, 0.014, 0])),
+      assign(noseLeft, move([0.017, 0.03, -0.005])),
+      assign(['cheek.B.L', 'cheek.T.L'], move([0.018, 0.033, 0.007])),
+      assign(['lid.B.L.001', 'lid.B.L.002'], move([0, 0.007, 0])),
     ),
   },
   {
@@ -645,16 +645,16 @@ const controls: FacsControl[] = [
     group: 'Performance',
     side: 'R',
     bones: mirrorMap({
-      'lip.T.L': move([0.024, 0.076, 0.018]),
-      'lip.T.L.001': move([0.062, 0.114, 0.024]),
-      'lip.B.L': move([0.012, 0.018, -0.008]),
-      'lip.B.L.001': move([0.028, -0.026, -0.014]),
-      'nose.L': move([0.034, 0.06, -0.01]),
-      'nose.L.001': move([0.034, 0.06, -0.01]),
-      'cheek.B.L': move([0.036, 0.066, 0.014]),
-      'cheek.T.L': move([0.036, 0.066, 0.014]),
-      'lid.B.L.001': move([0, 0.014, 0]),
-      'lid.B.L.002': move([0, 0.014, 0]),
+      'lip.T.L': move([0.012, 0.038, 0.009]),
+      'lip.T.L.001': move([0.031, 0.057, 0.012]),
+      'lip.B.L': move([0.006, 0.009, -0.004]),
+      'lip.B.L.001': move([0.014, -0.013, -0.007]),
+      'nose.L': move([0.017, 0.03, -0.005]),
+      'nose.L.001': move([0.017, 0.03, -0.005]),
+      'cheek.B.L': move([0.018, 0.033, 0.007]),
+      'cheek.T.L': move([0.018, 0.033, 0.007]),
+      'lid.B.L.001': move([0, 0.007, 0]),
+      'lid.B.L.002': move([0, 0.007, 0]),
     }),
   },
 ]
@@ -667,11 +667,9 @@ export const createNeutralFacsValues = (): FacsValues =>
 
 export const createFacsPresetValues = (values: Partial<FacsValues>): FacsValues => {
   const next = createNeutralFacsValues()
-
   for (const [id, value] of Object.entries(values)) {
     if (typeof value === 'number') next[id] = value
   }
-
   return next
 }
 
@@ -774,11 +772,9 @@ const addPose = (target: BonePose, source: BonePose, weight: number) => {
   if (source.position) {
     target.position = addTuple(target.position, source.position, weight)
   }
-
   if (source.worldPosition) {
     target.worldPosition = addTuple(target.worldPosition, source.worldPosition, weight)
   }
-
   if (source.rotation) {
     target.rotation = addTuple(target.rotation, source.rotation, weight)
   }
@@ -791,16 +787,8 @@ const getControlResponse = (values: FacsValues, controlId: string) => {
   const control = FACS_CONTROLS.find((item) => item.id === controlId)
   const max = control?.max ?? FACS_VALUE_MAX
   const value = clamp(values[controlId] ?? 0, 0, max)
-
-  if (value <= FACS_AUTHORED_VALUE) {
-    return (value / FACS_AUTHORED_VALUE) * FACS_AUTHORED_RESPONSE
-  }
-
-  const overdrive = value - FACS_AUTHORED_VALUE
-  const overdriveRange = Math.max(max - FACS_AUTHORED_VALUE, 0.001)
-  const easedOverdrive = 1 - Math.exp((-3 * overdrive) / overdriveRange)
-
-  return FACS_AUTHORED_RESPONSE + easedOverdrive * FACS_OVERDRIVE_RESPONSE
+  // Linear 0→1 over the authored range. No overdrive needed since we've calibrated bone values.
+  return value / FACS_AUTHORED_VALUE
 }
 
 const addDentalFollow = (pose: PoseMap, values: FacsValues) => {
@@ -808,13 +796,12 @@ const addDentalFollow = (pose: PoseMap, values: FacsValues) => {
   const jawDrop = getControlResponse(values, 'au26_jaw_drop')
   const mouthStretch = getControlResponse(values, 'au27_mouth_stretch')
   const lowerLipDepressor = getControlResponse(values, 'au16_lower_lip_depressor')
-  const upperLipRaise =
-    Math.max(
-      getControlResponse(values, 'au10_upper_lip_raiser_l'),
-      getControlResponse(values, 'au10_upper_lip_raiser_r'),
-      getControlResponse(values, 'snarl_l'),
-      getControlResponse(values, 'snarl_r'),
-    )
+  const upperLipRaise = Math.max(
+    getControlResponse(values, 'au10_upper_lip_raiser_l'),
+    getControlResponse(values, 'au10_upper_lip_raiser_r'),
+    getControlResponse(values, 'snarl_l'),
+    getControlResponse(values, 'snarl_r'),
+  )
   const smile = Math.max(
     getControlResponse(values, 'au12_lip_corner_puller_l'),
     getControlResponse(values, 'au12_lip_corner_puller_r'),
@@ -827,18 +814,18 @@ const addDentalFollow = (pose: PoseMap, values: FacsValues) => {
   const jawLeft = getControlResponse(values, 'jaw_left')
   const jawRight = getControlResponse(values, 'jaw_right')
   const jawSide = jawLeft - jawRight
-  const jawOpen = clamp(lipsPart * 0.35 + jawDrop * 0.8 + mouthStretch, 0, 3)
-  const upperReveal = clamp(upperLipRaise * 0.75 + smile * 0.18 + jawOpen * 0.22, 0, 3)
-  const lowerReveal = clamp(lowerLipDepressor * 0.45 + cornerDepress * 0.22 + jawOpen * 0.85, 0, 3)
+  const jawOpen = clamp(lipsPart * 0.35 + jawDrop * 0.8 + mouthStretch, 0, 2)
+  const upperReveal = clamp(upperLipRaise * 0.75 + smile * 0.18 + jawOpen * 0.22, 0, 2)
+  const lowerReveal = clamp(lowerLipDepressor * 0.45 + cornerDepress * 0.22 + jawOpen * 0.85, 0, 2)
 
   if (upperReveal > 0.001 || jawOpen > 0.001) {
     pose['teeth.T'] ??= {}
     addPose(
       pose['teeth.T'],
       move([
-        jawSide * 0.004,
-        upperReveal * 0.022 + jawOpen * 0.01,
-        upperReveal * -0.006 + jawForward * 0.006,
+        jawSide * 0.002,
+        upperReveal * 0.011 + jawOpen * 0.005,
+        upperReveal * -0.003 + jawForward * 0.003,
       ]),
       1,
     )
@@ -849,9 +836,9 @@ const addDentalFollow = (pose: PoseMap, values: FacsValues) => {
     addPose(
       pose['teeth.B'],
       move([
-        jawSide * 0.028,
-        lowerReveal * -0.052,
-        jawForward * 0.024 - jawOpen * 0.01,
+        jawSide * 0.014,
+        lowerReveal * -0.026,
+        jawForward * 0.012 - jawOpen * 0.005,
       ]),
       1,
     )
@@ -859,42 +846,91 @@ const addDentalFollow = (pose: PoseMap, values: FacsValues) => {
 }
 
 export function buildFacsMorphs(values: FacsValues): MorphPose {
-  const browDown = Math.max(
-    getControlResponse(values, 'au04_brow_lowerer') * 0.78,
-    getControlResponse(values, 'brow_compress') * 0.68,
-    getControlResponse(values, 'glare') * 0.58,
-    getControlResponse(values, 'scowl') * 0.78,
-  )
-  const browInnerUp = getControlResponse(values, 'au01_inner_brow_raiser') * 0.72
-  const browOuterUp = getControlResponse(values, 'au02_outer_brow_raiser') * 0.72
-  const eyeBlink = getControlResponse(values, 'au43_eye_closure') * 0.9
-  const eyeSquint = Math.max(
-    getControlResponse(values, 'au07_lid_tightener') * 0.74,
-    getControlResponse(values, 'glare') * 0.64,
-    getControlResponse(values, 'scowl') * 0.42,
-    getControlResponse(values, 'au06_cheek_raiser') * 0.32,
-  )
-  const eyeWide = getControlResponse(values, 'au05_upper_lid_raiser') * 0.8
-  const jawOpen =
-    getControlResponse(values, 'au25_lips_part') * 0.24 +
-    getControlResponse(values, 'au26_jaw_drop') * 0.68 +
-    getControlResponse(values, 'au27_mouth_stretch') * 0.92
-  const jawForward = getControlResponse(values, 'jaw_forward') * 0.88
-  const jawLeft =
-    getControlResponse(values, 'jaw_left') * 0.9 - getControlResponse(values, 'jaw_right') * 0.9
+  const r = (id: string) => getControlResponse(values, id)
+
+  const browDown = Math.max(r('au04_brow_lowerer'), r('brow_compress') * 0.88, r('glare') * 0.74, r('scowl'))
+  const browInnerUp = r('au01_inner_brow_raiser')
+  const browOuterUpL = r('au02_outer_brow_raiser')
+  const browOuterUpR = r('au02_outer_brow_raiser')
+  const eyeBlinkL = r('au43_eye_closure')
+  const eyeBlinkR = r('au43_eye_closure')
+  const eyeSquintL = Math.max(r('au07_lid_tightener'), r('glare') * 0.82, r('scowl') * 0.54, r('au06_cheek_raiser') * 0.41)
+  const eyeSquintR = eyeSquintL
+  const eyeWideL = r('au05_upper_lid_raiser')
+  const eyeWideR = eyeWideL
+  const jawOpen = saturate(r('au25_lips_part') * 0.24 + r('au26_jaw_drop') * 0.68 + r('au27_mouth_stretch') * 0.92)
+  const jawForward = saturate(r('jaw_forward'))
+  const jawLR = clamp(r('jaw_left') - r('jaw_right'), -1, 1)
+
+  const smileL = r('au12_lip_corner_puller_l')
+  const smileR = r('au12_lip_corner_puller_r')
+  const frownL = r('au15_lip_corner_depressor_l')
+  const frownR = r('au15_lip_corner_depressor_r')
+  const upperUpL = Math.max(r('au10_upper_lip_raiser_l'), r('snarl_l') * 0.88)
+  const upperUpR = Math.max(r('au10_upper_lip_raiser_r'), r('snarl_r') * 0.88)
+  const lowerDownL = r('au16_lower_lip_depressor')
+  const lowerDownR = r('au16_lower_lip_depressor')
+  const pucker = r('au18_lip_pucker')
+  const funnel = r('au18_lip_pucker') * 0.6
+  const stretch = r('au20_lip_stretcher')
+  const press = r('au24_lip_pressor')
+  const dimple = r('au14_dimpler')
+  const rollLower = r('au24_lip_pressor') * 0.5 + r('au23_lip_tightener') * 0.4
+  const rollUpper = r('au24_lip_pressor') * 0.5 + r('au23_lip_tightener') * 0.4
+  const shrugLower = r('au17_chin_raiser') * 0.6
+  const shrugUpper = r('au09_nose_wrinkler') * 0.38
+  const noseSneerL = Math.max(r('au09_nose_wrinkler'), r('snarl_l') * 0.72)
+  const noseSneerR = Math.max(r('au09_nose_wrinkler'), r('snarl_r') * 0.72)
+  const cheekSquintL = Math.max(r('au06_cheek_raiser'), r('au12_lip_corner_puller_l') * 0.44)
+  const cheekSquintR = Math.max(r('au06_cheek_raiser'), r('au12_lip_corner_puller_r') * 0.44)
+  const cheekPuff = r('au18_lip_pucker') * 0.28
+  const mouthClose = r('au24_lip_pressor') * 0.45 + r('au23_lip_tightener') * 0.35
+  const mouthLeft = saturate(jawLR > 0 ? jawLR * 0.5 : 0)
+  const mouthRight = saturate(jawLR < 0 ? -jawLR * 0.5 : 0)
 
   return {
     browDownLeft: saturate(browDown),
     browDownRight: saturate(browDown),
     browInnerUp: saturate(browInnerUp),
-    browOuterUpLeft: saturate(browOuterUp),
-    browOuterUpRight: saturate(browOuterUp),
-    eyeBlinkLeft: saturate(eyeBlink),
-    eyeSquintLeft: saturate(eyeSquint),
-    eyeWideLeft: saturate(eyeWide),
+    browOuterUpLeft: saturate(browOuterUpL),
+    browOuterUpRight: saturate(browOuterUpR),
+    eyeBlinkLeft: saturate(eyeBlinkL),
+    eyeBlinkRight: saturate(eyeBlinkR),
+    eyeSquintLeft: saturate(eyeSquintL),
+    eyeSquintRight: saturate(eyeSquintR),
+    eyeWideLeft: saturate(eyeWideL),
+    eyeWideRight: saturate(eyeWideR),
     jawForward: saturate(jawForward),
-    jawLeft: clamp(jawLeft, -1, 1),
+    jawLeft: saturate(mouthLeft),
+    jawRight: saturate(mouthRight),
     jawOpen: saturate(jawOpen),
+    mouthClose: saturate(mouthClose),
+    mouthDimpleLeft: saturate(dimple),
+    mouthDimpleRight: saturate(dimple),
+    mouthFrownLeft: saturate(frownL),
+    mouthFrownRight: saturate(frownR),
+    mouthFunnel: saturate(funnel),
+    mouthLeft: mouthLeft,
+    mouthRight: mouthRight,
+    mouthLowerDownLeft: saturate(lowerDownL),
+    mouthLowerDownRight: saturate(lowerDownR),
+    mouthPressLeft: saturate(press),
+    mouthPressRight: saturate(press),
+    mouthPucker: saturate(pucker),
+    mouthRollLower: saturate(rollLower),
+    mouthRollUpper: saturate(rollUpper),
+    mouthShrugLower: saturate(shrugLower),
+    mouthSmileLeft: saturate(smileL),
+    mouthSmileRight: saturate(smileR),
+    mouthStretchLeft: saturate(stretch),
+    mouthStretchRight: saturate(stretch),
+    moutherUpperUpLeft: saturate(upperUpL),
+    mouthUpperUpRight: saturate(upperUpR),
+    noseSneerLeft: saturate(noseSneerL),
+    noseSneerRight: saturate(noseSneerR),
+    cheekSquintLeft: saturate(cheekSquintL),
+    cheekSquintRight: saturate(cheekSquintR),
+    cheekPuff: saturate(cheekPuff),
   }
 }
 
