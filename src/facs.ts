@@ -116,49 +116,87 @@ const eyeClosureLeft = {
   'lid.B.L.003': move([0, 0.02, 0.002]),
 }
 
+// Helper: left-only bones from a leftRight definition
+const leftOnly = (left: PoseMap): PoseMap => left
+const rightOnly = (left: PoseMap): PoseMap => mirrorMap(left)
+
 const controls: FacsControl[] = [
+  // AU01 — split L/R
   {
-    id: 'au01_inner_brow_raiser',
+    id: 'au01_inner_brow_raiser_l',
     au: 'AU01',
-    label: 'Inner Brow Raiser',
+    label: 'Inner Brow Raiser L',
     group: 'Brows',
-    side: 'B',
-    bones: leftRight(
-      combine(
-        assign(browInnerLeft, move([0.008, 0.06, 0.008])),
-        assign(browMidLeft, move([0.002, 0.022, 0.003])),
-        assign(foreheadLeft, move([0.003, 0.026, 0.003])),
-      ),
-    ),
+    side: 'L',
+    bones: leftOnly(combine(
+      assign(browInnerLeft, move([0.008, 0.06, 0.008])),
+      assign(browMidLeft, move([0.002, 0.022, 0.003])),
+      assign(foreheadLeft, move([0.003, 0.026, 0.003])),
+    )),
   },
   {
-    id: 'au02_outer_brow_raiser',
+    id: 'au01_inner_brow_raiser_r',
+    au: 'AU01',
+    label: 'Inner Brow Raiser R',
+    group: 'Brows',
+    side: 'R',
+    bones: rightOnly(combine(
+      assign(browInnerLeft, move([0.008, 0.06, 0.008])),
+      assign(browMidLeft, move([0.002, 0.022, 0.003])),
+      assign(foreheadLeft, move([0.003, 0.026, 0.003])),
+    )),
+  },
+  // AU02 — split L/R
+  {
+    id: 'au02_outer_brow_raiser_l',
     au: 'AU02',
-    label: 'Outer Brow Raiser',
+    label: 'Outer Brow Raiser L',
     group: 'Brows',
-    side: 'B',
-    bones: leftRight(
-      combine(
-        assign(browOuterLeft, move([0.009, 0.065, 0.008])),
-        assign(browMidLeft, move([0.003, 0.026, 0.004])),
-        assign(foreheadLeft, move([0.007, 0.028, 0.003])),
-      ),
-    ),
+    side: 'L',
+    bones: leftOnly(combine(
+      assign(browOuterLeft, move([0.009, 0.065, 0.008])),
+      assign(browMidLeft, move([0.003, 0.026, 0.004])),
+      assign(foreheadLeft, move([0.007, 0.028, 0.003])),
+    )),
   },
   {
-    id: 'au04_brow_lowerer',
-    au: 'AU04',
-    label: 'Brow Lowerer',
+    id: 'au02_outer_brow_raiser_r',
+    au: 'AU02',
+    label: 'Outer Brow Raiser R',
     group: 'Brows',
-    side: 'B',
-    bones: leftRight(
-      combine(
-        assign(browInnerLeft, move([-0.026, -0.058, 0.002])),
-        assign(browMidLeft, move([-0.013, -0.032, 0])),
-        assign(browOuterLeft, move([0.009, -0.024, 0])),
-        assign(foreheadLeft, move([-0.009, -0.023, 0.002])),
-      ),
-    ),
+    side: 'R',
+    bones: rightOnly(combine(
+      assign(browOuterLeft, move([0.009, 0.065, 0.008])),
+      assign(browMidLeft, move([0.003, 0.026, 0.004])),
+      assign(foreheadLeft, move([0.007, 0.028, 0.003])),
+    )),
+  },
+  // AU04 — split L/R
+  {
+    id: 'au04_brow_lowerer_l',
+    au: 'AU04',
+    label: 'Brow Lowerer L',
+    group: 'Brows',
+    side: 'L',
+    bones: leftOnly(combine(
+      assign(browInnerLeft, move([-0.026, -0.058, 0.002])),
+      assign(browMidLeft, move([-0.013, -0.032, 0])),
+      assign(browOuterLeft, move([0.009, -0.024, 0])),
+      assign(foreheadLeft, move([-0.009, -0.023, 0.002])),
+    )),
+  },
+  {
+    id: 'au04_brow_lowerer_r',
+    au: 'AU04',
+    label: 'Brow Lowerer R',
+    group: 'Brows',
+    side: 'R',
+    bones: rightOnly(combine(
+      assign(browInnerLeft, move([-0.026, -0.058, 0.002])),
+      assign(browMidLeft, move([-0.013, -0.032, 0])),
+      assign(browOuterLeft, move([0.009, -0.024, 0])),
+      assign(foreheadLeft, move([-0.009, -0.023, 0.002])),
+    )),
   },
   {
     id: 'brow_compress',
@@ -174,60 +212,91 @@ const controls: FacsControl[] = [
       ),
     ),
   },
+  // AU05 — split L/R
   {
-    id: 'au05_upper_lid_raiser',
+    id: 'au05_upper_lid_raiser_l',
     au: 'AU05',
-    label: 'Upper Lid Raiser',
+    label: 'Upper Lid Raiser L',
     group: 'Eyes',
-    side: 'B',
-    bones: leftRight(
-      combine(
-        upperLidRaiseLeft,
-        assign(browMidLeft, move([0.002, 0.012, 0])),
-      ),
-    ),
+    side: 'L',
+    bones: leftOnly(combine(upperLidRaiseLeft, assign(browMidLeft, move([0.002, 0.012, 0])))),
   },
   {
-    id: 'au06_cheek_raiser',
+    id: 'au05_upper_lid_raiser_r',
+    au: 'AU05',
+    label: 'Upper Lid Raiser R',
+    group: 'Eyes',
+    side: 'R',
+    bones: rightOnly(combine(upperLidRaiseLeft, assign(browMidLeft, move([0.002, 0.012, 0])))),
+  },
+  // AU06 — split L/R
+  {
+    id: 'au06_cheek_raiser_l',
     au: 'AU06',
-    label: 'Cheek Raiser',
+    label: 'Cheek Raiser L',
     group: 'Midface',
-    side: 'B',
-    bones: leftRight(
-      combine(
-        assign(cheekLeft, move([0.026, 0.052, 0.017])),
-        assign(lidBottomLeft, move([0.001, 0.026, 0.002])),
-        assign(lidTopLeft, move([0, -0.013, 0.001])),
-      ),
-    ),
+    side: 'L',
+    bones: leftOnly(combine(
+      assign(cheekLeft, move([0.026, 0.052, 0.017])),
+      assign(lidBottomLeft, move([0.001, 0.026, 0.002])),
+      assign(lidTopLeft, move([0, -0.013, 0.001])),
+    )),
   },
   {
-    id: 'au07_lid_tightener',
+    id: 'au06_cheek_raiser_r',
+    au: 'AU06',
+    label: 'Cheek Raiser R',
+    group: 'Midface',
+    side: 'R',
+    bones: rightOnly(combine(
+      assign(cheekLeft, move([0.026, 0.052, 0.017])),
+      assign(lidBottomLeft, move([0.001, 0.026, 0.002])),
+      assign(lidTopLeft, move([0, -0.013, 0.001])),
+    )),
+  },
+  // AU07 — split L/R
+  {
+    id: 'au07_lid_tightener_l',
     au: 'AU07',
-    label: 'Lid Tightener',
+    label: 'Lid Tightener L',
     group: 'Eyes',
-    side: 'B',
-    bones: leftRight(
-      combine(
-        lidTightenLeft,
-        assign(cheekLeft, move([0.009, 0.018, 0.005])),
-      ),
-    ),
+    side: 'L',
+    bones: leftOnly(combine(lidTightenLeft, assign(cheekLeft, move([0.009, 0.018, 0.005])))),
   },
   {
-    id: 'glare',
-    au: 'CTRL',
-    label: 'Glare',
+    id: 'au07_lid_tightener_r',
+    au: 'AU07',
+    label: 'Lid Tightener R',
     group: 'Eyes',
-    side: 'B',
-    bones: leftRight(
-      combine(
-        lidTightenLeft,
-        assign(browInnerLeft, move([-0.009, -0.025, 0.001])),
-        assign(browMidLeft, move([-0.006, -0.019, 0])),
-        assign(cheekLeft, move([0.005, 0.011, 0.002])),
-      ),
-    ),
+    side: 'R',
+    bones: rightOnly(combine(lidTightenLeft, assign(cheekLeft, move([0.009, 0.018, 0.005])))),
+  },
+  // Glare — split L/R
+  {
+    id: 'glare_l',
+    au: 'CTRL',
+    label: 'Glare L',
+    group: 'Eyes',
+    side: 'L',
+    bones: leftOnly(combine(
+      lidTightenLeft,
+      assign(browInnerLeft, move([-0.009, -0.025, 0.001])),
+      assign(browMidLeft, move([-0.006, -0.019, 0])),
+      assign(cheekLeft, move([0.005, 0.011, 0.002])),
+    )),
+  },
+  {
+    id: 'glare_r',
+    au: 'CTRL',
+    label: 'Glare R',
+    group: 'Eyes',
+    side: 'R',
+    bones: rightOnly(combine(
+      lidTightenLeft,
+      assign(browInnerLeft, move([-0.009, -0.025, 0.001])),
+      assign(browMidLeft, move([-0.006, -0.019, 0])),
+      assign(cheekLeft, move([0.005, 0.011, 0.002])),
+    )),
   },
   {
     id: 'au09_nose_wrinkler',
@@ -333,12 +402,25 @@ const controls: FacsControl[] = [
     }),
   },
   {
-    id: 'au14_dimpler',
+    id: 'au14_dimpler_l',
     au: 'AU14',
-    label: 'Dimpler',
+    label: 'Dimpler L',
     group: 'Mouth',
-    side: 'B',
-    bones: leftRight({
+    side: 'L',
+    bones: leftOnly({
+      'lip.T.L.001': move([0.022, -0.006, -0.009]),
+      'lip.B.L.001': move([0.026, -0.006, -0.009]),
+      'cheek.B.L': move([0.014, 0.012, -0.006]),
+      'cheek.T.L': move([0.011, 0.013, -0.006]),
+    }),
+  },
+  {
+    id: 'au14_dimpler_r',
+    au: 'AU14',
+    label: 'Dimpler R',
+    group: 'Mouth',
+    side: 'R',
+    bones: rightOnly({
       'lip.T.L.001': move([0.022, -0.006, -0.009]),
       'lip.B.L.001': move([0.026, -0.006, -0.009]),
       'cheek.B.L': move([0.014, 0.012, -0.006]),
@@ -391,12 +473,25 @@ const controls: FacsControl[] = [
     ),
   },
   {
-    id: 'au16_lower_lip_depressor',
+    id: 'au16_lower_lip_depressor_l',
     au: 'AU16',
-    label: 'Lower Lip Depressor',
+    label: 'Lower Lip Depressor L',
     group: 'Mouth',
-    side: 'B',
-    bones: leftRight({
+    side: 'L',
+    bones: leftOnly({
+      'lip.B.L': move([0.005, -0.026, 0.005]),
+      'lip.B.L.001': move([0.015, -0.041, 0.006]),
+      'chin.L': move([0.006, -0.015, 0.001]),
+      'chin.001': move([0, -0.012, 0.001]),
+    }),
+  },
+  {
+    id: 'au16_lower_lip_depressor_r',
+    au: 'AU16',
+    label: 'Lower Lip Depressor R',
+    group: 'Mouth',
+    side: 'R',
+    bones: rightOnly({
       'lip.B.L': move([0.005, -0.026, 0.005]),
       'lip.B.L.001': move([0.015, -0.041, 0.006]),
       'chin.L': move([0.006, -0.015, 0.001]),
@@ -422,12 +517,26 @@ const controls: FacsControl[] = [
     },
   },
   {
-    id: 'au20_lip_stretcher',
+    id: 'au20_lip_stretcher_l',
     au: 'AU20',
-    label: 'Lip Stretcher',
+    label: 'Lip Stretcher L',
     group: 'Mouth',
-    side: 'B',
-    bones: leftRight({
+    side: 'L',
+    bones: leftOnly({
+      'lip.T.L': move([0.012, -0.005, -0.007]),
+      'lip.T.L.001': move([0.048, -0.017, -0.015]),
+      'lip.B.L': move([0.012, -0.013, -0.002]),
+      'lip.B.L.001': move([0.045, -0.022, -0.013]),
+      'cheek.B.L': move([0.018, -0.019, -0.009]),
+    }),
+  },
+  {
+    id: 'au20_lip_stretcher_r',
+    au: 'AU20',
+    label: 'Lip Stretcher R',
+    group: 'Mouth',
+    side: 'R',
+    bones: rightOnly({
       'lip.T.L': move([0.012, -0.005, -0.007]),
       'lip.T.L.001': move([0.048, -0.017, -0.015]),
       'lip.B.L': move([0.012, -0.013, -0.002]),
@@ -536,17 +645,20 @@ const controls: FacsControl[] = [
     },
   },
   {
-    id: 'au43_eye_closure',
+    id: 'au43_eye_closure_l',
     au: 'AU43',
-    label: 'Eye Closure',
+    label: 'Eye Closure L',
     group: 'Eyes',
-    side: 'B',
-    bones: leftRight(
-      combine(
-        eyeClosureLeft,
-        assign(cheekLeft, move([0.004, 0.009, 0.002])),
-      ),
-    ),
+    side: 'L',
+    bones: leftOnly(combine(eyeClosureLeft, assign(cheekLeft, move([0.004, 0.009, 0.002])))),
+  },
+  {
+    id: 'au43_eye_closure_r',
+    au: 'AU43',
+    label: 'Eye Closure R',
+    group: 'Eyes',
+    side: 'R',
+    bones: rightOnly(combine(eyeClosureLeft, assign(cheekLeft, move([0.004, 0.009, 0.002])))),
   },
   {
     id: 'jaw_forward',
@@ -778,19 +890,18 @@ export const FACS_PRESETS: FacsPreset[] = [
     id: 'happy',
     label: 'Happy',
     values: {
-      au06_cheek_raiser: 2.2,
-      au07_lid_tightener: 0.8,
-      au12_lip_corner_puller_l: 2.6,
-      au12_lip_corner_puller_r: 2.6,
+      au06_cheek_raiser_l: 2.2, au06_cheek_raiser_r: 2.2,
+      au07_lid_tightener_l: 0.8, au07_lid_tightener_r: 0.8,
+      au12_lip_corner_puller_l: 2.6, au12_lip_corner_puller_r: 2.6,
     },
   },
   {
     id: 'angry',
     label: 'Angry',
     values: {
-      au04_brow_lowerer: 2.4,
+      au04_brow_lowerer_l: 2.4, au04_brow_lowerer_r: 2.4,
       brow_compress: 2.0,
-      glare: 1.6,
+      glare_l: 1.6, glare_r: 1.6,
       scowl: 1.8,
       au23_lip_tightener: 0.4,
       au38_nostril_dilator: 1.0,
@@ -800,21 +911,20 @@ export const FACS_PRESETS: FacsPreset[] = [
     id: 'sad',
     label: 'Sad',
     values: {
-      au01_inner_brow_raiser: 1.8,
-      au04_brow_lowerer: 0.6,
-      au15_lip_corner_depressor_l: 1.6,
-      au15_lip_corner_depressor_r: 1.6,
+      au01_inner_brow_raiser_l: 1.8, au01_inner_brow_raiser_r: 1.8,
+      au04_brow_lowerer_l: 0.6, au04_brow_lowerer_r: 0.6,
+      au15_lip_corner_depressor_l: 1.6, au15_lip_corner_depressor_r: 1.6,
       au17_chin_raiser: 0.8,
-      au43_eye_closure: 0.4,
+      au43_eye_closure_l: 0.4, au43_eye_closure_r: 0.4,
     },
   },
   {
     id: 'surprise',
     label: 'Surprise',
     values: {
-      au01_inner_brow_raiser: 2.0,
-      au02_outer_brow_raiser: 2.2,
-      au05_upper_lid_raiser: 2.0,
+      au01_inner_brow_raiser_l: 2.0, au01_inner_brow_raiser_r: 2.0,
+      au02_outer_brow_raiser_l: 2.2, au02_outer_brow_raiser_r: 2.2,
+      au05_upper_lid_raiser_l: 2.0, au05_upper_lid_raiser_r: 2.0,
       au25_lips_part: 1.2,
       au26_jaw_drop: 1.8,
     },
@@ -823,11 +933,11 @@ export const FACS_PRESETS: FacsPreset[] = [
     id: 'fear',
     label: 'Fear',
     values: {
-      au01_inner_brow_raiser: 2.2,
-      au02_outer_brow_raiser: 1.4,
-      au04_brow_lowerer: 0.5,
-      au05_upper_lid_raiser: 1.8,
-      au20_lip_stretcher: 1.4,
+      au01_inner_brow_raiser_l: 2.2, au01_inner_brow_raiser_r: 2.2,
+      au02_outer_brow_raiser_l: 1.4, au02_outer_brow_raiser_r: 1.4,
+      au04_brow_lowerer_l: 0.5, au04_brow_lowerer_r: 0.5,
+      au05_upper_lid_raiser_l: 1.8, au05_upper_lid_raiser_r: 1.8,
+      au20_lip_stretcher_l: 1.4, au20_lip_stretcher_r: 1.4,
       au25_lips_part: 1.0,
       au26_jaw_drop: 0.8,
     },
@@ -837,10 +947,9 @@ export const FACS_PRESETS: FacsPreset[] = [
     label: 'Disgust',
     values: {
       au09_nose_wrinkler: 1.8,
-      au10_upper_lip_raiser_l: 1.4,
-      au10_upper_lip_raiser_r: 0.8,
+      au10_upper_lip_raiser_l: 1.4, au10_upper_lip_raiser_r: 0.8,
       snarl_l: 1.4,
-      au04_brow_lowerer: 0.8,
+      au04_brow_lowerer_l: 0.8, au04_brow_lowerer_r: 0.8,
       au15_lip_corner_depressor_r: 0.9,
     },
   },
@@ -849,7 +958,7 @@ export const FACS_PRESETS: FacsPreset[] = [
     label: 'Snarl',
     values: {
       scowl: 1.4,
-      glare: 1.2,
+      glare_l: 1.2, glare_r: 1.2,
       au09_nose_wrinkler: 1.4,
       snarl_l: 2.0,
       au24_lip_pressor: 0.6,
@@ -895,7 +1004,7 @@ const addDentalFollow = (pose: PoseMap, values: FacsValues) => {
   const lipsPart = getControlResponse(values, 'au25_lips_part')
   const jawDrop = getControlResponse(values, 'au26_jaw_drop')
   const mouthStretch = getControlResponse(values, 'au27_mouth_stretch')
-  const lowerLipDepressor = getControlResponse(values, 'au16_lower_lip_depressor')
+  const lowerLipDepressor = Math.max(getControlResponse(values, 'au16_lower_lip_depressor_l'), getControlResponse(values, 'au16_lower_lip_depressor_r'))
   const upperLipRaise = Math.max(
     getControlResponse(values, 'au10_upper_lip_raiser_l'),
     getControlResponse(values, 'au10_upper_lip_raiser_r'),
@@ -948,16 +1057,18 @@ const addDentalFollow = (pose: PoseMap, values: FacsValues) => {
 export function buildFacsMorphs(values: FacsValues): MorphPose {
   const r = (id: string) => getControlResponse(values, id)
 
-  const browDown = Math.max(r('au04_brow_lowerer'), r('brow_compress') * 0.88, r('glare') * 0.74, r('scowl'))
-  const browInnerUp = r('au01_inner_brow_raiser')
-  const browOuterUpL = r('au02_outer_brow_raiser')
-  const browOuterUpR = r('au02_outer_brow_raiser')
-  const eyeBlinkL = r('au43_eye_closure')
-  const eyeBlinkR = r('au43_eye_closure')
-  const eyeSquintL = Math.max(r('au07_lid_tightener'), r('glare') * 0.82, r('scowl') * 0.54, r('au06_cheek_raiser') * 0.41)
-  const eyeSquintR = eyeSquintL
-  const eyeWideL = r('au05_upper_lid_raiser')
-  const eyeWideR = eyeWideL
+  const browDownL = Math.max(r('au04_brow_lowerer_l'), r('brow_compress') * 0.88, r('glare_l') * 0.74, r('scowl'))
+  const browDownR = Math.max(r('au04_brow_lowerer_r'), r('brow_compress') * 0.88, r('glare_r') * 0.74, r('scowl'))
+  const browInnerUpL = r('au01_inner_brow_raiser_l')
+  const browInnerUpR = r('au01_inner_brow_raiser_r')
+  const browOuterUpL = r('au02_outer_brow_raiser_l')
+  const browOuterUpR = r('au02_outer_brow_raiser_r')
+  const eyeBlinkL = r('au43_eye_closure_l')
+  const eyeBlinkR = r('au43_eye_closure_r')
+  const eyeSquintL = Math.max(r('au07_lid_tightener_l'), r('glare_l') * 0.82, r('scowl') * 0.54, r('au06_cheek_raiser_l') * 0.41)
+  const eyeSquintR = Math.max(r('au07_lid_tightener_r'), r('glare_r') * 0.82, r('scowl') * 0.54, r('au06_cheek_raiser_r') * 0.41)
+  const eyeWideL = r('au05_upper_lid_raiser_l')
+  const eyeWideR = r('au05_upper_lid_raiser_r')
   const jawOpen = saturate(r('au25_lips_part') * 0.24 + r('au26_jaw_drop') * 0.68 + r('au27_mouth_stretch') * 0.92)
   const jawForward = saturate(r('jaw_forward'))
   const jawLR = clamp(r('jaw_left') - r('jaw_right'), -1, 1)
@@ -968,21 +1079,23 @@ export function buildFacsMorphs(values: FacsValues): MorphPose {
   const frownR = r('au15_lip_corner_depressor_r')
   const upperUpL = Math.max(r('au10_upper_lip_raiser_l'), r('snarl_l') * 0.88)
   const upperUpR = Math.max(r('au10_upper_lip_raiser_r'), r('snarl_r') * 0.88)
-  const lowerDownL = r('au16_lower_lip_depressor')
-  const lowerDownR = r('au16_lower_lip_depressor')
+  const lowerDownL = r('au16_lower_lip_depressor_l')
+  const lowerDownR = r('au16_lower_lip_depressor_r')
   const pucker = r('au18_lip_pucker')
   const funnel = saturate(Math.max(r('mouth_funnel'), r('au18_lip_pucker') * 0.55))
-  const stretch = r('au20_lip_stretcher')
+  const stretchL = r('au20_lip_stretcher_l')
+  const stretchR = r('au20_lip_stretcher_r')
   const press = r('au24_lip_pressor')
-  const dimple = r('au14_dimpler')
+  const dimpleL = r('au14_dimpler_l')
+  const dimpleR = r('au14_dimpler_r')
   const rollLower = saturate(r('au24_lip_pressor') * 0.5 + r('au23_lip_tightener') * 0.4 + r('lip_roll_lower') + r('lips_bite') * 0.7)
   const rollUpper = saturate(r('au24_lip_pressor') * 0.5 + r('au23_lip_tightener') * 0.4 + r('lip_roll_upper'))
   const shrugLower = saturate(r('au17_chin_raiser') * 0.6 + r('mouth_suck') * 0.5)
   const shrugUpper = r('au09_nose_wrinkler') * 0.38
   const noseSneerL = Math.max(r('au09_nose_wrinkler'), r('snarl_l') * 0.72)
   const noseSneerR = Math.max(r('au09_nose_wrinkler'), r('snarl_r') * 0.72)
-  const cheekSquintL = Math.max(r('au06_cheek_raiser'), r('au12_lip_corner_puller_l') * 0.44)
-  const cheekSquintR = Math.max(r('au06_cheek_raiser'), r('au12_lip_corner_puller_r') * 0.44)
+  const cheekSquintL = Math.max(r('au06_cheek_raiser_l'), r('au12_lip_corner_puller_l') * 0.44)
+  const cheekSquintR = Math.max(r('au06_cheek_raiser_r'), r('au12_lip_corner_puller_r') * 0.44)
   const cheekPuff = saturate(Math.max(r('cheek_puff'), r('au18_lip_pucker') * 0.25))
   const mouthClose = saturate(r('au24_lip_pressor') * 0.45 + r('au23_lip_tightener') * 0.35 + r('tongue_out') * -0.3)
   const tongue = saturate(r('tongue_out'))
@@ -990,9 +1103,9 @@ export function buildFacsMorphs(values: FacsValues): MorphPose {
   const mouthRight = saturate(jawLR < 0 ? -jawLR * 0.5 : 0)
 
   return {
-    browDownLeft: saturate(browDown),
-    browDownRight: saturate(browDown),
-    browInnerUp: saturate(browInnerUp),
+    browDownLeft: saturate(browDownL),
+    browDownRight: saturate(browDownR),
+    browInnerUp: saturate(Math.max(browInnerUpL, browInnerUpR)),
     browOuterUpLeft: saturate(browOuterUpL),
     browOuterUpRight: saturate(browOuterUpR),
     eyeBlinkLeft: saturate(eyeBlinkL),
@@ -1006,8 +1119,8 @@ export function buildFacsMorphs(values: FacsValues): MorphPose {
     jawRight: saturate(mouthRight),
     jawOpen: saturate(jawOpen),
     mouthClose: saturate(mouthClose),
-    mouthDimpleLeft: saturate(dimple),
-    mouthDimpleRight: saturate(dimple),
+    mouthDimpleLeft: saturate(dimpleL),
+    mouthDimpleRight: saturate(dimpleR),
     mouthFrownLeft: saturate(frownL),
     mouthFrownRight: saturate(frownR),
     mouthFunnel: saturate(funnel),
@@ -1023,8 +1136,8 @@ export function buildFacsMorphs(values: FacsValues): MorphPose {
     mouthShrugLower: saturate(shrugLower),
     mouthSmileLeft: saturate(smileL),
     mouthSmileRight: saturate(smileR),
-    mouthStretchLeft: saturate(stretch),
-    mouthStretchRight: saturate(stretch),
+    mouthStretchLeft: saturate(stretchL),
+    mouthStretchRight: saturate(stretchR),
     moutherUpperUpLeft: saturate(upperUpL),
     mouthUpperUpRight: saturate(upperUpR),
     noseSneerLeft: saturate(noseSneerL),

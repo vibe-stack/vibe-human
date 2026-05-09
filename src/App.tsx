@@ -1,9 +1,22 @@
-import { Suspense, useState } from 'react'
-import { Canvas } from '@react-three/fiber'
+import { Suspense, useEffect, useState } from 'react'
+import { Canvas, useThree } from '@react-three/fiber'
 import { OrbitControls, Environment } from '@react-three/drei'
+import * as THREE from 'three'
 import HumanModel, { type BoneDebug } from './HumanModel'
 import ControlPanel from './ControlPanel'
 import { createNeutralEyeLook, createNeutralFacsValues } from './facs'
+
+function FovUpdater({ fov }: { fov: number }) {
+  const { camera, invalidate } = useThree()
+  useEffect(() => {
+    if (camera instanceof THREE.PerspectiveCamera) {
+      camera.fov = fov
+      camera.updateProjectionMatrix()
+      invalidate()
+    }
+  }, [fov, camera, invalidate])
+  return null
+}
 
 export default function App() {
   const [facsValues, setFacsValues] = useState(createNeutralFacsValues)
@@ -19,10 +32,11 @@ export default function App() {
   return (
     <div style={{ width: '100vw', height: '100vh', background: '#080810' }}>
       <Canvas
-        camera={{ position: [0, 0, 1.2], fov }}
+        camera={{ position: [0, 0, 1.2], fov: 45 }}
         gl={{ antialias: true, alpha: false }}
         style={{ width: '100%', height: '100%' }}
       >
+        <FovUpdater fov={fov} />
         <color attach="background" args={['#080810']} />
         <fog attach="fog" args={['#080810', 2, 6]} />
 

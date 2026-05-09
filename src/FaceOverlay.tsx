@@ -67,42 +67,41 @@ type MainControl = DotControl | EyePad | FacsPad
 // Jaw:    y≈450-510
 const MAIN: MainControl[] = [
   // ── Forehead / Brows ──────────────────────────────────────────────────────
-  { kind:'dot', id:'au01_inner_brow_raiser', label:'INNER BROW',   ax:237, ay:186, lx:-0.6, ly:-0.8, ll:52 },
-  { kind:'dot', id:'au02_outer_brow_raiser', label:'OUTER BROW',   ax:192, ay:182, lx:-1,   ly:-0.4, ll:62 },
-  { kind:'dot', id:'au04_brow_lowerer',      label:'BROW LOWER',   ax:212, ay:198, lx:-1,   ly: 0.2, ll:58 },
-  { kind:'dot', id:'brow_compress',          label:'COMPRESS',      ax:260, ay:188, lx: 0,   ly:-1,   ll:42 },
-  { kind:'dot', id:'scowl',                  label:'SCOWL',         ax:260, ay:204, lx: 0.8, ly:-0.6, ll:52 },
-  // right side mirrors (positive x = right in screen space)
-  { kind:'dot', id:'au01_inner_brow_raiser', label:'',              ax:283, ay:186, lx: 0.6, ly:-0.8, ll:52 },
-  { kind:'dot', id:'au02_outer_brow_raiser', label:'',              ax:328, ay:182, lx: 1,   ly:-0.4, ll:62 },
-  { kind:'dot', id:'au04_brow_lowerer',      label:'',              ax:308, ay:198, lx: 1,   ly: 0.2, ll:58 },
+  { kind:'dot', id:'au01_inner_brow_raiser_l', label:'INNER BROW',   ax:237, ay:186, lx:-0.6, ly:-0.8, ll:52 },
+  { kind:'dot', id:'au02_outer_brow_raiser_l', label:'OUTER BROW',   ax:192, ay:182, lx:-1,   ly:-0.4, ll:62 },
+  { kind:'dot', id:'au04_brow_lowerer_l',      label:'BROW LOWER',   ax:212, ay:198, lx:-1,   ly: 0.2, ll:58 },
+  { kind:'dot', id:'brow_compress',            label:'COMPRESS',      ax:260, ay:188, lx: 0,   ly:-1,   ll:42 },
+  { kind:'dot', id:'scowl',                    label:'SCOWL',         ax:260, ay:204, lx: 0.8, ly:-0.6, ll:52 },
+  // right side
+  { kind:'dot', id:'au01_inner_brow_raiser_r', label:'',              ax:283, ay:186, lx: 0.6, ly:-0.8, ll:52 },
+  { kind:'dot', id:'au02_outer_brow_raiser_r', label:'',              ax:328, ay:182, lx: 1,   ly:-0.4, ll:62 },
+  { kind:'dot', id:'au04_brow_lowerer_r',      label:'',              ax:308, ay:198, lx: 1,   ly: 0.2, ll:58 },
 
   // ── Eye sockets — XY pads ─────────────────────────────────────────────────
   { kind:'eyepad', eye:'L', label:'EYE L', ax:190, ay:236, w:80, h:56 },
   { kind:'eyepad', eye:'R', label:'EYE R', ax:330, ay:236, w:80, h:56 },
 
-  // ── Eye lid controls (dots beside each socket) ────────────────────────────
-  { kind:'dot', id:'au05_upper_lid_raiser', label:'LID RAISE', ax:143, ay:224, lx:-1, ly:-0.3, ll:56 },
-  { kind:'dot', id:'au07_lid_tightener',    label:'SQUINT',     ax:140, ay:240, lx:-1, ly: 0.2, ll:54 },
-  { kind:'dot', id:'au43_eye_closure',      label:'BLINK',      ax:143, ay:256, lx:-1, ly: 0.6, ll:50 },
-  { kind:'dot', id:'glare',                 label:'GLARE',      ax:156, ay:264, lx:-0.8, ly: 0.8, ll:46 },
-  // right eye lids
-  { kind:'dot', id:'au05_upper_lid_raiser', label:'',           ax:377, ay:224, lx:1, ly:-0.3, ll:56 },
-  { kind:'dot', id:'au07_lid_tightener',    label:'',           ax:380, ay:240, lx:1, ly: 0.2, ll:54 },
-  { kind:'dot', id:'au43_eye_closure',      label:'',           ax:377, ay:256, lx:1, ly: 0.6, ll:50 },
-  { kind:'dot', id:'glare',                 label:'',           ax:364, ay:264, lx: 0.8, ly: 0.8, ll:46 },
+  // ── Eye lid controls ──────────────────────────────────────────────────────
+  { kind:'dot', id:'au05_upper_lid_raiser_l', label:'LID RAISE', ax:143, ay:224, lx:-1,  ly:-0.3, ll:56 },
+  { kind:'dot', id:'au07_lid_tightener_l',    label:'SQUINT',    ax:140, ay:240, lx:-1,  ly: 0.2, ll:54 },
+  { kind:'dot', id:'au43_eye_closure_l',      label:'BLINK',     ax:143, ay:256, lx:-1,  ly: 0.6, ll:50 },
+  { kind:'dot', id:'glare_l',                 label:'GLARE',     ax:156, ay:264, lx:-0.8,ly: 0.8, ll:46 },
+  { kind:'dot', id:'au05_upper_lid_raiser_r', label:'',          ax:377, ay:224, lx: 1,  ly:-0.3, ll:56 },
+  { kind:'dot', id:'au07_lid_tightener_r',    label:'',          ax:380, ay:240, lx: 1,  ly: 0.2, ll:54 },
+  { kind:'dot', id:'au43_eye_closure_r',      label:'',          ax:377, ay:256, lx: 1,  ly: 0.6, ll:50 },
+  { kind:'dot', id:'glare_r',                 label:'',          ax:364, ay:264, lx: 0.8,ly: 0.8, ll:46 },
 
   // ── Cheeks ────────────────────────────────────────────────────────────────
-  { kind:'dot', id:'au06_cheek_raiser', label:'CHEEK',      ax:162, ay:288, lx:-1, ly: 0,   ll:64 },
-  { kind:'dot', id:'cheek_puff',        label:'CHEEK PUFF', ax:150, ay:305, lx:-1, ly: 0.4, ll:66 },
-  { kind:'dot', id:'au06_cheek_raiser', label:'',           ax:358, ay:288, lx: 1, ly: 0,   ll:64 },
-  { kind:'dot', id:'cheek_puff',        label:'',           ax:370, ay:305, lx: 1, ly: 0.4, ll:66 },
+  { kind:'dot', id:'au06_cheek_raiser_l', label:'CHEEK',      ax:162, ay:288, lx:-1, ly: 0,   ll:64 },
+  { kind:'dot', id:'cheek_puff',          label:'CHEEK PUFF', ax:150, ay:305, lx:-1, ly: 0.4, ll:66 },
+  { kind:'dot', id:'au06_cheek_raiser_r', label:'',           ax:358, ay:288, lx: 1, ly: 0,   ll:64 },
+  { kind:'dot', id:'cheek_puff',          label:'',           ax:370, ay:305, lx: 1, ly: 0.4, ll:66 },
 
-  // ── Nose ──────────────────────────────────────────────────────────────────
-  { kind:'dot', id:'au09_nose_wrinkler',  label:'NOSE WRK', ax:238, ay:318, lx:-0.9, ly: 0.4, ll:48 },
-  { kind:'dot', id:'au38_nostril_dilator',label:'NOSTRIL',  ax:238, ay:336, lx:-0.9, ly: 0.8, ll:44 },
-  { kind:'dot', id:'au09_nose_wrinkler',  label:'',         ax:282, ay:318, lx: 0.9, ly: 0.4, ll:48 },
-  { kind:'dot', id:'au38_nostril_dilator',label:'',         ax:282, ay:336, lx: 0.9, ly: 0.8, ll:44 },
+  // ── Nose (bilateral — one control moves both) ──────────────────────────────
+  { kind:'dot', id:'au09_nose_wrinkler',   label:'NOSE WRK', ax:238, ay:318, lx:-0.9, ly: 0.4, ll:48 },
+  { kind:'dot', id:'au38_nostril_dilator', label:'NOSTRIL',  ax:238, ay:336, lx:-0.9, ly: 0.8, ll:44 },
+  { kind:'dot', id:'au09_nose_wrinkler',   label:'',         ax:282, ay:318, lx: 0.9, ly: 0.4, ll:48 },
+  { kind:'dot', id:'au38_nostril_dilator', label:'',         ax:282, ay:336, lx: 0.9, ly: 0.8, ll:44 },
 
   // ── Mouth corners — XY pads ───────────────────────────────────────────────
   {
@@ -121,21 +120,21 @@ const MAIN: MainControl[] = [
   },
 
   // ── Lip centre dots ───────────────────────────────────────────────────────
-  { kind:'dot', id:'au25_lips_part',         label:'PART',    ax:260, ay:364, lx:-0.5, ly:-1,   ll:36 },
-  { kind:'dot', id:'au18_lip_pucker',        label:'PUCKER',  ax:248, ay:378, lx:-1,   ly:-0.3, ll:46 },
-  { kind:'dot', id:'mouth_funnel',           label:'FUNNEL',  ax:272, ay:378, lx: 1,   ly:-0.3, ll:46 },
-  { kind:'dot', id:'au23_lip_tightener',     label:'TIGHTEN', ax:248, ay:393, lx:-1,   ly: 0,   ll:46 },
-  { kind:'dot', id:'au24_lip_pressor',       label:'PRESS',   ax:272, ay:393, lx: 1,   ly: 0,   ll:46 },
-  { kind:'dot', id:'au20_lip_stretcher',     label:'STRETCH', ax:248, ay:408, lx:-1,   ly: 0.4, ll:46 },
-  { kind:'dot', id:'mouth_suck',             label:'SUCK',    ax:272, ay:408, lx: 1,   ly: 0.4, ll:46 },
-  { kind:'dot', id:'au14_dimpler',           label:'DIMPLE L',ax:218, ay:398, lx:-1,   ly: 0.3, ll:44 },
-  { kind:'dot', id:'au14_dimpler',           label:'',        ax:302, ay:398, lx: 1,   ly: 0.3, ll:44 },
-  { kind:'dot', id:'lips_bite',              label:'BITE',    ax:260, ay:420, lx: 0,   ly: 1,   ll:32 },
-  { kind:'dot', id:'au16_lower_lip_depressor',label:'LIP ↓', ax:248, ay:432, lx:-0.7, ly: 1,   ll:36 },
-  { kind:'dot', id:'au17_chin_raiser',       label:'CHIN',    ax:272, ay:432, lx: 0.7, ly: 1,   ll:36 },
-  { kind:'dot', id:'lip_roll_lower',         label:'ROLL ↓',  ax:238, ay:445, lx:-1,   ly: 0.6, ll:40 },
-  { kind:'dot', id:'lip_roll_upper',         label:'ROLL ↑',  ax:282, ay:445, lx: 1,   ly: 0.6, ll:40 },
-  { kind:'dot', id:'tongue_out',             label:'TONGUE',  ax:260, ay:456, lx: 0,   ly: 1,   ll:30 },
+  { kind:'dot', id:'au25_lips_part',          label:'PART',    ax:260, ay:364, lx:-0.5, ly:-1,   ll:36 },
+  { kind:'dot', id:'au18_lip_pucker',         label:'PUCKER',  ax:248, ay:378, lx:-1,   ly:-0.3, ll:46 },
+  { kind:'dot', id:'mouth_funnel',            label:'FUNNEL',  ax:272, ay:378, lx: 1,   ly:-0.3, ll:46 },
+  { kind:'dot', id:'au23_lip_tightener',      label:'TIGHTEN', ax:248, ay:393, lx:-1,   ly: 0,   ll:46 },
+  { kind:'dot', id:'au24_lip_pressor',        label:'PRESS',   ax:272, ay:393, lx: 1,   ly: 0,   ll:46 },
+  { kind:'dot', id:'au20_lip_stretcher_l',    label:'STRETCH', ax:248, ay:408, lx:-1,   ly: 0.4, ll:46 },
+  { kind:'dot', id:'mouth_suck',              label:'SUCK',    ax:272, ay:408, lx: 1,   ly: 0.4, ll:46 },
+  { kind:'dot', id:'au14_dimpler_l',          label:'DIMPLE L',ax:218, ay:398, lx:-1,   ly: 0.3, ll:44 },
+  { kind:'dot', id:'au14_dimpler_r',          label:'',        ax:302, ay:398, lx: 1,   ly: 0.3, ll:44 },
+  { kind:'dot', id:'lips_bite',               label:'BITE',    ax:260, ay:420, lx: 0,   ly: 1,   ll:32 },
+  { kind:'dot', id:'au16_lower_lip_depressor_l', label:'LIP ↓', ax:248, ay:432, lx:-0.7, ly: 1, ll:36 },
+  { kind:'dot', id:'au17_chin_raiser',        label:'CHIN',    ax:272, ay:432, lx: 0.7, ly: 1,   ll:36 },
+  { kind:'dot', id:'lip_roll_lower',          label:'ROLL ↓',  ax:238, ay:445, lx:-1,   ly: 0.6, ll:40 },
+  { kind:'dot', id:'lip_roll_upper',          label:'ROLL ↑',  ax:282, ay:445, lx: 1,   ly: 0.6, ll:40 },
+  { kind:'dot', id:'tongue_out',              label:'TONGUE',  ax:260, ay:456, lx: 0,   ly: 1,   ll:30 },
 
   // ── Jaw pad ───────────────────────────────────────────────────────────────
   {
@@ -145,9 +144,9 @@ const MAIN: MainControl[] = [
     label:'JAW',
     ax:260, ay:522, w:86, h:70,
   },
-  { kind:'dot', id:'au27_mouth_stretch', label:'WIDE',   ax:194, ay:508, lx:-1, ly:-0.3, ll:50 },
-  { kind:'dot', id:'au27_mouth_stretch', label:'',       ax:326, ay:508, lx: 1, ly:-0.3, ll:50 },
-  { kind:'dot', id:'scowl',             label:'',        ax:194, ay:540, lx:-1, ly: 0.4, ll:48 },
+  { kind:'dot', id:'au27_mouth_stretch', label:'WIDE', ax:194, ay:508, lx:-1, ly:-0.3, ll:50 },
+  { kind:'dot', id:'au27_mouth_stretch', label:'',     ax:326, ay:508, lx: 1, ly:-0.3, ll:50 },
+  { kind:'dot', id:'scowl',             label:'',      ax:194, ay:540, lx:-1, ly: 0.4, ll:48 },
 ]
 
 // ── Tweakers panel controls ─────────────────────────────────────────────────
@@ -188,32 +187,31 @@ const TWEAKERS: TweakerControl[] = [
   // Right eye socket centre ~(270, 210)
   { kind:'teyepad', eye:'R', label:'EYE R', ax:270, ay:210, w:100, h:70 },
 
-  // Individual lid sliders beside sockets
-  { kind:'tslider', id:'au05_upper_lid_raiser', label:'LID↑',   ax: 72, ay:194, length:40, axis:'v' },
-  { kind:'tslider', id:'au43_eye_closure',       label:'BLINK',  ax: 72, ay:232, length:40, axis:'v' },
-  { kind:'tslider', id:'au07_lid_tightener',     label:'SQUINT', ax: 72, ay:216, length:40, axis:'v' },
-  { kind:'tslider', id:'au05_upper_lid_raiser',  label:'',       ax:328, ay:194, length:40, axis:'v' },
-  { kind:'tslider', id:'au43_eye_closure',        label:'',      ax:328, ay:232, length:40, axis:'v' },
-  { kind:'tslider', id:'au07_lid_tightener',      label:'',      ax:328, ay:216, length:40, axis:'v' },
+  // Individual lid sliders beside sockets — L side
+  { kind:'tslider', id:'au05_upper_lid_raiser_l', label:'LID↑',   ax: 72, ay:194, length:40, axis:'v' },
+  { kind:'tslider', id:'au07_lid_tightener_l',    label:'SQUINT',  ax: 72, ay:216, length:40, axis:'v' },
+  { kind:'tslider', id:'au43_eye_closure_l',      label:'BLINK',   ax: 72, ay:232, length:40, axis:'v' },
+  // R side
+  { kind:'tslider', id:'au05_upper_lid_raiser_r', label:'',        ax:328, ay:194, length:40, axis:'v' },
+  { kind:'tslider', id:'au07_lid_tightener_r',    label:'',        ax:328, ay:216, length:40, axis:'v' },
+  { kind:'tslider', id:'au43_eye_closure_r',      label:'',        ax:328, ay:232, length:40, axis:'v' },
 
   // ── Brow fine controls ─────────────────────────────────────────────────────
-  { kind:'tslider', id:'au01_inner_brow_raiser', label:'INNER↑', ax:110, ay:148, length:44, axis:'v' },
-  { kind:'tslider', id:'au02_outer_brow_raiser', label:'OUTER↑', ax: 88, ay:148, length:44, axis:'v' },
-  { kind:'tslider', id:'au04_brow_lowerer',      label:'LOWER',  ax: 66, ay:148, length:44, axis:'v' },
-  { kind:'tslider', id:'au01_inner_brow_raiser', label:'',       ax:290, ay:148, length:44, axis:'v' },
-  { kind:'tslider', id:'au02_outer_brow_raiser', label:'',       ax:312, ay:148, length:44, axis:'v' },
-  { kind:'tslider', id:'au04_brow_lowerer',      label:'',       ax:334, ay:148, length:44, axis:'v' },
+  { kind:'tslider', id:'au01_inner_brow_raiser_l', label:'INNER↑', ax:110, ay:148, length:44, axis:'v' },
+  { kind:'tslider', id:'au02_outer_brow_raiser_l', label:'OUTER↑', ax: 88, ay:148, length:44, axis:'v' },
+  { kind:'tslider', id:'au04_brow_lowerer_l',      label:'LOWER',  ax: 66, ay:148, length:44, axis:'v' },
+  { kind:'tslider', id:'au01_inner_brow_raiser_r', label:'',       ax:290, ay:148, length:44, axis:'v' },
+  { kind:'tslider', id:'au02_outer_brow_raiser_r', label:'',       ax:312, ay:148, length:44, axis:'v' },
+  { kind:'tslider', id:'au04_brow_lowerer_r',      label:'',       ax:334, ay:148, length:44, axis:'v' },
 
-  // ── Lip push/pull XY pads (the "tweakers" section) ────────────────────────
-  // Upper lip tweaker
+  // ── Lip push/pull XY pads ─────────────────────────────────────────────────
   {
     kind:'txy',
-    idX:'au18_lip_pucker', idXNeg:'au20_lip_stretcher',
+    idX:'au18_lip_pucker', idXNeg:'au20_lip_stretcher_l',
     idY:'lip_roll_upper',  idYNeg:'au24_lip_pressor',
     label:'UPPER LIP',
     ax:122, ay:380, w:68, h:58,
   },
-  // Centre lip tweaker
   {
     kind:'txy',
     idX:'mouth_funnel', idXNeg:'mouth_suck',
@@ -221,11 +219,10 @@ const TWEAKERS: TweakerControl[] = [
     label:'LIP CTR',
     ax:200, ay:380, w:68, h:58,
   },
-  // Lower lip tweaker
   {
     kind:'txy',
-    idX:'au16_lower_lip_depressor', idXNeg:'au17_chin_raiser',
-    idY:'lips_bite',                idYNeg:'lip_roll_lower',
+    idX:'au16_lower_lip_depressor_l', idXNeg:'au17_chin_raiser',
+    idY:'lips_bite',                  idYNeg:'lip_roll_lower',
     label:'LOWER LIP',
     ax:278, ay:380, w:68, h:58,
   },
@@ -236,14 +233,14 @@ const TWEAKERS: TweakerControl[] = [
   { kind:'tslider', id:'cheek_puff',           label:'PUFF',    ax:170, ay:328, length:52, axis:'h' },
 
   // ── Performance sliders ────────────────────────────────────────────────────
-  { kind:'tslider', id:'scowl',   label:'SCOWL',   ax: 86, ay:472, length:56, axis:'v' },
-  { kind:'tslider', id:'snarl_l', label:'SNARL L', ax:110, ay:472, length:56, axis:'v' },
-  { kind:'tslider', id:'snarl_r', label:'SNARL R', ax:134, ay:472, length:56, axis:'v' },
-  { kind:'tslider', id:'glare',   label:'GLARE',   ax:158, ay:472, length:56, axis:'v' },
-  { kind:'tslider', id:'tongue_out', label:'TONGUE', ax:182, ay:472, length:56, axis:'v' },
-  { kind:'tslider', id:'lips_bite',  label:'BITE',   ax:206, ay:472, length:56, axis:'v' },
-  { kind:'tslider', id:'mouth_suck', label:'SUCK',   ax:230, ay:472, length:56, axis:'v' },
-  { kind:'tslider', id:'au14_dimpler', label:'DIMPLE', ax:254, ay:472, length:56, axis:'v' },
+  { kind:'tslider', id:'scowl',                label:'SCOWL',   ax: 86, ay:472, length:56, axis:'v' },
+  { kind:'tslider', id:'snarl_l',              label:'SNARL L', ax:110, ay:472, length:56, axis:'v' },
+  { kind:'tslider', id:'snarl_r',              label:'SNARL R', ax:134, ay:472, length:56, axis:'v' },
+  { kind:'tslider', id:'glare_l',              label:'GLARE L', ax:158, ay:472, length:56, axis:'v' },
+  { kind:'tslider', id:'tongue_out',           label:'TONGUE',  ax:182, ay:472, length:56, axis:'v' },
+  { kind:'tslider', id:'lips_bite',            label:'BITE',    ax:206, ay:472, length:56, axis:'v' },
+  { kind:'tslider', id:'mouth_suck',           label:'SUCK',    ax:230, ay:472, length:56, axis:'v' },
+  { kind:'tslider', id:'au14_dimpler_l',       label:'DIMPLE',  ax:254, ay:472, length:56, axis:'v' },
 ]
 
 // ── Drag state ────────────────────────────────────────────────────────────────
