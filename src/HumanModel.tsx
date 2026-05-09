@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { TransformControls, useGLTF } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { buildFacsPose, type BonePose, type FacsValues } from './facs'
+import { buildFacsMorphs, buildFacsPose, type BonePose, type FacsValues } from './facs'
 
 type Props = {
   facsValues: FacsValues
@@ -27,6 +27,11 @@ type ObjectRest = {
   worldQuaternion: THREE.Quaternion
 }
 
+type MorphTargetMesh = THREE.Mesh & {
+  morphTargetDictionary: Record<string, number>
+  morphTargetInfluences: number[]
+}
+
 export type BoneDebug = {
   name: string
   position: [number, number, number]
@@ -36,7 +41,7 @@ export type BoneDebug = {
   deltaRotation: [number, number, number]
 }
 
-const MODEL_URL = `${import.meta.env.BASE_URL}human2.glb?v=deform-bones-2026-05-03-2`
+const MODEL_URL = `${import.meta.env.BASE_URL}human3.glb?v=shape-key-facs-2026-05-09-1`
 const WORLD_POSITION_GAIN = 0.25
 const HEAD_LOOK_YAW = 1.05
 const HEAD_LOOK_PITCH = 0.58
@@ -220,6 +225,23 @@ function aimObjectForwardAtTarget(
   object.quaternion.slerp(delta.multiply(rest.quaternion), alpha)
 }
 
+function applyMorphTargets(
+  meshes: MorphTargetMesh[],
+  targets: Record<string, number>,
+  alpha: number,
+) {
+  for (const mesh of meshes) {
+    for (const [targetName, index] of Object.entries(mesh.morphTargetDictionary)) {
+      const targetValue = targets[targetName] ?? 0
+      mesh.morphTargetInfluences[index] = THREE.MathUtils.lerp(
+        mesh.morphTargetInfluences[index] ?? 0,
+        targetValue,
+        alpha,
+      )
+    }
+  }
+}
+
 export default function HumanModel({
   facsValues,
   wireframe,
@@ -234,6 +256,7 @@ export default function HumanModel({
   const [lookTargetObject, setLookTargetObject] = useState<THREE.Group | null>(null)
   const bonesRef = useRef<Record<string, THREE.Bone>>({})
   const eyeObjectsRef = useRef<Record<string, THREE.Object3D>>({})
+  const morphMeshesRef = useRef<MorphTargetMesh[]>([])
   const skeletonsRef = useRef<THREE.Skeleton[]>([])
   const restRef = useRef<Record<string, BoneRest>>({})
   const objectRestRef = useRef<Record<string, ObjectRest>>({})
@@ -262,6 +285,7 @@ export default function HumanModel({
   useEffect(() => {
     const bones: Record<string, THREE.Bone> = {}
     const eyeObjects: Record<string, THREE.Object3D> = {}
+    const morphMeshes: MorphTargetMesh[] = []
     const skeletons: THREE.Skeleton[] = []
 
     scene.traverse((obj) => {
@@ -269,6 +293,11 @@ export default function HumanModel({
 
       if (EYE_OBJECT_NAMES.includes(obj.name)) {
         eyeObjects[obj.name] = obj
+      }
+
+      const morphMesh = obj as Partial<MorphTargetMesh>
+      if (morphMesh.morphTargetDictionary && morphMesh.morphTargetInfluences) {
+        morphMeshes.push(morphMesh as MorphTargetMesh)
       }
 
       if (mesh.isSkinnedMesh) {
@@ -282,6 +311,7 @@ export default function HumanModel({
 
     bonesRef.current = bones
     eyeObjectsRef.current = eyeObjects
+    morphMeshesRef.current = morphMeshes
     skeletonsRef.current = skeletons
     const nextDebugBones = Object.values(bones)
       .filter((bone) => FACE_BONE_PATTERN.test(bone.name))
@@ -332,6 +362,7 @@ export default function HumanModel({
     const t = tRef.current
 
     const facsPose = buildFacsPose(facsValuesRef.current)
+    const facsMorphs = buildFacsMorphs(facsValuesRef.current)
     const lookEnabled = (eyeLook || focusLock) && !showBones
     const lookTarget = lookTargetObject?.getWorldPosition(new THREE.Vector3()) ?? null
     const headBone = getBoneByName(bones, 'RT_Head') ?? getBoneByName(bones, 'head')
@@ -377,6 +408,8 @@ export default function HumanModel({
         bone.position.lerp(targetPos, t)
         bone.quaternion.slerp(targetQ, t)
       }
+
+      applyMorphTargets(morphMeshesRef.current, facsMorphs, t)
 
       if (look && lookTarget) {
         const headDelta = getWorldLookQuaternion(

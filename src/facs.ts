@@ -7,6 +7,7 @@ export type BonePose = {
 }
 
 export type PoseMap = Record<string, BonePose>
+export type MorphPose = Record<string, number>
 
 export type FacsGroup = 'Brows' | 'Eyes' | 'Midface' | 'Mouth' | 'Jaw' | 'Performance'
 export type FacsSide = 'L' | 'R' | 'C' | 'B'
@@ -784,6 +785,7 @@ const addPose = (target: BonePose, source: BonePose, weight: number) => {
 }
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max)
+const saturate = (value: number) => clamp(value, 0, 1)
 
 const getControlResponse = (values: FacsValues, controlId: string) => {
   const control = FACS_CONTROLS.find((item) => item.id === controlId)
@@ -853,6 +855,46 @@ const addDentalFollow = (pose: PoseMap, values: FacsValues) => {
       ]),
       1,
     )
+  }
+}
+
+export function buildFacsMorphs(values: FacsValues): MorphPose {
+  const browDown = Math.max(
+    getControlResponse(values, 'au04_brow_lowerer') * 0.78,
+    getControlResponse(values, 'brow_compress') * 0.68,
+    getControlResponse(values, 'glare') * 0.58,
+    getControlResponse(values, 'scowl') * 0.78,
+  )
+  const browInnerUp = getControlResponse(values, 'au01_inner_brow_raiser') * 0.72
+  const browOuterUp = getControlResponse(values, 'au02_outer_brow_raiser') * 0.72
+  const eyeBlink = getControlResponse(values, 'au43_eye_closure') * 0.9
+  const eyeSquint = Math.max(
+    getControlResponse(values, 'au07_lid_tightener') * 0.74,
+    getControlResponse(values, 'glare') * 0.64,
+    getControlResponse(values, 'scowl') * 0.42,
+    getControlResponse(values, 'au06_cheek_raiser') * 0.32,
+  )
+  const eyeWide = getControlResponse(values, 'au05_upper_lid_raiser') * 0.8
+  const jawOpen =
+    getControlResponse(values, 'au25_lips_part') * 0.24 +
+    getControlResponse(values, 'au26_jaw_drop') * 0.68 +
+    getControlResponse(values, 'au27_mouth_stretch') * 0.92
+  const jawForward = getControlResponse(values, 'jaw_forward') * 0.88
+  const jawLeft =
+    getControlResponse(values, 'jaw_left') * 0.9 - getControlResponse(values, 'jaw_right') * 0.9
+
+  return {
+    browDownLeft: saturate(browDown),
+    browDownRight: saturate(browDown),
+    browInnerUp: saturate(browInnerUp),
+    browOuterUpLeft: saturate(browOuterUp),
+    browOuterUpRight: saturate(browOuterUp),
+    eyeBlinkLeft: saturate(eyeBlink),
+    eyeSquintLeft: saturate(eyeSquint),
+    eyeWideLeft: saturate(eyeWide),
+    jawForward: saturate(jawForward),
+    jawLeft: clamp(jawLeft, -1, 1),
+    jawOpen: saturate(jawOpen),
   }
 }
 
