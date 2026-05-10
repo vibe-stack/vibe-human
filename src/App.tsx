@@ -3,7 +3,9 @@ import { Canvas, useThree } from '@react-three/fiber'
 import { OrbitControls, Environment } from '@react-three/drei'
 import * as THREE from 'three'
 import HumanModel, { type BoneDebug } from './HumanModel'
+import CharacterModelingPanel from './CharacterModelingPanel'
 import ControlPanel from './ControlPanel'
+import { createNeutralModelingValues } from './characterModeling'
 import { createNeutralEyeLook, createNeutralFacsValues } from './facs'
 
 function FovUpdater({ fov }: { fov: number }) {
@@ -20,6 +22,7 @@ function FovUpdater({ fov }: { fov: number }) {
 
 export default function App() {
   const [facsValues, setFacsValues] = useState(createNeutralFacsValues)
+  const [modelingValues, setModelingValues] = useState(createNeutralModelingValues)
   const [eyeLook2D, setEyeLook2D] = useState(createNeutralEyeLook)
   const [wireframe, setWireframe] = useState(false)
   const [showBones, setShowBones] = useState(false)
@@ -48,6 +51,7 @@ export default function App() {
           <Environment files={`${import.meta.env.BASE_URL}potsdamer_platz_1k.hdr`} />
           <HumanModel
             facsValues={facsValues}
+            modelingValues={modelingValues}
             eyeLook2D={eyeLook2D}
             wireframe={wireframe}
             showBones={showBones}
@@ -86,6 +90,7 @@ export default function App() {
         onFocusLock={setFocusLock}
         onFov={setFov}
       />
+      <CharacterModelingPanel values={modelingValues} onValues={setModelingValues} />
     </div>
   )
 }

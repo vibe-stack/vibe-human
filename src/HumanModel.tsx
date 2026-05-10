@@ -2,10 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { TransformControls, useGLTF } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
+import { buildModelingMorphs, MODELING_CONTROLS, type ModelingValues } from './characterModeling'
 import { buildFacsMorphs, buildFacsPose, type BonePose, type EyeLookValues, type FacsValues } from './facs'
 
 type Props = {
   facsValues: FacsValues
+  modelingValues: ModelingValues
   eyeLook2D: EyeLookValues
   wireframe: boolean
   showBones: boolean
@@ -42,7 +44,7 @@ export type BoneDebug = {
   deltaRotation: [number, number, number]
 }
 
-const MODEL_URL = `${import.meta.env.BASE_URL}human3.glb?v=shape-key-facs-2026-05-09-2`
+const MODEL_URL = `${import.meta.env.BASE_URL}human3.glb?v=identity-modeling-2026-05-10-1`
 const WORLD_POSITION_GAIN = 0.5
 const HEAD_LOOK_YAW = 1.05
 const HEAD_LOOK_PITCH = 0.58
@@ -245,6 +247,7 @@ function applyMorphTargets(
 
 export default function HumanModel({
   facsValues,
+  modelingValues,
   eyeLook2D,
   wireframe,
   showBones,
@@ -267,6 +270,7 @@ export default function HumanModel({
   const [selectedBone, setSelectedBone] = useState<THREE.Bone | null>(null)
 
   const facsValuesRef = useRef(facsValues)
+  const modelingValuesRef = useRef(modelingValues)
   const eyeLook2DRef = useRef(eyeLook2D)
 
   // Sync refs so useFrame sees latest values without re-triggering effects
@@ -274,6 +278,11 @@ export default function HumanModel({
     facsValuesRef.current = facsValues
     tRef.current = 0 // restart lerp
   }, [facsValues])
+
+  useEffect(() => {
+    modelingValuesRef.current = modelingValues
+    tRef.current = 0
+  }, [modelingValues])
 
   useEffect(() => {
     eyeLook2DRef.current = eyeLook2D
@@ -320,6 +329,20 @@ export default function HumanModel({
     eyeObjectsRef.current = eyeObjects
     morphMeshesRef.current = morphMeshes
     skeletonsRef.current = skeletons
+
+    const availableTargets = new Set(
+      morphMeshes.flatMap((mesh) => Object.keys(mesh.morphTargetDictionary)),
+    )
+    const requiredTargets = MODELING_CONTROLS.flatMap((control) => [
+      control.negativeTarget,
+      control.positiveTarget,
+    ])
+    const missingTargets = requiredTargets.filter((target) => !availableTargets.has(target))
+
+    if (missingTargets.length) {
+      console.warn('Missing character modeling morph targets:', missingTargets)
+    }
+
     const nextDebugBones = Object.values(bones)
       .filter((bone) => FACE_BONE_PATTERN.test(bone.name))
       .sort((a, b) => a.name.localeCompare(b.name))
@@ -363,6 +386,12 @@ export default function HumanModel({
   useFrame((_, delta) => {
     const bones = bonesRef.current
     const rest = restRef.current
+
+    // DEBUG TEMP
+    if (Math.random() < 0.005) {
+      console.log('[modeling debug] bones:', Object.keys(bones).length, 'meshes:', morphMeshesRef.current.length, 'values:', JSON.stringify(modelingValuesRef.current))
+    }
+
     if (!Object.keys(bones).length) return
 
     tRef.current = Math.min(1, tRef.current + delta * 5)
@@ -370,12 +399,16 @@ export default function HumanModel({
 
     const facsPose = buildFacsPose(facsValuesRef.current)
     const facsMorphs = buildFacsMorphs(facsValuesRef.current)
+    const modelingMorphs = buildModelingMorphs(modelingValuesRef.current)
+    const runtimeMorphs = showBones ? modelingMorphs : { ...modelingMorphs, ...facsMorphs }
     const lookEnabled = (eyeLook || focusLock) && !showBones
     const lookTarget = lookTargetObject?.getWorldPosition(new THREE.Vector3()) ?? null
     const headBone = getBoneByName(bones, 'RT_Head') ?? getBoneByName(bones, 'head')
     const headOrigin =
       headBone?.getWorldPosition(new THREE.Vector3()) ?? new THREE.Vector3(0, 0.1, 0.15)
     const look = lookEnabled && lookTarget ? getLookFactors(headOrigin, lookTarget) : null
+
+    applyMorphTargets(morphMeshesRef.current, runtimeMorphs, t)
 
     if (!showBones) {
       for (const [name, bone] of Object.entries(bones)) {
@@ -415,8 +448,6 @@ export default function HumanModel({
         bone.position.lerp(targetPos, t)
         bone.quaternion.slerp(targetQ, t)
       }
-
-      applyMorphTargets(morphMeshesRef.current, facsMorphs, t)
 
       if (look && lookTarget) {
         const headDelta = getWorldLookQuaternion(

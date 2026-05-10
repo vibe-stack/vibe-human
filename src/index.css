@@ -55,6 +55,17 @@ html, body, #root {
   height: 4px;
 }
 
+.modeling-range::-webkit-slider-thumb {
+  background: rgba(125, 211, 252, 0.96);
+  border-color: rgba(186, 230, 253, 0.6);
+  box-shadow: 0 0 6px rgba(125, 211, 252, 0.35);
+}
+
+.modeling-range::-moz-range-thumb {
+  background: rgba(125, 211, 252, 0.96);
+  border-color: rgba(186, 230, 253, 0.6);
+}
+
 .facs-scroll {
   scrollbar-width: thin;
   scrollbar-color: rgba(255,255,255,0.22) rgba(255,255,255,0.04);
