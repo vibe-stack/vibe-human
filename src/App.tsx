@@ -1,7 +1,13 @@
 import { Suspense, useEffect, useState } from 'react'
-import { Canvas, useThree } from '@react-three/fiber'
+import { Canvas, extend, useThree, type ThreeToJSXElements } from '@react-three/fiber'
 import { OrbitControls, Environment } from '@react-three/drei'
-import * as THREE from 'three'
+import * as THREE from 'three/webgpu'
+
+declare module '@react-three/fiber' {
+  interface ThreeElements extends ThreeToJSXElements<typeof THREE> {}
+}
+
+extend(THREE as unknown as Parameters<typeof extend>[0])
 import HumanModel, { type BoneDebug } from './HumanModel'
 import CharacterModelingPanel from './CharacterModelingPanel'
 import ControlPanel from './ControlPanel'
@@ -40,7 +46,11 @@ export default function App() {
     <div style={{ width: '100vw', height: '100vh', background: '#080810' }}>
       <Canvas
         camera={{ position: [0, 0, 1.2], fov: 45 }}
-        gl={{ antialias: true, alpha: false }}
+        gl={async (props) => {
+          const renderer = new THREE.WebGPURenderer({ antialias: true, alpha: false, ...props } as never)
+          await renderer.init()
+          return renderer as never
+        }}
         style={{ width: '100%', height: '100%' }}
       >
         <FovUpdater fov={fov} />

@@ -32,6 +32,8 @@ const TRANSFORM_COLOR = '#f4f4f5'
 const SCULPT_COLOR = '#f8fafc'
 const ACTIVE_COLOR = '#7dd3fc'
 const fallbackVector = new THREE.Vector3()
+const noseRootVector = new THREE.Vector3()
+const noseTipVector = new THREE.Vector3()
 
 function clampValue(value: number) {
   return THREE.MathUtils.clamp(value, -1, 1)
@@ -150,10 +152,10 @@ function ModelingHandleDot({
   onDoubleClick: (event: ThreeEvent<MouseEvent>) => void
 }) {
   const transform = handle.mode === 'transform'
-  const radius = transform ? 0.006 : 0.00225
-  const hitRadius = transform ? 0.017 : 0.009
-  const fillOpacity = transform ? (selected ? 0.9 : 0.58) : selected ? 0.12 : 0.02
-  const ringOpacity = transform ? 0.78 : selected ? 0.7 : 0.28
+  const radius = transform ? 0.0045 : 0.00225
+  const hitRadius = transform ? 0.014 : 0.009
+  const fillOpacity = transform ? (selected ? 0.82 : 0.5) : selected ? 0.12 : 0.02
+  const ringOpacity = transform ? 0.62 : selected ? 0.7 : 0.28
   const color = selected ? ACTIVE_COLOR : transform ? TRANSFORM_COLOR : SCULPT_COLOR
 
   return (
@@ -184,7 +186,7 @@ function ModelingHandleDot({
           />
         </mesh>
         <mesh renderOrder={1002}>
-          <torusGeometry args={[radius, transform ? 0.0022 : 0.00065, 8, 40]} />
+          <torusGeometry args={[radius, transform ? 0.00115 : 0.00065, 8, 40]} />
           <meshBasicMaterial
             transparent
             opacity={ringOpacity}
@@ -290,6 +292,10 @@ function getBoneEstimatedPosition(
   bones: Record<string, THREE.Bone>,
   out: THREE.Vector3,
 ) {
+  if (isCenterNoseControl(handle.controlId) && getNoseChainPosition(handle, bones, out)) {
+    return out
+  }
+
   const boneNames = getAnchorBoneNames(handle)
   out.set(0, 0, 0)
 
@@ -314,6 +320,57 @@ function getBoneEstimatedPosition(
   }
 
   return out.set(...handle.position)
+}
+
+function isCenterNoseControl(controlId: string) {
+  return controlId.includes('.nose.') && !controlId.includes('.nose.nostril.')
+}
+
+function getNoseChainPosition(
+  handle: ModelingHandle,
+  bones: Record<string, THREE.Bone>,
+  out: THREE.Vector3,
+) {
+  const hasRoot = getAverageBonePosition(['nose', 'nose.001'], bones, noseRootVector)
+  const hasTip = getAverageBonePosition(['nose.004', 'nose.003'], bones, noseTipVector)
+  if (!hasRoot || !hasTip) return false
+
+  out.copy(noseRootVector).lerp(noseTipVector, getNoseChainT(handle.controlId))
+  out.x = handle.position[0]
+  out.y += getAnchorYOffset(handle)
+  out.z += getAnchorZOffset(handle)
+  return true
+}
+
+function getAverageBonePosition(
+  names: string[],
+  bones: Record<string, THREE.Bone>,
+  out: THREE.Vector3,
+) {
+  out.set(0, 0, 0)
+  let count = 0
+
+  for (const name of names) {
+    const bone = getBoneByName(bones, name)
+    if (!bone) continue
+
+    bone.getWorldPosition(fallbackVector)
+    out.add(fallbackVector)
+    count += 1
+  }
+
+  if (!count) return false
+  out.multiplyScalar(1 / count)
+  return true
+}
+
+function getNoseChainT(controlId: string) {
+  if (controlId.includes('.nose.bridge.')) return 0.08
+  if (controlId.includes('.nose.nasalBone.')) return 0.3
+  if (controlId.includes('.nose.upperCartilage.')) return 0.54
+  if (controlId.includes('.nose.lowerCartilage.')) return 0.72
+  if (controlId.includes('.nose.tip.')) return 0.92
+  return 0.4
 }
 
 function getAnchorYOffset(handle: ModelingHandle) {
