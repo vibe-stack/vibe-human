@@ -12,6 +12,7 @@ function FovUpdater({ fov }: { fov: number }) {
   const { camera, invalidate } = useThree()
   useEffect(() => {
     if (camera instanceof THREE.PerspectiveCamera) {
+      // eslint-disable-next-line react-hooks/immutability -- Three.js cameras are mutable scene objects.
       camera.fov = fov
       camera.updateProjectionMatrix()
       invalidate()

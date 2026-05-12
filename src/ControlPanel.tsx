@@ -70,13 +70,13 @@ export default function ControlPanel({
   const [detailGroup, setDetailGroup] = useState<FacsGroup | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
-  const [pos, setPos] = useState({ x: 16, y: -1 })      // y=-1 means vertically centred (CSS); ≥0 means absolute top
+  const [collapsedWidth, setCollapsedWidth] = useState(980)
+  const [pos, setPos] = useState({ x: 16, y: 16 })
   const [size, setSize] = useState({ w: 0, h: 0 })       // 0 = auto (use CSS defaults)
 
   const dragState = useRef<{ startX: number; startY: number; startPX: number; startPY: number } | null>(null)
   const resizeState = useRef<{ startX: number; startY: number; startW: number; startH: number; panelW: number; panelH: number } | null>(null)
   const panelRef = useRef<HTMLDivElement | null>(null)
-  const panelWidthRef = useRef(900)
 
   const setControl = (id: string, value: number) => {
     onFacsValues((prev) => ({ ...prev, [id]: value }))
@@ -111,8 +111,8 @@ export default function ControlPanel({
       }
       if (resizeState.current) {
         const { startX, startY, startW, startH } = resizeState.current
-        const nw = Math.max(320, startW + (e.clientX - startX))
-        const nh = Math.max(280, startH + (e.clientY - startY))
+        const nw = Math.max(720, Math.min(window.innerWidth - 32, startW + (e.clientX - startX)))
+        const nh = Math.max(520, Math.min(window.innerHeight - 32, startH + (e.clientY - startY)))
         if (panelRef.current) {
           panelRef.current.style.width = `${nw}px`
           panelRef.current.style.height = `${nh}px`
@@ -127,10 +127,10 @@ export default function ControlPanel({
       }
       if (resizeState.current && panelRef.current) {
         const { startX, startY, startW, startH } = resizeState.current
-        const nw = Math.max(320, startW + (e.clientX - startX))
-        const nh = Math.max(280, startH + (e.clientY - startY))
+        const nw = Math.max(720, Math.min(window.innerWidth - 32, startW + (e.clientX - startX)))
+        const nh = Math.max(520, Math.min(window.innerHeight - 32, startH + (e.clientY - startY)))
         setSize({ w: nw, h: nh })
-        panelWidthRef.current = nw
+        setCollapsedWidth(nw)
       }
       dragState.current = null
       resizeState.current = null
@@ -162,23 +162,24 @@ export default function ControlPanel({
     }
   }
 
-  const isDragging = dragState.current !== null
-
   const panelStyle: CSSProperties = {
     position: 'fixed',
-    left: collapsed ? -(panelWidthRef.current + 16) : pos.x,
+    left: collapsed ? -(collapsedWidth + 16) : pos.x,
     top: pos.y < 0 ? '50%' : pos.y,
     transform: pos.y < 0 ? 'translateY(-50%)' : 'none',
-    transition: isDragging ? 'none' : 'left 0.28s cubic-bezier(0.4,0,0.2,1)',
+    transition: 'left 0.28s cubic-bezier(0.4,0,0.2,1)',
     pointerEvents: 'auto',
     userSelect: 'none',
     display: 'flex',
     flexDirection: 'column',
-    ...(size.w ? { width: size.w } : {}),
-    ...(size.h ? { height: size.h } : {}),
+    width: size.w || 'min(980px, calc(100vw - 32px))',
+    height: size.h || 'min(820px, calc(100vh - 32px))',
+    minWidth: 'min(720px, calc(100vw - 32px))',
+    minHeight: 'min(520px, calc(100vh - 32px))',
+    maxWidth: 'calc(100vw - 32px)',
+    maxHeight: 'calc(100vh - 32px)',
     ...panel,
     overflow: 'hidden',
-    maxHeight: size.h ? 'none' : 'calc(100vh - 32px)',
     zIndex: 11,
   }
 
@@ -188,6 +189,15 @@ export default function ControlPanel({
       {/* ── Collapse tab (visible when panel is hidden) ────────────────────── */}
       <div
         onClick={() => setCollapsed(false)}
+        role="button"
+        tabIndex={collapsed ? 0 : -1}
+        aria-label="Open FACS panel"
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            setCollapsed(false)
+          }
+        }}
         style={{
           position: 'fixed',
           left: collapsed ? 0 : -48,
@@ -236,18 +246,19 @@ export default function ControlPanel({
               {activeCount > 0 ? `${activeCount} ACTIVE` : 'NEUTRAL'}
             </span>
             <button
-              onClick={() => { if (panelRef.current) panelWidthRef.current = panelRef.current.getBoundingClientRect().width; setCollapsed(true) }}
+              onClick={() => { if (panelRef.current) setCollapsedWidth(panelRef.current.getBoundingClientRect().width); setCollapsed(true) }}
               style={{
                 background: 'none', border: 'none', cursor: 'pointer',
                 color: 'rgba(255,255,255,0.3)', fontSize: 12, padding: '0 2px', lineHeight: 1,
               }}
+              aria-label="Collapse FACS panel"
               title="Collapse panel"
             >◀</button>
           </div>
         </div>
 
           {/* Face overlay — fills available height */}
-          <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px 8px' }}>
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'stretch', justifyContent: 'center', padding: '8px 12px 6px', overflow: 'hidden' }}>
             <FaceOverlaySized facsValues={facsValues} eyeLook2D={eyeLook2D} onChange={setControl} onEyeLook2D={onEyeLook2D} />
           </div>
 
@@ -256,7 +267,7 @@ export default function ControlPanel({
             style={{
               display: 'flex',
               gap: 4,
-              padding: '7px 10px',
+              padding: '8px 12px',
               borderTop: '1px solid rgba(255,255,255,0.07)',
               flexShrink: 0,
               flexWrap: 'wrap',
@@ -274,8 +285,8 @@ export default function ControlPanel({
           <div
             style={{
               display: 'flex',
-              gap: 3,
-              padding: '5px 10px',
+              gap: 6,
+              padding: '8px 12px',
               borderTop: '1px solid rgba(255,255,255,0.05)',
               flexShrink: 0,
             }}
@@ -290,7 +301,7 @@ export default function ControlPanel({
               </Chip>
             ))}
             <div style={{ flex: 1 }} />
-            <Chip onClick={() => setShowSettings((v) => !v)} active={showSettings}>⚙</Chip>
+            <Chip onClick={() => setShowSettings((v) => !v)} active={showSettings} ariaLabel="Toggle settings">⚙</Chip>
           </div>
 
           {/* Settings row */}
@@ -320,6 +331,7 @@ export default function ControlPanel({
                   onChange={(e) => onFov(parseInt(e.target.value))}
                   className="range-slider"
                   style={{ flex: 1 }}
+                  aria-label="Camera field of view"
                 />
               </div>
               {showBones && boneDebug && (
@@ -420,9 +432,10 @@ export default function ControlPanel({
 function FaceOverlaySized({ facsValues, eyeLook2D, onChange, onEyeLook2D }: { facsValues: FacsValues; eyeLook2D: EyeLookValues; onChange: (id: string, v: number) => void; onEyeLook2D: (v: EyeLookValues) => void }) {
   return (
     <div style={{
-      height: 'min(72vh, 620px)',
+      width: '100%',
+      height: '100%',
       aspectRatio: '920 / 700',
-      minHeight: 360,
+      minHeight: 0,
     }}>
       <FaceOverlay facsValues={facsValues} eyeLook2D={eyeLook2D} onChange={onChange} onEyeLook2D={onEyeLook2D} />
     </div>
@@ -494,7 +507,8 @@ function SideBadge({ side }: { side: FacsSide }) {
 
 function chipStyle(active: boolean): CSSProperties {
   return {
-    fontSize: 9, fontWeight: 700, padding: '3px 8px', borderRadius: 4,
+    fontSize: 9, fontWeight: 700, padding: '7px 10px', borderRadius: 4,
+    minHeight: 30,
     border: active ? '1px solid rgba(232,224,32,0.4)' : '1px solid rgba(255,255,255,0.08)',
     background: active ? 'rgba(232,224,32,0.12)' : 'rgba(255,255,255,0.04)',
     color: active ? 'rgba(232,224,32,0.88)' : 'rgba(255,255,255,0.38)',
@@ -504,9 +518,9 @@ function chipStyle(active: boolean): CSSProperties {
   }
 }
 
-function Chip({ onClick, children, active, bright }: { onClick: () => void; children: ReactNode; active?: boolean; bright?: boolean }) {
+function Chip({ onClick, children, active, bright, ariaLabel }: { onClick: () => void; children: ReactNode; active?: boolean; bright?: boolean; ariaLabel?: string }) {
   return (
-    <button onClick={onClick} style={bright ? {
+    <button onClick={onClick} aria-label={ariaLabel} style={bright ? {
       ...chipStyle(false),
       color: 'rgba(255,255,255,0.65)',
       border: '1px solid rgba(255,255,255,0.14)',

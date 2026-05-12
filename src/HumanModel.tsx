@@ -3,7 +3,7 @@ import { TransformControls, useGLTF } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { buildModelingMorphs, MODELING_CONTROLS, type ModelingValues } from './characterModeling'
-import { buildFacsMorphs, buildFacsPose, type BonePose, type EyeLookValues, type FacsValues } from './facs'
+import { buildFacsMorphs, type EyeLookValues, type FacsValues } from './facs'
 
 type Props = {
   facsValues: FacsValues
@@ -45,7 +45,6 @@ export type BoneDebug = {
 }
 
 const MODEL_URL = `${import.meta.env.BASE_URL}human3.glb?v=identity-modeling-2026-05-10-1`
-const WORLD_POSITION_GAIN = 0.5
 const HEAD_LOOK_YAW = 1.05
 const HEAD_LOOK_PITCH = 0.58
 const NECK_LOOK_YAW = 0.18
@@ -54,13 +53,6 @@ const EYE_LOOK_ALPHA = 0.45
 const FOCUS_LOCK_EYE_ALPHA = 0.18
 const EYE_FORWARD = new THREE.Vector3(0, 0, 1)
 const EYE_OBJECT_NAMES = ['Eye_L', 'Eye_R']
-
-const DEFORM_ALIASES: Record<string, string[]> = {
-  jaw_master: ['DEF-jaw_master'],
-  'lip.T': ['DEF-lip.T.L', 'DEF-lip.T.R'],
-  'lip.B': ['DEF-lip.B.L', 'DEF-lip.B.R'],
-  nose_master: ['DEF-nose'],
-}
 
 function normalizeBoneName(name: string) {
   return name.replace(/^DEF-/, '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase()
@@ -71,42 +63,6 @@ function getBoneByName(bones: Record<string, THREE.Bone>, name: string) {
     bones[name] ??
     Object.values(bones).find((bone) => normalizeBoneName(bone.name) === normalizeBoneName(name))
   )
-}
-
-function getRuntimePose(
-  boneName: string,
-  poses: Record<string, BonePose>,
-) {
-  const directPose = poses[boneName]
-  if (directPose) return directPose
-
-  const normalizedBoneName = normalizeBoneName(boneName)
-  const normalizedControlName = normalizeBoneName(boneName.replace(/^DEF-/, ''))
-  const normalizedPose = Object.entries(poses).find(([poseBoneName]) => {
-    const normalizedPoseName = normalizeBoneName(poseBoneName)
-    const normalizedDeformPoseName = normalizeBoneName(`DEF-${poseBoneName}`)
-
-    return (
-      normalizedPoseName === normalizedBoneName ||
-      normalizedPoseName === normalizedControlName ||
-      normalizedDeformPoseName === normalizedBoneName
-    )
-  })?.[1]
-
-  if (normalizedPose) return normalizedPose
-
-  if (boneName.startsWith('DEF-')) {
-    const controlName = boneName.slice(4)
-    if (poses[controlName]) return poses[controlName]
-  }
-
-  for (const [controlName, targets] of Object.entries(DEFORM_ALIASES)) {
-    if (targets.some((target) => normalizeBoneName(target) === normalizedBoneName)) {
-      return poses[controlName]
-    }
-  }
-
-  return undefined
 }
 
 const FACE_BONE_PATTERN = /^DEF-(brow|cheek|chin|eye|forehead|jaw|lid|lip|nose|teeth)/
@@ -397,10 +353,9 @@ export default function HumanModel({
     tRef.current = Math.min(1, tRef.current + delta * 5)
     const t = tRef.current
 
-    const facsPose = buildFacsPose(facsValuesRef.current)
     const facsMorphs = buildFacsMorphs(facsValuesRef.current)
     const modelingMorphs = buildModelingMorphs(modelingValuesRef.current)
-    const runtimeMorphs = showBones ? modelingMorphs : { ...modelingMorphs, ...facsMorphs }
+    const runtimeMorphs = { ...modelingMorphs, ...facsMorphs }
     const lookEnabled = (eyeLook || focusLock) && !showBones
     const lookTarget = lookTargetObject?.getWorldPosition(new THREE.Vector3()) ?? null
     const headBone = getBoneByName(bones, 'RT_Head') ?? getBoneByName(bones, 'head')
@@ -415,38 +370,8 @@ export default function HumanModel({
         const r = rest[name]
         if (!r) continue
 
-        const pose = getRuntimePose(name, facsPose)
-
-        // Target position
-        let targetPos = r.position
-        if (pose?.position || pose?.worldPosition) {
-          const delta = new THREE.Vector3(...(pose.position ?? pose.worldPosition ?? [0, 0, 0]))
-
-          if (pose.worldPosition) {
-            delta.applyQuaternion(r.parentWorldQuaternion.clone().invert())
-          }
-
-          targetPos = r.position.clone().addScaledVector(
-            delta,
-            pose.worldPosition ? WORLD_POSITION_GAIN : 1,
-          )
-        }
-
-        // Target rotation
-        let targetQ = r.quaternion
-        if (pose?.rotation) {
-          const delta_q = new THREE.Quaternion().setFromEuler(
-            new THREE.Euler(
-              pose.rotation[0],
-              pose.rotation[1],
-              pose.rotation[2],
-            )
-          )
-          targetQ = r.quaternion.clone().multiply(delta_q)
-        }
-
-        bone.position.lerp(targetPos, t)
-        bone.quaternion.slerp(targetQ, t)
+        bone.position.lerp(r.position, t)
+        bone.quaternion.slerp(r.quaternion, t)
       }
 
       if (look && lookTarget) {
