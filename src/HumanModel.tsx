@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { TransformControls, useGLTF } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
-import * as THREE from 'three'
+import * as THREE from 'three/webgpu'
+import { createSkinMaterial, type SkinTextures } from './skinMaterial'
 import {
   buildModelingMorphs,
   MODELING_CONTROLS,
@@ -22,6 +23,8 @@ type Props = {
   showBones: boolean
   eyeLook: boolean
   focusLock: boolean
+  skinTextures: SkinTextures
+  showModelingOverlay: boolean
   onModelingValues: Dispatch<SetStateAction<ModelingValues>>
   onSelectedModelingHandleId: (id: string) => void
   onBoneDebug: (debug: BoneDebug | null) => void
@@ -55,7 +58,8 @@ export type BoneDebug = {
   deltaRotation: [number, number, number]
 }
 
-const MODEL_URL = `${import.meta.env.BASE_URL}human3.glb?v=identity-modeling-2026-05-10-1`
+const MODEL_URL = `${import.meta.env.BASE_URL}human4.glb?v=identity-modeling-2026-05-10-1`
+const SKIN_MESH_NAMES = new Set(['Head', 'Plane.002'])
 const HEAD_LOOK_YAW = 1.05
 const HEAD_LOOK_PITCH = 0.58
 const NECK_LOOK_YAW = 0.18
@@ -74,6 +78,11 @@ function getBoneByName(bones: Record<string, THREE.Bone>, name: string) {
     bones[name] ??
     Object.values(bones).find((bone) => normalizeBoneName(bone.name) === normalizeBoneName(name))
   )
+}
+
+function isSkinMesh(object: THREE.Object3D) {
+  const mesh = object as THREE.Mesh
+  return Boolean(mesh.isMesh && SKIN_MESH_NAMES.has(object.name))
 }
 
 const FACE_BONE_PATTERN = /^DEF-(brow|cheek|chin|eye|forehead|jaw|lid|lip|nose|teeth)/
@@ -223,6 +232,8 @@ export default function HumanModel({
   showBones,
   eyeLook,
   focusLock,
+  skinTextures,
+  showModelingOverlay,
   onModelingValues,
   onSelectedModelingHandleId,
   onBoneDebug,
@@ -483,17 +494,45 @@ export default function HumanModel({
     }
   })
 
+  // Apply TSL skin material, overriding whatever the GLB baked in
+  useEffect(() => {
+    let cancelled = false
+    let mat: THREE.MeshPhysicalNodeMaterial | null = null
+
+    createSkinMaterial(skinTextures)
+      .then((created) => {
+        if (cancelled) {
+          created.dispose()
+          return
+        }
+        mat = created
+        scene.traverse((obj) => {
+          if (!isSkinMesh(obj)) return
+          const mesh = obj as THREE.Mesh
+          mesh.material = mat as unknown as THREE.Material
+        })
+      })
+      .catch((error: unknown) => {
+        console.error('Failed to create skin material:', error)
+      })
+
+    return () => {
+      cancelled = true
+      mat?.dispose()
+    }
+  }, [scene, skinTextures])
+
   useEffect(() => {
     scene.traverse((obj) => {
       const mesh = obj as THREE.Mesh
-      if (mesh.isMesh && mesh.material) {
+      if (isSkinMesh(obj) && mesh.material) {
         const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
         mats.forEach((m) => {
           ;(m as THREE.MeshStandardMaterial).wireframe = wireframe
         })
       }
     })
-  }, [scene, wireframe])
+  }, [scene, wireframe, skinTextures])
 
   // Head bounding box is Y=[2.76, 3.49]; shift -3.1 to center at origin
   return (
@@ -564,7 +603,7 @@ export default function HumanModel({
         />
       )}
 
-      {!showBones && (
+      {!showBones && showModelingOverlay && (
         <ModelingOverlay
           mode={modelingMode}
           symmetric={modelingSymmetric}
