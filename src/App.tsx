@@ -17,8 +17,11 @@ import { createNeutralModelingValues, type ModelingMode } from './characterModel
 import { createNeutralEyeLook, createNeutralFacsValues } from './facs'
 import {
   DEFAULT_FLIP_NORMAL_Y,
+  DEFAULT_OILINESS,
   DEFAULT_PORE_NORMAL_STRENGTH,
   DEFAULT_PORE_SCALE,
+  DEFAULT_SURFACE_ROUGHNESS,
+  DEFAULT_TONE_DEPTH,
   DEFAULT_WRINKLE_NORMAL_STRENGTH,
   type SkinTextures,
 } from './skinMaterial'
@@ -55,6 +58,9 @@ export default function App() {
   const [poreNormalStrength, setPoreNormalStrength] = useState(DEFAULT_PORE_NORMAL_STRENGTH)
   const [wrinkleNormalStrength, setWrinkleNormalStrength] = useState(DEFAULT_WRINKLE_NORMAL_STRENGTH)
   const [flipNormalY, setFlipNormalY] = useState(DEFAULT_FLIP_NORMAL_Y)
+  const [oiliness, setOiliness] = useState(DEFAULT_OILINESS)
+  const [surfaceRoughness, setSurfaceRoughness] = useState(DEFAULT_SURFACE_ROUGHNESS)
+  const [toneDepth, setToneDepth] = useState(DEFAULT_TONE_DEPTH)
 
   const [showExpressions, setShowExpressions] = useState(false)
   const [showModeling, setShowModeling] = useState(false)
@@ -153,6 +159,9 @@ export default function App() {
             poreNormalStrength={poreNormalStrength}
             wrinkleNormalStrength={wrinkleNormalStrength}
             flipNormalY={flipNormalY}
+            oiliness={oiliness}
+            surfaceRoughness={surfaceRoughness}
+            toneDepth={toneDepth}
             showModelingOverlay={showModeling}
             onModelingValues={setModelingValues}
             onSelectedModelingHandleId={setSelectedModelingHandleId}
@@ -215,6 +224,9 @@ export default function App() {
           onPoreNormalStrength={setPoreNormalStrength}
           onWrinkleNormalStrength={setWrinkleNormalStrength}
           onFlipNormalY={setFlipNormalY}
+          onOiliness={setOiliness}
+          onSurfaceRoughness={setSurfaceRoughness}
+          onToneDepth={setToneDepth}
         />
       )}
     </div>

@@ -1,10 +1,13 @@
 import * as THREE from 'three/webgpu'
-import { texture, uv, mix, normalMap, float, clamp, vec2, vec3 } from 'three/tsl'
+import { texture, uv, mix, normalMap, float, clamp, vec2, vec3, normalView, positionViewDirection, dot, smoothstep } from 'three/tsl'
 
 export const DEFAULT_PORE_SCALE = 30
 export const DEFAULT_PORE_NORMAL_STRENGTH = 1
 export const DEFAULT_WRINKLE_NORMAL_STRENGTH = 1
-export const DEFAULT_FLIP_NORMAL_Y = true
+export const DEFAULT_FLIP_NORMAL_Y = false
+export const DEFAULT_OILINESS = 0.15
+export const DEFAULT_SURFACE_ROUGHNESS = 0.55
+export const DEFAULT_TONE_DEPTH = 0.571
 const EYE_TEXTURE_DEFAULT = 'textures/eyes.png'
 
 export const SKIN_TEXTURE_SLOTS = [
@@ -46,6 +49,9 @@ export type SkinMaterialSettings = {
   poreNormalStrength: number
   wrinkleNormalStrength: number
   flipNormalY: boolean
+  oiliness: number
+  surfaceRoughness: number
+  toneDepth: number
 }
 
 export async function createSkinMaterial(
@@ -55,16 +61,19 @@ export async function createSkinMaterial(
     poreNormalStrength: DEFAULT_PORE_NORMAL_STRENGTH,
     wrinkleNormalStrength: DEFAULT_WRINKLE_NORMAL_STRENGTH,
     flipNormalY: DEFAULT_FLIP_NORMAL_Y,
+    oiliness: DEFAULT_OILINESS,
+    surfaceRoughness: DEFAULT_SURFACE_ROUGHNESS,
+    toneDepth: DEFAULT_TONE_DEPTH,
   },
 ): Promise<THREE.MeshPhysicalNodeMaterial> {
   const loader = new THREE.TextureLoader()
 
-  async function loadTex(slot: SkinTextureSlot, colorSpace: THREE.ColorSpace, repeat = 1): Promise<THREE.Texture> {
+  async function loadTex(slot: SkinTextureSlot, colorSpace: THREE.ColorSpace, repeat = 1, clamp = false): Promise<THREE.Texture> {
     const url = overrides[slot] ?? `${import.meta.env.BASE_URL}${SKIN_TEXTURE_DEFAULTS[slot]}`
     const tex = await loader.loadAsync(url)
     tex.colorSpace = colorSpace
-    tex.wrapS = THREE.RepeatWrapping
-    tex.wrapT = THREE.RepeatWrapping
+    tex.wrapS = clamp ? THREE.ClampToEdgeWrapping : THREE.RepeatWrapping
+    tex.wrapT = clamp ? THREE.ClampToEdgeWrapping : THREE.RepeatWrapping
     tex.repeat.set(repeat, repeat)
     tex.anisotropy = 8
     tex.flipY = false
@@ -81,12 +90,12 @@ export async function createSkinMaterial(
     wrinkleNormalMap,
     poresNormalMap,
   ] = await Promise.all([
-    loadTex('colorFinal',    THREE.SRGBColorSpace),
-    loadTex('subdermal',     THREE.SRGBColorSpace),
-    loadTex('epidermal',     THREE.SRGBColorSpace),
-    loadTex('roughness',     THREE.NoColorSpace),
-    loadTex('specular',      THREE.NoColorSpace),
-    loadTex('wrinkleNormal', THREE.NoColorSpace),
+    loadTex('colorFinal',    THREE.SRGBColorSpace, 1, true),
+    loadTex('subdermal',     THREE.SRGBColorSpace, 1, true),
+    loadTex('epidermal',     THREE.SRGBColorSpace, 1, true),
+    loadTex('roughness',     THREE.NoColorSpace,   1, true),
+    loadTex('specular',      THREE.NoColorSpace,   1, true),
+    loadTex('wrinkleNormal', THREE.NoColorSpace,   1, true),
     loadTex('poresNormal',   THREE.NoColorSpace),
   ])
 
@@ -97,7 +106,7 @@ export async function createSkinMaterial(
   const subdermal   = texture(subdermalMap,   baseUv).rgb
   const epidermal   = texture(epidermalMap,   baseUv).rgb
   const skinLayer   = mix(subdermal, epidermal, float(0.488))
-  const baseColor   = mix(colorFinal, skinLayer, float(0.571))
+  const baseColor   = mix(colorFinal, skinLayer, float(settings.toneDepth))
 
   const roughness     = clamp(texture(roughnessMap, baseUv).r, float(0.34), float(0.78))
   const specular      = texture(specularMap, baseUv).r
@@ -114,8 +123,15 @@ export async function createSkinMaterial(
     texture(wrinkleNormalMap, baseUv).rgb,
     float(settings.wrinkleNormalStrength),
   )
+
   const blendedNormalTex = mix(poreNormalTex, wrinkleNormalTex, float(0.5))
-  const combinedN        = normalMap(blendedNormalTex, vec2(1.0, settings.flipNormalY ? -1.0 : 1.0))
+
+  // Fade normal map to neutral at grazing angles to prevent silhouette artifacts.
+  const NdotV        = clamp(dot(normalView, positionViewDirection), float(0.0), float(1.0))
+  const grazingFade  = smoothstep(float(0.0), float(0.5), NdotV)
+  const fadedNormal  = mix(neutralNormal, blendedNormalTex, grazingFade)
+
+  const combinedN    = normalMap(fadedNormal, vec2(1.0, settings.flipNormalY ? -1.0 : 1.0))
 
   const mat = new THREE.MeshPhysicalNodeMaterial()
   mat.name                  = 'TSL_Skin'
@@ -125,10 +141,11 @@ export async function createSkinMaterial(
   mat.specularIntensityNode = specIntensity
 
   mat.metalness         = 0.0
-  mat.roughness         = 0.55
+  mat.roughness         = settings.surfaceRoughness
   mat.ior               = 1.45
   mat.specularIntensity = 0.85
   mat.specularColor     = new THREE.Color(1.0, 0.92, 0.86)
+  mat.side              = THREE.DoubleSide
   mat.transparent       = false
   mat.opacity           = 1.0
   mat.transmission      = 0.0
@@ -136,6 +153,8 @@ export async function createSkinMaterial(
   mat.sheen             = 0.08
   mat.sheenRoughness    = 0.78
   mat.sheenColor        = new THREE.Color(1.0, 0.78, 0.68)
+  mat.clearcoat          = settings.oiliness
+  mat.clearcoatRoughness = 0.12 + (1.0 - settings.oiliness) * 0.5
   mat.needsUpdate       = true
 
   return mat

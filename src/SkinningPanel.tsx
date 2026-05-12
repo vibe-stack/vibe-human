@@ -1,8 +1,11 @@
 import { useRef, type CSSProperties } from 'react'
 import {
   DEFAULT_FLIP_NORMAL_Y,
+  DEFAULT_OILINESS,
   DEFAULT_PORE_NORMAL_STRENGTH,
   DEFAULT_PORE_SCALE,
+  DEFAULT_SURFACE_ROUGHNESS,
+  DEFAULT_TONE_DEPTH,
   DEFAULT_WRINKLE_NORMAL_STRENGTH,
   SKIN_TEXTURE_LABELS,
   SKIN_TEXTURE_SLOTS,
@@ -16,11 +19,17 @@ type Props = {
   poreNormalStrength: number
   wrinkleNormalStrength: number
   flipNormalY: boolean
+  oiliness: number
+  surfaceRoughness: number
+  toneDepth: number
   onTextures: (textures: SkinTextures) => void
   onPoreScale: (scale: number) => void
   onPoreNormalStrength: (strength: number) => void
   onWrinkleNormalStrength: (strength: number) => void
   onFlipNormalY: (flip: boolean) => void
+  onOiliness: (v: number) => void
+  onSurfaceRoughness: (v: number) => void
+  onToneDepth: (v: number) => void
 }
 
 const panelBg: CSSProperties = {
@@ -39,17 +48,30 @@ const labelStyle: CSSProperties = {
   fontFamily: "'Courier New', monospace",
 }
 
+const scrollbarStyle = `
+  .skin-scroll::-webkit-scrollbar { width: 4px; }
+  .skin-scroll::-webkit-scrollbar-track { background: transparent; }
+  .skin-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 2px; }
+  .skin-scroll::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); }
+`
+
 export default function SkinningPanel({
   textures,
   poreScale,
   poreNormalStrength,
   wrinkleNormalStrength,
   flipNormalY,
+  oiliness,
+  surfaceRoughness,
+  toneDepth,
   onTextures,
   onPoreScale,
   onPoreNormalStrength,
   onWrinkleNormalStrength,
   onFlipNormalY,
+  onOiliness,
+  onSurfaceRoughness,
+  onToneDepth,
 }: Props) {
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
@@ -76,6 +98,9 @@ export default function SkinningPanel({
     onPoreNormalStrength(DEFAULT_PORE_NORMAL_STRENGTH)
     onWrinkleNormalStrength(DEFAULT_WRINKLE_NORMAL_STRENGTH)
     onFlipNormalY(DEFAULT_FLIP_NORMAL_Y)
+    onOiliness(DEFAULT_OILINESS)
+    onSurfaceRoughness(DEFAULT_SURFACE_ROUGHNESS)
+    onToneDepth(DEFAULT_TONE_DEPTH)
     onTextures({})
   }
 
@@ -84,7 +109,10 @@ export default function SkinningPanel({
     (poreScale !== DEFAULT_PORE_SCALE ? 1 : 0) +
     (poreNormalStrength !== DEFAULT_PORE_NORMAL_STRENGTH ? 1 : 0) +
     (wrinkleNormalStrength !== DEFAULT_WRINKLE_NORMAL_STRENGTH ? 1 : 0) +
-    (flipNormalY !== DEFAULT_FLIP_NORMAL_Y ? 1 : 0)
+    (flipNormalY !== DEFAULT_FLIP_NORMAL_Y ? 1 : 0) +
+    (oiliness !== DEFAULT_OILINESS ? 1 : 0) +
+    (surfaceRoughness !== DEFAULT_SURFACE_ROUGHNESS ? 1 : 0) +
+    (toneDepth !== DEFAULT_TONE_DEPTH ? 1 : 0)
 
   const sliderRow = (
     label: string,
@@ -152,146 +180,171 @@ export default function SkinningPanel({
     </div>
   )
 
+  const sectionLabel = (text: string) => (
+    <div style={{
+      padding: '8px 12px 4px',
+      fontSize: 8,
+      fontWeight: 700,
+      letterSpacing: '0.16em',
+      color: 'rgba(255,255,255,0.2)',
+      fontFamily: 'monospace',
+      borderBottom: '1px solid rgba(255,255,255,0.04)',
+    }}>
+      {text}
+    </div>
+  )
+
   return (
-    <div style={{ position: 'fixed', left: 16, bottom: 16, width: 300, zIndex: 11, userSelect: 'none', ...panelBg }}>
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '8px 12px',
-        borderBottom: '1px solid rgba(255,255,255,0.07)',
-      }}>
-        <span style={labelStyle}>SKIN TEXTURES</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {customCount > 0 && (
-            <span style={{ fontSize: 9, color: 'rgba(125,211,252,0.68)', fontFamily: 'monospace' }}>
-              {customCount} CUSTOM
-            </span>
-          )}
-          {customCount > 0 && (
-            <button
-              onClick={resetAll}
-              style={{
-                background: 'none',
-                border: '1px solid rgba(255,255,255,0.12)',
-                borderRadius: 3,
-                cursor: 'pointer',
-                color: 'rgba(255,255,255,0.4)',
-                fontSize: 9,
-                padding: '2px 6px',
-                fontFamily: 'monospace',
-              }}
-            >
-              RESET ALL
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div style={{ padding: '4px 0', maxHeight: 400, overflowY: 'auto' }}>
-        {sliderRow('PORE SCALE', poreScale, 4, 90, 1, DEFAULT_PORE_SCALE, onPoreScale)}
-        {sliderRow('PORE NORMAL', poreNormalStrength, 0, 2, 0.05, DEFAULT_PORE_NORMAL_STRENGTH, onPoreNormalStrength)}
-        {sliderRow('WRINKLE NORMAL', wrinkleNormalStrength, 0, 2, 0.05, DEFAULT_WRINKLE_NORMAL_STRENGTH, onWrinkleNormalStrength)}
-
+    <>
+      <style>{scrollbarStyle}</style>
+      <div style={{ position: 'fixed', left: 16, bottom: 16, width: 300, zIndex: 11, userSelect: 'none', ...panelBg }}>
         <div style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '9px 12px',
-          borderBottom: '1px solid rgba(255,255,255,0.06)',
+          padding: '8px 12px',
+          borderBottom: '1px solid rgba(255,255,255,0.07)',
         }}>
-          <span style={{ ...labelStyle, color: 'rgba(255,255,255,0.48)' }}>FLIP NORMAL Y</span>
-          <input
-            type="checkbox"
-            checked={flipNormalY}
-            onChange={(e) => onFlipNormalY(e.target.checked)}
-            style={{ accentColor: '#7dd3fc' }}
-          />
-        </div>
-
-        {SKIN_TEXTURE_SLOTS.map((slot) => {
-          const isCustom = textures[slot] !== undefined
-          return (
-            <div
-              key={slot}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                padding: '6px 12px',
-                gap: 8,
-                borderBottom: '1px solid rgba(255,255,255,0.04)',
-              }}
-            >
-              <span style={{
-                flex: 1,
-                fontSize: 10,
-                color: isCustom ? 'rgba(125,211,252,0.9)' : 'rgba(255,255,255,0.55)',
-                fontFamily: 'monospace',
-              }}>
-                {SKIN_TEXTURE_LABELS[slot]}
+          <span style={labelStyle}>SKIN TEXTURES</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {customCount > 0 && (
+              <span style={{ fontSize: 9, color: 'rgba(125,211,252,0.68)', fontFamily: 'monospace' }}>
+                {customCount} CUSTOM
               </span>
-
-              <span style={{
-                fontSize: 8,
-                color: isCustom ? 'rgba(125,211,252,0.5)' : 'rgba(255,255,255,0.18)',
-                fontFamily: 'monospace',
-                minWidth: 42,
-                textAlign: 'right',
-              }}>
-                {isCustom ? 'CUSTOM' : 'DEFAULT'}
-              </span>
-
-              {isCustom && (
-                <button
-                  onClick={() => handleReset(slot)}
-                  title="Reset to default"
-                  style={{
-                    background: 'none',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    borderRadius: 3,
-                    cursor: 'pointer',
-                    color: 'rgba(255,255,255,0.35)',
-                    fontSize: 11,
-                    padding: '1px 5px',
-                    lineHeight: 1.4,
-                  }}
-                >
-                  ↺
-                </button>
-              )}
-
+            )}
+            {customCount > 0 && (
               <button
-                onClick={() => inputRefs.current[slot]?.click()}
+                onClick={resetAll}
                 style={{
-                  background: 'rgba(255,255,255,0.06)',
+                  background: 'none',
                   border: '1px solid rgba(255,255,255,0.12)',
                   borderRadius: 3,
                   cursor: 'pointer',
-                  color: 'rgba(255,255,255,0.55)',
+                  color: 'rgba(255,255,255,0.4)',
                   fontSize: 9,
-                  padding: '3px 7px',
+                  padding: '2px 6px',
                   fontFamily: 'monospace',
-                  flexShrink: 0,
                 }}
               >
-                UPLOAD
+                RESET ALL
               </button>
+            )}
+          </div>
+        </div>
 
-              <input
-                ref={(el) => { inputRefs.current[slot] = el }}
-                type="file"
-                accept="image/*"
-                style={{ display: 'none' }}
-                onChange={(e) => {
-                  const file = e.target.files?.[0]
-                  if (file) handleUpload(slot, file)
-                  e.target.value = ''
+        <div className="skin-scroll" style={{ padding: '4px 0', maxHeight: 480, overflowY: 'auto' }}>
+
+          {sectionLabel('APPEARANCE')}
+          {sliderRow('OILINESS', oiliness, 0, 1, 0.01, DEFAULT_OILINESS, onOiliness)}
+          {sliderRow('SURFACE ROUGHNESS', surfaceRoughness, 0.1, 1, 0.01, DEFAULT_SURFACE_ROUGHNESS, onSurfaceRoughness)}
+          {sliderRow('TONE DEPTH', toneDepth, 0, 1, 0.01, DEFAULT_TONE_DEPTH, onToneDepth)}
+
+          {sectionLabel('DETAIL')}
+          {sliderRow('PORE SCALE', poreScale, 4, 90, 1, DEFAULT_PORE_SCALE, onPoreScale)}
+          {sliderRow('PORE NORMAL', poreNormalStrength, 0, 2, 0.05, DEFAULT_PORE_NORMAL_STRENGTH, onPoreNormalStrength)}
+          {sliderRow('WRINKLE NORMAL', wrinkleNormalStrength, 0, 2, 0.05, DEFAULT_WRINKLE_NORMAL_STRENGTH, onWrinkleNormalStrength)}
+
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '9px 12px',
+            borderBottom: '1px solid rgba(255,255,255,0.06)',
+          }}>
+            <span style={{ ...labelStyle, color: 'rgba(255,255,255,0.48)' }}>FLIP NORMAL Y</span>
+            <input
+              type="checkbox"
+              checked={flipNormalY}
+              onChange={(e) => onFlipNormalY(e.target.checked)}
+              style={{ accentColor: '#7dd3fc' }}
+            />
+          </div>
+
+          {sectionLabel('TEXTURES')}
+          {SKIN_TEXTURE_SLOTS.map((slot) => {
+            const isCustom = textures[slot] !== undefined
+            return (
+              <div
+                key={slot}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  padding: '6px 12px',
+                  gap: 8,
+                  borderBottom: '1px solid rgba(255,255,255,0.04)',
                 }}
-              />
-            </div>
-          )
-        })}
+              >
+                <span style={{
+                  flex: 1,
+                  fontSize: 10,
+                  color: isCustom ? 'rgba(125,211,252,0.9)' : 'rgba(255,255,255,0.55)',
+                  fontFamily: 'monospace',
+                }}>
+                  {SKIN_TEXTURE_LABELS[slot]}
+                </span>
+
+                <span style={{
+                  fontSize: 8,
+                  color: isCustom ? 'rgba(125,211,252,0.5)' : 'rgba(255,255,255,0.18)',
+                  fontFamily: 'monospace',
+                  minWidth: 42,
+                  textAlign: 'right',
+                }}>
+                  {isCustom ? 'CUSTOM' : 'DEFAULT'}
+                </span>
+
+                {isCustom && (
+                  <button
+                    onClick={() => handleReset(slot)}
+                    title="Reset to default"
+                    style={{
+                      background: 'none',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: 3,
+                      cursor: 'pointer',
+                      color: 'rgba(255,255,255,0.35)',
+                      fontSize: 11,
+                      padding: '1px 5px',
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    ↺
+                  </button>
+                )}
+
+                <button
+                  onClick={() => inputRefs.current[slot]?.click()}
+                  style={{
+                    background: 'rgba(255,255,255,0.06)',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    borderRadius: 3,
+                    cursor: 'pointer',
+                    color: 'rgba(255,255,255,0.55)',
+                    fontSize: 9,
+                    padding: '3px 7px',
+                    fontFamily: 'monospace',
+                    flexShrink: 0,
+                  }}
+                >
+                  UPLOAD
+                </button>
+
+                <input
+                  ref={(el) => { inputRefs.current[slot] = el }}
+                  type="file"
+                  accept="image/*"
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) handleUpload(slot, file)
+                    e.target.value = ''
+                  }}
+                />
+              </div>
+            )
+          })}
+        </div>
       </div>
-    </div>
+    </>
   )
 }

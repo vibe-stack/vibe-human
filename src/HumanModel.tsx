@@ -28,6 +28,9 @@ type Props = {
   poreNormalStrength: number
   wrinkleNormalStrength: number
   flipNormalY: boolean
+  oiliness: number
+  surfaceRoughness: number
+  toneDepth: number
   showModelingOverlay: boolean
   onModelingValues: Dispatch<SetStateAction<ModelingValues>>
   onSelectedModelingHandleId: (id: string) => void
@@ -95,20 +98,7 @@ function isEyeMesh(object: THREE.Object3D) {
   return Boolean(mesh.isMesh && EYE_MESH_NAMES.has(object.name))
 }
 
-function ensureTangents(object: THREE.Object3D) {
-  const mesh = object as THREE.Mesh
-  if (!mesh.isMesh || !isSkinMesh(object)) return
 
-  const geometry = mesh.geometry
-  if (geometry.hasAttribute('tangent')) return
-  if (!geometry.index || !geometry.hasAttribute('position') || !geometry.hasAttribute('normal') || !geometry.hasAttribute('uv')) {
-    console.warn('Skin mesh cannot compute tangents: missing indexed position/normal/uv attributes')
-    return
-  }
-
-  geometry.computeTangents()
-  geometry.getAttribute('tangent').needsUpdate = true
-}
 
 const FACE_BONE_PATTERN = /^DEF-(brow|cheek|chin|eye|forehead|jaw|lid|lip|nose|teeth)/
 
@@ -262,6 +252,9 @@ export default function HumanModel({
   poreNormalStrength,
   wrinkleNormalStrength,
   flipNormalY,
+  oiliness,
+  surfaceRoughness,
+  toneDepth,
   showModelingOverlay,
   onModelingValues,
   onSelectedModelingHandleId,
@@ -528,13 +521,14 @@ export default function HumanModel({
     let cancelled = false
     let mat: THREE.MeshPhysicalNodeMaterial | null = null
 
-    scene.traverse(ensureTangents)
-
     createSkinMaterial(skinTextures, {
       poreScale,
       poreNormalStrength,
       wrinkleNormalStrength,
       flipNormalY,
+      oiliness,
+      surfaceRoughness,
+      toneDepth,
     })
       .then((created) => {
         if (cancelled) {
@@ -556,7 +550,7 @@ export default function HumanModel({
       cancelled = true
       mat?.dispose()
     }
-  }, [flipNormalY, poreNormalStrength, poreScale, scene, skinTextures, wrinkleNormalStrength])
+  }, [flipNormalY, oiliness, poreNormalStrength, poreScale, scene, skinTextures, surfaceRoughness, toneDepth, wrinkleNormalStrength])
 
   useEffect(() => {
     let cancelled = false
