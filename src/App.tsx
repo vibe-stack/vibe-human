@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useState } from 'react'
 import { Canvas, extend, useThree, type ThreeToJSXElements } from '@react-three/fiber'
-import { OrbitControls, Environment } from '@react-three/drei'
+import { OrbitControls } from '@react-three/drei'
 import * as THREE from 'three/webgpu'
 import { Smile, Box, Layers } from 'lucide-react'
 
@@ -53,7 +53,7 @@ export default function App() {
   const [focusLock, setFocusLock] = useState(false)
   const [isTransforming, setIsTransforming] = useState(false)
   const [boneDebug, setBoneDebug] = useState<BoneDebug | null>(null)
-  const [fov, setFov] = useState(45)
+  const [fov, setFov] = useState(16)
   const [skinTextures, setSkinTextures] = useState<SkinTextures>({})
   const [poreScale, setPoreScale] = useState(DEFAULT_PORE_SCALE)
   const [poreNormalStrength, setPoreNormalStrength] = useState(DEFAULT_PORE_NORMAL_STRENGTH)
@@ -124,7 +124,7 @@ export default function App() {
         ))}
       </nav>
       <Canvas
-        camera={{ position: [0, 0, 1.2], fov: 45 }}
+        camera={{ position: [0, 0, 2.0], fov: 16 }}
         gl={async (props) => {
           const renderer = new THREE.WebGPURenderer({ antialias: true, alpha: false, ...props } as never)
           await renderer.init()
@@ -136,15 +136,16 @@ export default function App() {
         style={{ width: '100%', height: '100%' }}
       >
         <FovUpdater fov={fov} />
-        <color attach="background" args={['#080810']} />
+        <color attach="background" args={['#252525']} />
         <fog attach="fog" args={['#080810', 2, 6]} />
 
-        {/* Key light – front-left, warm */}
-        <pointLight position={[-0.6, 0.8, 1.0]} intensity={4.0} color="#fff5e8" distance={4} decay={2} castShadow />
-        {/* Fill light – front-right, cool, softer */}
-        <pointLight position={[0.8, 0.2, 0.9]} intensity={1.4} color="#ccd8ff" distance={4} decay={2} castShadow />
-        {/* Rim light – behind and above, warm separation */}
-        <pointLight position={[0.2, 1.0, -1.2]} intensity={3.0} color="#ffe8d0" distance={4} decay={2} castShadow />
+        {/* Key light – front-left, warm, main illumination */}
+        <spotLight position={[-0.6, 0.8, 1.0]} target-position={[0, 0, 0]} intensity={6.0} color="#fff5e8" angle={0.45} penumbra={0.4} distance={5} decay={2} castShadow />
+        {/* Fill light – front-right, cool, soft — opposite side from key, still in front */}
+        <spotLight position={[0.8, 0.2, 0.9]} target-position={[0, 0, 0]} intensity={2.0} color="#ccd8ff" angle={0.5} penumbra={0.6} distance={5} decay={2} />
+        {/* Rim lights – directional from behind, parallel rays only hit back-facing normals (silhouette), never the nose */}
+        <directionalLight position={[-0.6, 0.2, -1]} intensity={3.5} color="#ffd9b0" />
+        <directionalLight position={[ 0.6, 0.2, -1]} intensity={3.5} color="#ffd9b0" />
 
         <Suspense fallback={null}>
           {/* <Environment files={`${import.meta.env.BASE_URL}potsdamer_platz_1k.hdr`} /> */}

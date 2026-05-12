@@ -5,10 +5,10 @@ export const DEFAULT_PORE_SCALE = 30
 export const DEFAULT_PORE_NORMAL_STRENGTH = 1
 export const DEFAULT_WRINKLE_NORMAL_STRENGTH = 1
 export const DEFAULT_FLIP_NORMAL_Y = false
-export const DEFAULT_OILINESS = 0.15
-export const DEFAULT_SURFACE_ROUGHNESS = 0.55
+export const DEFAULT_OILINESS = 0.08
+export const DEFAULT_SURFACE_ROUGHNESS = 0.68
 export const DEFAULT_TONE_DEPTH = 0.571
-export const DEFAULT_SUBSURFACE_STRENGTH = 0.42
+export const DEFAULT_SUBSURFACE_STRENGTH = 0.68
 const EYE_TEXTURE_DEFAULT = 'textures/eyes.png'
 
 export const SKIN_TEXTURE_SLOTS = [
@@ -19,6 +19,7 @@ export const SKIN_TEXTURE_SLOTS = [
   'specular',
   'wrinkleNormal',
   'poresNormal',
+  'sss',
 ] as const
 
 export type SkinTextureSlot = (typeof SKIN_TEXTURE_SLOTS)[number]
@@ -31,6 +32,7 @@ export const SKIN_TEXTURE_LABELS: Record<SkinTextureSlot, string> = {
   specular:     'Specular',
   wrinkleNormal:'Wrinkle Normal',
   poresNormal:  'Pore Normal',
+  sss:          'SSS Thickness',
 }
 
 export const SKIN_TEXTURE_DEFAULTS: Record<SkinTextureSlot, string> = {
@@ -41,6 +43,7 @@ export const SKIN_TEXTURE_DEFAULTS: Record<SkinTextureSlot, string> = {
   specular:     'textures/specular.png',
   wrinkleNormal:'textures/wrinklenormalhd.webp',
   poresNormal:  'textures/poremap2k.webp',
+  sss:          'textures/sss.png',
 }
 
 export type SkinTextures = Partial<Record<SkinTextureSlot, string>>
@@ -57,6 +60,7 @@ export type SkinMaterialSettings = {
 }
 
 export async function createSkinMaterial(
+
   overrides: SkinTextures = {},
   settings: SkinMaterialSettings = {
     poreScale: DEFAULT_PORE_SCALE,
@@ -68,7 +72,7 @@ export async function createSkinMaterial(
     toneDepth: DEFAULT_TONE_DEPTH,
     subsurfaceStrength: DEFAULT_SUBSURFACE_STRENGTH,
   },
-): Promise<THREE.MeshPhysicalNodeMaterial> {
+): Promise<THREE.MeshSSSNodeMaterial> {
   const loader = new THREE.TextureLoader()
 
   async function loadTex(slot: SkinTextureSlot, colorSpace: THREE.ColorSpace, repeat = 1, clamp = false): Promise<THREE.Texture> {
@@ -92,6 +96,7 @@ export async function createSkinMaterial(
     specularMap,
     wrinkleNormalMap,
     poresNormalMap,
+    sssMap,
   ] = await Promise.all([
     loadTex('colorFinal',    THREE.SRGBColorSpace, 1, true),
     loadTex('subdermal',     THREE.SRGBColorSpace, 1, true),
@@ -100,6 +105,7 @@ export async function createSkinMaterial(
     loadTex('specular',      THREE.NoColorSpace,   1, true),
     loadTex('wrinkleNormal', THREE.NoColorSpace,   1, true),
     loadTex('poresNormal',   THREE.NoColorSpace),
+    loadTex('sss',           THREE.NoColorSpace,   1, true),
   ])
 
   const baseUv      = uv()
@@ -117,21 +123,21 @@ export async function createSkinMaterial(
   const roughnessTex  = texture(roughnessMap, baseUv).r
   const roughness     = clamp(
     roughnessTex
-      .mul(0.64)
-      .add(float(settings.surfaceRoughness).mul(0.36))
-      .sub(specular.mul(0.06 + settings.oiliness * 0.1)),
-    float(0.24),
-    float(0.86),
+      .mul(0.58)
+      .add(float(settings.surfaceRoughness).mul(0.48))
+      .sub(specular.mul(0.035 + settings.oiliness * 0.06)),
+    float(0.42),
+    float(0.92),
   )
   const specIntensity = clamp(
-    specular.mul(0.62).add(0.36 + settings.oiliness * 0.18),
-    float(0.32),
-    float(0.96),
+    specular.mul(0.32).add(0.16 + settings.oiliness * 0.08),
+    float(0.12),
+    float(0.42),
   )
   const specTint      = mix(
-    vec3(1.0, 0.78, 0.62),
-    vec3(1.0, 0.96, 0.9),
-    clamp(specular.mul(1.4), float(0.0), float(1.0)),
+    vec3(0.96, 0.72, 0.58),
+    vec3(0.99, 0.9, 0.84),
+    clamp(specular.mul(0.9), float(0.0), float(1.0)),
   )
 
   const neutralNormal    = vec3(0.5, 0.5, 1.0)
@@ -166,22 +172,31 @@ export async function createSkinMaterial(
 
   const scatterRim   = pow(clamp(float(1.0).sub(NdotV), float(0.0), float(1.0)), float(2.25))
   const scatterMask  = smoothstep(float(0.05), float(0.9), scatterRim).mul(settings.subsurfaceStrength)
-  const scatterColor = mix(baseColor, bloodTint, scatterMask.mul(0.34))
+  const scatterColor = mix(baseColor, bloodTint, scatterMask.mul(0.12))
   const oilFilm      = clamp(
-    specular.mul(0.34).add(float(settings.oiliness).mul(0.52)),
-    float(0.03),
-    float(0.75),
+    specular.mul(0.12).add(float(settings.oiliness).mul(0.18)),
+    float(0.0),
+    float(0.16),
   )
   const oilRoughness = clamp(
-    roughness.mul(0.25).add(0.06 + (1.0 - settings.oiliness) * 0.18),
-    float(0.045),
-    float(0.32),
+    roughness.mul(0.7).add(0.12 + (1.0 - settings.oiliness) * 0.08),
+    float(0.36),
+    float(0.72),
   )
 
-  const mat = new THREE.MeshPhysicalNodeMaterial()
+  const thicknessMask = texture(sssMap, baseUv).r
+  const thicknessProfile = smoothstep(float(0.3), float(0.9), thicknessMask)
+  const thicknessColor = bloodTint.mul(thicknessProfile.mul(0.28))
+
+  const mat = new THREE.MeshSSSNodeMaterial()
   mat.name                  = 'TSL_Skin'
   mat.colorNode             = scatterColor
-  mat.emissiveNode          = bloodTint.mul(scatterMask.mul(0.055))
+  mat.thicknessColorNode    = thicknessColor
+  mat.thicknessDistortionNode = float(0.08)
+  mat.thicknessAmbientNode    = float(0.0)
+  mat.thicknessAttenuationNode = float(0.1)
+  mat.thicknessPowerNode      = float(2.8)
+  mat.thicknessScaleNode      = float(settings.subsurfaceStrength * 2.4)
   mat.roughnessNode         = roughness
   mat.normalNode            = combinedN
   mat.specularIntensityNode = specIntensity
@@ -189,24 +204,24 @@ export async function createSkinMaterial(
   mat.clearcoatNode         = oilFilm
   mat.clearcoatRoughnessNode = oilRoughness
   mat.clearcoatNormalNode   = clearcoatN
-  mat.sheenNode             = vec3(1.0, 0.52, 0.38).mul(0.03 + settings.subsurfaceStrength * 0.12)
-  mat.sheenRoughnessNode    = float(0.84)
+  mat.sheenNode             = vec3(1.0, 0.5, 0.4).mul(0.008 + settings.subsurfaceStrength * 0.03)
+  mat.sheenRoughnessNode    = float(0.96)
 
   mat.metalness         = 0.0
-  mat.roughness         = settings.surfaceRoughness
-  mat.ior               = 1.45
-  mat.specularIntensity = 0.85
-  mat.specularColor     = new THREE.Color(1.0, 0.92, 0.86)
+  mat.roughness         = Math.max(settings.surfaceRoughness, 0.68)
+  mat.ior               = 1.4
+  mat.specularIntensity = 0.28
+  mat.specularColor     = new THREE.Color(0.98, 0.88, 0.82)
   mat.side              = THREE.DoubleSide
   mat.transparent       = false
   mat.opacity           = 1.0
   mat.transmission      = 0.0
   mat.thickness         = 0.0
-  mat.sheen             = 0.12
-  mat.sheenRoughness    = 0.84
-  mat.sheenColor        = new THREE.Color(1.0, 0.78, 0.68)
-  mat.clearcoat          = Math.max(settings.oiliness, 0.03)
-  mat.clearcoatRoughness = 0.06 + (1.0 - settings.oiliness) * 0.18
+  mat.sheen             = 0.02
+  mat.sheenRoughness    = 0.96
+  mat.sheenColor        = new THREE.Color(0.98, 0.72, 0.64)
+  mat.clearcoat          = Math.max(settings.oiliness * 0.18, 0.0)
+  mat.clearcoatRoughness = 0.44 + (1.0 - settings.oiliness) * 0.16
   mat.needsUpdate       = true
 
   return mat
