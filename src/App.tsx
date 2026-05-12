@@ -20,6 +20,7 @@ import {
   DEFAULT_OILINESS,
   DEFAULT_PORE_NORMAL_STRENGTH,
   DEFAULT_PORE_SCALE,
+  DEFAULT_SUBSURFACE_STRENGTH,
   DEFAULT_SURFACE_ROUGHNESS,
   DEFAULT_TONE_DEPTH,
   DEFAULT_WRINKLE_NORMAL_STRENGTH,
@@ -61,6 +62,7 @@ export default function App() {
   const [oiliness, setOiliness] = useState(DEFAULT_OILINESS)
   const [surfaceRoughness, setSurfaceRoughness] = useState(DEFAULT_SURFACE_ROUGHNESS)
   const [toneDepth, setToneDepth] = useState(DEFAULT_TONE_DEPTH)
+  const [subsurfaceStrength, setSubsurfaceStrength] = useState(DEFAULT_SUBSURFACE_STRENGTH)
 
   const [showExpressions, setShowExpressions] = useState(false)
   const [showModeling, setShowModeling] = useState(false)
@@ -126,6 +128,9 @@ export default function App() {
         gl={async (props) => {
           const renderer = new THREE.WebGPURenderer({ antialias: true, alpha: false, ...props } as never)
           await renderer.init()
+          renderer.outputColorSpace = THREE.SRGBColorSpace
+          renderer.toneMapping = THREE.ACESFilmicToneMapping
+          renderer.toneMappingExposure = 1.05
           return renderer as never
         }}
         style={{ width: '100%', height: '100%' }}
@@ -134,15 +139,15 @@ export default function App() {
         <color attach="background" args={['#080810']} />
         <fog attach="fog" args={['#080810', 2, 6]} />
 
-        {/* Key light – front-left, warm, main illumination */}
-        <directionalLight position={[-1.2, 1.8, 2]} intensity={2.8} color="#fff5e8" castShadow />
-        {/* Fill light – front-right, cooler, opens up shadow side */}
-        <directionalLight position={[2, 0.6, 1.5]} intensity={0.9} color="#ccd8ff" />
-        {/* Rim light – behind-above, separates head from background */}
-        <directionalLight position={[0.4, 2.5, -2.5]} intensity={2.2} color="#ffe8d0" />
+        {/* Key light – front-left, warm */}
+        <pointLight position={[-0.6, 0.8, 1.0]} intensity={4.0} color="#fff5e8" distance={4} decay={2} castShadow />
+        {/* Fill light – front-right, cool, softer */}
+        <pointLight position={[0.8, 0.2, 0.9]} intensity={1.4} color="#ccd8ff" distance={4} decay={2} castShadow />
+        {/* Rim light – behind and above, warm separation */}
+        <pointLight position={[0.2, 1.0, -1.2]} intensity={3.0} color="#ffe8d0" distance={4} decay={2} castShadow />
 
         <Suspense fallback={null}>
-          <Environment files={`${import.meta.env.BASE_URL}potsdamer_platz_1k.hdr`} />
+          {/* <Environment files={`${import.meta.env.BASE_URL}potsdamer_platz_1k.hdr`} /> */}
           <HumanModel
             facsValues={facsValues}
             modelingValues={modelingValues}
@@ -162,6 +167,7 @@ export default function App() {
             oiliness={oiliness}
             surfaceRoughness={surfaceRoughness}
             toneDepth={toneDepth}
+            subsurfaceStrength={subsurfaceStrength}
             showModelingOverlay={showModeling}
             onModelingValues={setModelingValues}
             onSelectedModelingHandleId={setSelectedModelingHandleId}
@@ -219,6 +225,10 @@ export default function App() {
           poreNormalStrength={poreNormalStrength}
           wrinkleNormalStrength={wrinkleNormalStrength}
           flipNormalY={flipNormalY}
+          oiliness={oiliness}
+          surfaceRoughness={surfaceRoughness}
+          toneDepth={toneDepth}
+          subsurfaceStrength={subsurfaceStrength}
           onTextures={setSkinTextures}
           onPoreScale={setPoreScale}
           onPoreNormalStrength={setPoreNormalStrength}
@@ -227,6 +237,7 @@ export default function App() {
           onOiliness={setOiliness}
           onSurfaceRoughness={setSurfaceRoughness}
           onToneDepth={setToneDepth}
+          onSubsurfaceStrength={setSubsurfaceStrength}
         />
       )}
     </div>

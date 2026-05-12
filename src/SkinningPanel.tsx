@@ -4,6 +4,7 @@ import {
   DEFAULT_OILINESS,
   DEFAULT_PORE_NORMAL_STRENGTH,
   DEFAULT_PORE_SCALE,
+  DEFAULT_SUBSURFACE_STRENGTH,
   DEFAULT_SURFACE_ROUGHNESS,
   DEFAULT_TONE_DEPTH,
   DEFAULT_WRINKLE_NORMAL_STRENGTH,
@@ -22,6 +23,7 @@ type Props = {
   oiliness: number
   surfaceRoughness: number
   toneDepth: number
+  subsurfaceStrength: number
   onTextures: (textures: SkinTextures) => void
   onPoreScale: (scale: number) => void
   onPoreNormalStrength: (strength: number) => void
@@ -30,6 +32,7 @@ type Props = {
   onOiliness: (v: number) => void
   onSurfaceRoughness: (v: number) => void
   onToneDepth: (v: number) => void
+  onSubsurfaceStrength: (v: number) => void
 }
 
 const panelBg: CSSProperties = {
@@ -64,6 +67,7 @@ export default function SkinningPanel({
   oiliness,
   surfaceRoughness,
   toneDepth,
+  subsurfaceStrength,
   onTextures,
   onPoreScale,
   onPoreNormalStrength,
@@ -72,6 +76,7 @@ export default function SkinningPanel({
   onOiliness,
   onSurfaceRoughness,
   onToneDepth,
+  onSubsurfaceStrength,
 }: Props) {
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
@@ -101,6 +106,7 @@ export default function SkinningPanel({
     onOiliness(DEFAULT_OILINESS)
     onSurfaceRoughness(DEFAULT_SURFACE_ROUGHNESS)
     onToneDepth(DEFAULT_TONE_DEPTH)
+    onSubsurfaceStrength(DEFAULT_SUBSURFACE_STRENGTH)
     onTextures({})
   }
 
@@ -112,7 +118,8 @@ export default function SkinningPanel({
     (flipNormalY !== DEFAULT_FLIP_NORMAL_Y ? 1 : 0) +
     (oiliness !== DEFAULT_OILINESS ? 1 : 0) +
     (surfaceRoughness !== DEFAULT_SURFACE_ROUGHNESS ? 1 : 0) +
-    (toneDepth !== DEFAULT_TONE_DEPTH ? 1 : 0)
+    (toneDepth !== DEFAULT_TONE_DEPTH ? 1 : 0) +
+    (subsurfaceStrength !== DEFAULT_SUBSURFACE_STRENGTH ? 1 : 0)
 
   const sliderRow = (
     label: string,
@@ -238,6 +245,7 @@ export default function SkinningPanel({
           {sliderRow('OILINESS', oiliness, 0, 1, 0.01, DEFAULT_OILINESS, onOiliness)}
           {sliderRow('SURFACE ROUGHNESS', surfaceRoughness, 0.1, 1, 0.01, DEFAULT_SURFACE_ROUGHNESS, onSurfaceRoughness)}
           {sliderRow('TONE DEPTH', toneDepth, 0, 1, 0.01, DEFAULT_TONE_DEPTH, onToneDepth)}
+          {sliderRow('SUBSURFACE', subsurfaceStrength, 0, 1, 0.01, DEFAULT_SUBSURFACE_STRENGTH, onSubsurfaceStrength)}
 
           {sectionLabel('DETAIL')}
           {sliderRow('PORE SCALE', poreScale, 4, 90, 1, DEFAULT_PORE_SCALE, onPoreScale)}

@@ -31,6 +31,7 @@ type Props = {
   oiliness: number
   surfaceRoughness: number
   toneDepth: number
+  subsurfaceStrength: number
   showModelingOverlay: boolean
   onModelingValues: Dispatch<SetStateAction<ModelingValues>>
   onSelectedModelingHandleId: (id: string) => void
@@ -255,6 +256,7 @@ export default function HumanModel({
   oiliness,
   surfaceRoughness,
   toneDepth,
+  subsurfaceStrength,
   showModelingOverlay,
   onModelingValues,
   onSelectedModelingHandleId,
@@ -529,6 +531,7 @@ export default function HumanModel({
       oiliness,
       surfaceRoughness,
       toneDepth,
+      subsurfaceStrength,
     })
       .then((created) => {
         if (cancelled) {
@@ -550,7 +553,7 @@ export default function HumanModel({
       cancelled = true
       mat?.dispose()
     }
-  }, [flipNormalY, oiliness, poreNormalStrength, poreScale, scene, skinTextures, surfaceRoughness, toneDepth, wrinkleNormalStrength])
+  }, [flipNormalY, oiliness, poreNormalStrength, poreScale, scene, skinTextures, subsurfaceStrength, surfaceRoughness, toneDepth, wrinkleNormalStrength])
 
   useEffect(() => {
     let cancelled = false
