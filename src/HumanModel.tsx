@@ -1,18 +1,29 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { TransformControls, useGLTF } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { buildModelingMorphs, MODELING_CONTROLS, type ModelingValues } from './characterModeling'
+import {
+  buildModelingMorphs,
+  MODELING_CONTROLS,
+  type ModelingMode,
+  type ModelingValues,
+} from './characterModeling'
 import { buildFacsMorphs, type EyeLookValues, type FacsValues } from './facs'
+import ModelingOverlay from './ModelingOverlay'
 
 type Props = {
   facsValues: FacsValues
   modelingValues: ModelingValues
+  modelingMode: ModelingMode
+  modelingSymmetric: boolean
+  selectedModelingHandleId: string | null
   eyeLook2D: EyeLookValues
   wireframe: boolean
   showBones: boolean
   eyeLook: boolean
   focusLock: boolean
+  onModelingValues: Dispatch<SetStateAction<ModelingValues>>
+  onSelectedModelingHandleId: (id: string) => void
   onBoneDebug: (debug: BoneDebug | null) => void
   onTransformingChange: (isTransforming: boolean) => void
 }
@@ -204,11 +215,16 @@ function applyMorphTargets(
 export default function HumanModel({
   facsValues,
   modelingValues,
+  modelingMode,
+  modelingSymmetric,
+  selectedModelingHandleId,
   eyeLook2D,
   wireframe,
   showBones,
   eyeLook,
   focusLock,
+  onModelingValues,
+  onSelectedModelingHandleId,
   onBoneDebug,
   onTransformingChange,
 }: Props) {
@@ -223,6 +239,7 @@ export default function HumanModel({
   const objectRestRef = useRef<Record<string, ObjectRest>>({})
   const tRef = useRef(1) // lerp progress, 1 = at target
   const [debugBones, setDebugBones] = useState<THREE.Bone[]>([])
+  const [modelingBones, setModelingBones] = useState<Record<string, THREE.Bone>>({})
   const [selectedBone, setSelectedBone] = useState<THREE.Bone | null>(null)
 
   const facsValuesRef = useRef(facsValues)
@@ -331,7 +348,10 @@ export default function HumanModel({
 
     let cancelled = false
     queueMicrotask(() => {
-      if (!cancelled) setDebugBones(nextDebugBones)
+      if (!cancelled) {
+        setDebugBones(nextDebugBones)
+        setModelingBones(bones)
+      }
     })
 
     return () => {
@@ -541,6 +561,19 @@ export default function HumanModel({
               debug,
             )
           }}
+        />
+      )}
+
+      {!showBones && (
+        <ModelingOverlay
+          mode={modelingMode}
+          symmetric={modelingSymmetric}
+          values={modelingValues}
+          selectedHandleId={selectedModelingHandleId}
+          bones={modelingBones}
+          onSelectedHandleId={onSelectedModelingHandleId}
+          onValues={onModelingValues}
+          onTransformingChange={onTransformingChange}
         />
       )}
     </>

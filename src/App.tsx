@@ -5,7 +5,7 @@ import * as THREE from 'three'
 import HumanModel, { type BoneDebug } from './HumanModel'
 import CharacterModelingPanel from './CharacterModelingPanel'
 import ControlPanel from './ControlPanel'
-import { createNeutralModelingValues } from './characterModeling'
+import { createNeutralModelingValues, type ModelingMode } from './characterModeling'
 import { createNeutralEyeLook, createNeutralFacsValues } from './facs'
 
 function FovUpdater({ fov }: { fov: number }) {
@@ -24,6 +24,9 @@ function FovUpdater({ fov }: { fov: number }) {
 export default function App() {
   const [facsValues, setFacsValues] = useState(createNeutralFacsValues)
   const [modelingValues, setModelingValues] = useState(createNeutralModelingValues)
+  const [modelingMode, setModelingMode] = useState<ModelingMode>('transform')
+  const [modelingSymmetric, setModelingSymmetric] = useState(true)
+  const [selectedModelingHandleId, setSelectedModelingHandleId] = useState<string | null>(null)
   const [eyeLook2D, setEyeLook2D] = useState(createNeutralEyeLook)
   const [wireframe, setWireframe] = useState(false)
   const [showBones, setShowBones] = useState(false)
@@ -53,11 +56,16 @@ export default function App() {
           <HumanModel
             facsValues={facsValues}
             modelingValues={modelingValues}
+            modelingMode={modelingMode}
+            modelingSymmetric={modelingSymmetric}
+            selectedModelingHandleId={selectedModelingHandleId}
             eyeLook2D={eyeLook2D}
             wireframe={wireframe}
             showBones={showBones}
             eyeLook={eyeLook}
             focusLock={focusLock}
+            onModelingValues={setModelingValues}
+            onSelectedModelingHandleId={setSelectedModelingHandleId}
             onBoneDebug={setBoneDebug}
             onTransformingChange={setIsTransforming}
           />
@@ -91,7 +99,16 @@ export default function App() {
         onFocusLock={setFocusLock}
         onFov={setFov}
       />
-      <CharacterModelingPanel values={modelingValues} onValues={setModelingValues} />
+      <CharacterModelingPanel
+        values={modelingValues}
+        mode={modelingMode}
+        symmetric={modelingSymmetric}
+        selectedHandleId={selectedModelingHandleId}
+        onValues={setModelingValues}
+        onMode={setModelingMode}
+        onSymmetric={setModelingSymmetric}
+        onSelectedHandleId={setSelectedModelingHandleId}
+      />
     </div>
   )
 }

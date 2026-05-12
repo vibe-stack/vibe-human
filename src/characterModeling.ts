@@ -10,6 +10,21 @@ export type ModelingControl = {
 }
 
 export type ModelingValues = Record<string, number>
+export type ModelingMode = 'transform' | 'sculpt'
+export type ModelingHandleSide = 'center' | 'left' | 'right'
+export type ModelingHandleAxis = 'x' | 'y' | 'z'
+
+export type ModelingHandle = {
+  id: string
+  controlId: string
+  controlIds: string[]
+  mode: ModelingMode
+  label: string
+  position: [number, number, number]
+  axis: ModelingHandleAxis
+  side: ModelingHandleSide
+  mirrored: boolean
+}
 
 function makeControl(
   morphBase: string,
@@ -179,6 +194,12 @@ export const MODELING_TABS = Array.from(
   new Set(MODELING_CONTROLS.map((c) => c.tab)),
 )
 
+const CONTROL_BY_ID = new Map(MODELING_CONTROLS.map((control) => [control.id, control]))
+
+export function getModelingControlById(id: string | null | undefined) {
+  return id ? CONTROL_BY_ID.get(id) ?? null : null
+}
+
 export function getControlsForTab(tab: string) {
   return MODELING_CONTROLS.filter((c) => c.tab === tab)
 }
@@ -205,4 +226,463 @@ export function buildModelingMorphs(values: ModelingValues): Record<string, numb
   }
 
   return morphs
+}
+
+const TRANSFORM_HANDLE_SPECS: Array<{
+  controlId: string
+  position: [number, number, number]
+  axis: ModelingHandleAxis
+  mirrored?: boolean
+}> = [
+  { controlId: 'id.head.width', position: [0.245, 0.05, 0.1], axis: 'x', mirrored: true },
+  { controlId: 'id.head.height', position: [0, 0.375, 0.08], axis: 'y' },
+  { controlId: 'id.head.scale', position: [0, 0.275, 0.2], axis: 'y' },
+  { controlId: 'id.head.depth', position: [0, 0.1, 0.29], axis: 'z' },
+  { controlId: 'id.skull.braincase.scale', position: [0, 0.325, 0.09], axis: 'y' },
+  { controlId: 'id.skull.braincase.width', position: [0.215, 0.2, 0.12], axis: 'x', mirrored: true },
+  { controlId: 'id.skull.forehead.depth', position: [0, 0.19, 0.28], axis: 'z' },
+  { controlId: 'id.skull.browRidge.depth', position: [0.08, 0.105, 0.29], axis: 'z', mirrored: true },
+  { controlId: 'id.skull.eye.spacing', position: [0.052, 0.055, 0.31], axis: 'x', mirrored: true },
+  { controlId: 'id.skull.eye.width', position: [0.098, 0.055, 0.3], axis: 'x', mirrored: true },
+  { controlId: 'id.skull.eye.depth', position: [0.078, 0.063, 0.32], axis: 'z', mirrored: true },
+  { controlId: 'id.skull.cheekbone.width', position: [0.15, -0.02, 0.27], axis: 'x', mirrored: true },
+  { controlId: 'id.skull.cheekbone.height', position: [0.13, 0.025, 0.27], axis: 'y', mirrored: true },
+  { controlId: 'id.nose.bridge.width', position: [0, 0.055, 0.33], axis: 'x' },
+  { controlId: 'id.nose.nasalBone.depth', position: [0, 0.015, 0.35], axis: 'z' },
+  { controlId: 'id.nose.tip.direction', position: [0, -0.055, 0.36], axis: 'y' },
+  { controlId: 'id.nose.nostril.width', position: [0.052, -0.075, 0.34], axis: 'x', mirrored: true },
+  { controlId: 'id.mouth.width', position: [0.098, -0.15, 0.33], axis: 'x', mirrored: true },
+  { controlId: 'id.mouth.upperLip.depth', position: [0, -0.13, 0.35], axis: 'z' },
+  { controlId: 'id.mouth.lowerLip.depth', position: [0, -0.175, 0.35], axis: 'z' },
+  { controlId: 'id.skull.upperJaw.depth', position: [0, -0.06, 0.32], axis: 'z' },
+  { controlId: 'id.skull.lowerJaw.width', position: [0.145, -0.17, 0.2], axis: 'x', mirrored: true },
+  { controlId: 'id.skull.chin.depth', position: [0, -0.27, 0.27], axis: 'z' },
+  { controlId: 'id.skull.chin.height', position: [0, -0.315, 0.18], axis: 'y' },
+]
+
+const SCULPT_AREA_SPECS: Array<{
+  id: string
+  label: string
+  controlId: string
+  controlIds: string[]
+  section: string
+  position?: [number, number, number]
+  axis?: ModelingHandleAxis
+  mirrored?: boolean
+}> = [
+  {
+    id: 'head',
+    label: 'Head',
+    controlId: 'id.head.scale',
+    controlIds: ['id.head.scale', 'id.head.width', 'id.head.height', 'id.head.depth'],
+    section: 'Head',
+  },
+  {
+    id: 'braincase',
+    label: 'Braincase',
+    controlId: 'id.skull.braincase.scale',
+    controlIds: [
+      'id.skull.braincase.scale',
+      'id.skull.braincase.width',
+      'id.skull.braincase.depth',
+      'id.skull.braincase.height',
+      'id.skull.braincase.backDepth',
+      'id.skull.braincase.backHeight',
+      'id.skull.braincase.topWidth',
+      'id.skull.braincase.sideVolume',
+      'id.skull.braincase.roundness',
+    ],
+    section: 'Braincase',
+    position: [0, 0.29, 0.16],
+  },
+  {
+    id: 'forehead',
+    label: 'Forehead',
+    controlId: 'id.skull.forehead.depth',
+    controlIds: [
+      'id.skull.forehead.depth',
+      'id.skull.forehead.width',
+      'id.skull.forehead.height',
+      'id.skull.forehead.slope',
+      'id.skull.forehead.lowerVolume',
+      'id.skull.forehead.upperVolume',
+    ],
+    section: 'Forehead',
+    mirrored: true,
+  },
+  {
+    id: 'brow-ridge',
+    label: 'Brow Ridge',
+    controlId: 'id.skull.browRidge.depth',
+    controlIds: [
+      'id.skull.browRidge.depth',
+      'id.skull.browRidge.width',
+      'id.skull.browRidge.height',
+      'id.skull.browRidge.innerDepth',
+      'id.skull.browRidge.outerDepth',
+    ],
+    section: 'Brow Ridge',
+    mirrored: true,
+  },
+  {
+    id: 'temple',
+    label: 'Temple',
+    controlId: 'id.skull.temple.width',
+    controlIds: ['id.skull.temple.width'],
+    section: 'Temple',
+    mirrored: true,
+  },
+  {
+    id: 'eye-shape',
+    label: 'Eye Shape',
+    controlId: 'id.skull.eye.width',
+    controlIds: [
+      'id.skull.eye.width',
+      'id.skull.eye.height',
+      'id.skull.eye.spacing',
+      'id.skull.eye.depth',
+      'id.skull.eye.tilt',
+      'id.skull.eye.angularity',
+    ],
+    section: 'Eye',
+    mirrored: true,
+  },
+  {
+    id: 'upper-eyelid',
+    label: 'Upper Eyelid',
+    controlId: 'id.skull.eye.upperRimHeight',
+    controlIds: ['id.skull.eye.upperRimHeight', 'id.skull.eye.upperRimDepth'],
+    section: 'Eye',
+    position: [0.083, 0.075, 0.32],
+    axis: 'y',
+    mirrored: true,
+  },
+  {
+    id: 'lower-eyelid',
+    label: 'Lower Eyelid',
+    controlId: 'id.skull.eye.lowerRimHeight',
+    controlIds: ['id.skull.eye.lowerRimHeight', 'id.skull.eye.lowerRimDepth'],
+    section: 'Eye',
+    position: [0.083, 0.035, 0.32],
+    axis: 'y',
+    mirrored: true,
+  },
+  {
+    id: 'cheekbone',
+    label: 'Cheekbone',
+    controlId: 'id.skull.cheekbone.height',
+    controlIds: [
+      'id.skull.cheekbone.height',
+      'id.skull.cheekbone.width',
+      'id.skull.cheekbone.angularity',
+    ],
+    section: 'Cheekbone',
+    mirrored: true,
+  },
+  {
+    id: 'upper-jaw',
+    label: 'Upper Jaw',
+    controlId: 'id.skull.upperJaw.depth',
+    controlIds: [
+      'id.skull.upperJaw.depth',
+      'id.skull.upperJaw.width',
+      'id.skull.upperJaw.height',
+      'id.skull.upperJaw.roundness',
+    ],
+    section: 'Upper Jaw',
+    mirrored: true,
+  },
+  {
+    id: 'lower-jaw',
+    label: 'Lower Jaw',
+    controlId: 'id.skull.lowerJaw.width',
+    controlIds: [
+      'id.skull.lowerJaw.width',
+      'id.skull.lowerJaw.height',
+      'id.skull.lowerJaw.depth',
+      'id.skull.lowerJaw.roundedness',
+    ],
+    section: 'Lower Jaw',
+    mirrored: true,
+  },
+  {
+    id: 'chin',
+    label: 'Chin',
+    controlId: 'id.skull.chin.depth',
+    controlIds: ['id.skull.chin.depth', 'id.skull.chin.width', 'id.skull.chin.height'],
+    section: 'Chin',
+  },
+  {
+    id: 'nose-root',
+    label: 'Nose Root',
+    controlId: 'id.nose.bridge.width',
+    controlIds: ['id.nose.bridge.width', 'id.nose.bridge.angularity'],
+    section: 'Bridge',
+    position: [0, 0.085, 0.34],
+  },
+  {
+    id: 'nasal-bone',
+    label: 'Nasal Bone',
+    controlId: 'id.nose.nasalBone.depth',
+    controlIds: [
+      'id.nose.nasalBone.depth',
+      'id.nose.nasalBone.width',
+      'id.nose.nasalBone.height',
+      'id.nose.nasalBone.direction',
+    ],
+    section: 'Nasal Bone',
+  },
+  {
+    id: 'upper-cartilage',
+    label: 'Upper Cartilage',
+    controlId: 'id.nose.upperCartilage.depth',
+    controlIds: [
+      'id.nose.upperCartilage.depth',
+      'id.nose.upperCartilage.width',
+      'id.nose.upperCartilage.height',
+      'id.nose.upperCartilage.direction',
+    ],
+    section: 'Upper Cartilage',
+    position: [0, -0.022, 0.36],
+  },
+  {
+    id: 'lower-cartilage',
+    label: 'Lower Cartilage',
+    controlId: 'id.nose.lowerCartilage.depth',
+    controlIds: [
+      'id.nose.lowerCartilage.depth',
+      'id.nose.lowerCartilage.width',
+      'id.nose.lowerCartilage.height',
+      'id.nose.lowerCartilage.direction',
+      'id.nose.lowerCartilage.roundedness',
+    ],
+    section: 'Lower Cartilage',
+    position: [0, -0.062, 0.36],
+  },
+  {
+    id: 'nose-tip',
+    label: 'Nose Tip',
+    controlId: 'id.nose.tip.direction',
+    controlIds: ['id.nose.tip.direction', 'id.nose.tip.angularity'],
+    section: 'Tip',
+  },
+  {
+    id: 'nostril',
+    label: 'Nostril',
+    controlId: 'id.nose.nostril.width',
+    controlIds: [
+      'id.nose.nostril.width',
+      'id.nose.nostril.height',
+      'id.nose.nostril.depth',
+      'id.nose.nostril.angularity',
+      'id.nose.nostril.innerScale',
+    ],
+    section: 'Nostril',
+    mirrored: true,
+  },
+  {
+    id: 'mouth',
+    label: 'Mouth',
+    controlId: 'id.mouth.width',
+    controlIds: ['id.mouth.width'],
+    section: 'Mouth',
+    mirrored: true,
+  },
+  {
+    id: 'philtrum',
+    label: 'Philtrum',
+    controlId: 'id.mouth.philtrum.depth',
+    controlIds: ['id.mouth.philtrum.depth', 'id.mouth.philtrum.width'],
+    section: 'Philtrum',
+  },
+  {
+    id: 'upper-lip',
+    label: 'Upper Lip',
+    controlId: 'id.mouth.upperLip.height',
+    controlIds: [
+      'id.mouth.upperLip.height',
+      'id.mouth.upperLip.width',
+      'id.mouth.upperLip.depth',
+      'id.mouth.upperLip.roudnedness',
+    ],
+    section: 'Upper Lip',
+    mirrored: true,
+  },
+  {
+    id: 'lower-lip',
+    label: 'Lower Lip',
+    controlId: 'id.mouth.lowerLip.height',
+    controlIds: [
+      'id.mouth.lowerLip.height',
+      'id.mouth.lowerLip.width',
+      'id.mouth.lowerLip.depth',
+    ],
+    section: 'Lower Lip',
+    mirrored: true,
+  },
+]
+
+const SECTION_POSITIONS: Record<string, [number, number, number]> = {
+  Head: [0, 0.12, 0.28],
+  Braincase: [0.16, 0.245, 0.17],
+  Forehead: [0.08, 0.185, 0.27],
+  'Brow Ridge': [0.082, 0.105, 0.3],
+  Cheekbone: [0.145, -0.015, 0.28],
+  Temple: [0.205, 0.105, 0.15],
+  Eye: [0.083, 0.055, 0.31],
+  'Upper Jaw': [0.085, -0.058, 0.31],
+  'Lower Jaw': [0.13, -0.17, 0.21],
+  Chin: [0, -0.268, 0.28],
+  Bridge: [0, 0.058, 0.34],
+  'Nasal Bone': [0, 0.015, 0.35],
+  'Upper Cartilage': [0, -0.022, 0.36],
+  'Lower Cartilage': [0.04, -0.062, 0.35],
+  Tip: [0, -0.045, 0.37],
+  Nostril: [0.055, -0.078, 0.34],
+  Mouth: [0.103, -0.151, 0.34],
+  Philtrum: [0, -0.103, 0.35],
+  'Upper Lip': [0.042, -0.129, 0.35],
+  'Lower Lip': [0.042, -0.176, 0.35],
+}
+
+const CENTER_SECTIONS = new Set([
+  'Head',
+  'Chin',
+  'Bridge',
+  'Nasal Bone',
+  'Upper Cartilage',
+  'Tip',
+  'Philtrum',
+])
+
+function propertyFromControl(control: ModelingControl) {
+  return control.id.split('.').at(-1) ?? control.label.toLowerCase()
+}
+
+function axisForControl(control: ModelingControl): ModelingHandleAxis {
+  const property = propertyFromControl(control)
+  if (
+    property.includes('width') ||
+    property === 'spacing' ||
+    property === 'sideVolume' ||
+    property === 'innerScale'
+  ) {
+    return 'x'
+  }
+  if (property.includes('height') || property === 'direction' || property === 'tilt') return 'y'
+  return 'z'
+}
+
+function mirrorPosition(position: [number, number, number], side: ModelingHandleSide): [number, number, number] {
+  if (side === 'left') return [-Math.abs(position[0]), position[1], position[2]]
+  if (side === 'right') return [Math.abs(position[0]), position[1], position[2]]
+  return position
+}
+
+function makeHandle(
+  mode: ModelingMode,
+  control: ModelingControl,
+  position: [number, number, number],
+  axis: ModelingHandleAxis,
+  side: ModelingHandleSide,
+  mirrored: boolean,
+  overrides?: { id?: string; label?: string; controlIds?: string[] },
+): ModelingHandle {
+  return {
+    id: overrides?.id ?? `${mode}:${control.id}:${side}`,
+    controlId: control.id,
+    controlIds: overrides?.controlIds ?? [control.id],
+    mode,
+    label: overrides?.label ?? (control.section === control.tab ? control.label : `${control.section} ${control.label}`),
+    position: mirrorPosition(position, side),
+    axis,
+    side,
+    mirrored,
+  }
+}
+
+function expandMirroredHandle(
+  mode: ModelingMode,
+  control: ModelingControl,
+  position: [number, number, number],
+  axis: ModelingHandleAxis,
+  mirrored: boolean,
+  symmetric: boolean,
+  overrides?: { idBase?: string; label?: string; controlIds?: string[] },
+) {
+  if (!mirrored) {
+    return [
+      makeHandle(mode, control, position, axis, 'center', false, {
+        id: overrides?.idBase ? `${mode}:${overrides.idBase}:center` : undefined,
+        label: overrides?.label,
+        controlIds: overrides?.controlIds,
+      }),
+    ]
+  }
+
+  const left = makeHandle(mode, control, position, axis, 'left', true, {
+    id: overrides?.idBase ? `${mode}:${overrides.idBase}:left` : undefined,
+    label: overrides?.label,
+    controlIds: overrides?.controlIds,
+  })
+  const right = makeHandle(mode, control, position, axis, 'right', true, {
+    id: overrides?.idBase ? `${mode}:${overrides.idBase}:right` : undefined,
+    label: overrides?.label,
+    controlIds: overrides?.controlIds,
+  })
+  return symmetric ? [left, right] : [right]
+}
+
+function buildTransformHandles(symmetric: boolean) {
+  return TRANSFORM_HANDLE_SPECS.flatMap((spec) => {
+    const control = getModelingControlById(spec.controlId)
+    if (!control) return []
+
+    return expandMirroredHandle(
+      'transform',
+      control,
+      spec.position,
+      spec.axis,
+      spec.mirrored ?? false,
+      symmetric,
+    )
+  })
+}
+
+function buildSculptHandles(symmetric: boolean) {
+  return SCULPT_AREA_SPECS.flatMap((spec) => {
+    const control = getModelingControlById(spec.controlId)
+    if (!control) return []
+
+    const base = spec.position ?? SECTION_POSITIONS[spec.section] ?? [0, 0, 0.28]
+    const axis = spec.axis ?? axisForControl(control)
+    const mirrored = spec.mirrored ?? (!CENTER_SECTIONS.has(spec.section) || Math.abs(base[0]) > 0.001)
+
+    return expandMirroredHandle(
+      'sculpt',
+      control,
+      base,
+      axis,
+      mirrored,
+      symmetric,
+      {
+        idBase: spec.id,
+        label: spec.label,
+        controlIds: spec.controlIds,
+      },
+    )
+  })
+}
+
+export function getModelingHandles(mode: ModelingMode, symmetric: boolean): ModelingHandle[] {
+  return mode === 'transform' ? buildTransformHandles(symmetric) : buildSculptHandles(symmetric)
+}
+
+export function getModelingHandleById(id: string | null | undefined, symmetric = true) {
+  if (!id) return null
+  return (
+    getModelingHandles('transform', symmetric).find((handle) => handle.id === id) ??
+    getModelingHandles('sculpt', symmetric).find((handle) => handle.id === id) ??
+    null
+  )
 }
