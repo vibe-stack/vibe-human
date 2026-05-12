@@ -1,5 +1,9 @@
 import { useRef, type CSSProperties } from 'react'
 import {
+  DEFAULT_FLIP_NORMAL_Y,
+  DEFAULT_PORE_NORMAL_STRENGTH,
+  DEFAULT_PORE_SCALE,
+  DEFAULT_WRINKLE_NORMAL_STRENGTH,
   SKIN_TEXTURE_LABELS,
   SKIN_TEXTURE_SLOTS,
   type SkinTextureSlot,
@@ -8,7 +12,15 @@ import {
 
 type Props = {
   textures: SkinTextures
+  poreScale: number
+  poreNormalStrength: number
+  wrinkleNormalStrength: number
+  flipNormalY: boolean
   onTextures: (textures: SkinTextures) => void
+  onPoreScale: (scale: number) => void
+  onPoreNormalStrength: (strength: number) => void
+  onWrinkleNormalStrength: (strength: number) => void
+  onFlipNormalY: (flip: boolean) => void
 }
 
 const panelBg: CSSProperties = {
@@ -27,7 +39,18 @@ const labelStyle: CSSProperties = {
   fontFamily: "'Courier New', monospace",
 }
 
-export default function SkinningPanel({ textures, onTextures }: Props) {
+export default function SkinningPanel({
+  textures,
+  poreScale,
+  poreNormalStrength,
+  wrinkleNormalStrength,
+  flipNormalY,
+  onTextures,
+  onPoreScale,
+  onPoreNormalStrength,
+  onWrinkleNormalStrength,
+  onFlipNormalY,
+}: Props) {
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
   const handleUpload = (slot: SkinTextureSlot, file: File) => {
@@ -49,10 +72,85 @@ export default function SkinningPanel({ textures, onTextures }: Props) {
       const prev = textures[slot]
       if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev)
     }
+    onPoreScale(DEFAULT_PORE_SCALE)
+    onPoreNormalStrength(DEFAULT_PORE_NORMAL_STRENGTH)
+    onWrinkleNormalStrength(DEFAULT_WRINKLE_NORMAL_STRENGTH)
+    onFlipNormalY(DEFAULT_FLIP_NORMAL_Y)
     onTextures({})
   }
 
-  const customCount = SKIN_TEXTURE_SLOTS.filter((s) => textures[s] !== undefined).length
+  const customCount =
+    SKIN_TEXTURE_SLOTS.filter((s) => textures[s] !== undefined).length +
+    (poreScale !== DEFAULT_PORE_SCALE ? 1 : 0) +
+    (poreNormalStrength !== DEFAULT_PORE_NORMAL_STRENGTH ? 1 : 0) +
+    (wrinkleNormalStrength !== DEFAULT_WRINKLE_NORMAL_STRENGTH ? 1 : 0) +
+    (flipNormalY !== DEFAULT_FLIP_NORMAL_Y ? 1 : 0)
+
+  const sliderRow = (
+    label: string,
+    value: number,
+    min: number,
+    max: number,
+    step: number,
+    defaultValue: number,
+    onChange: (value: number) => void,
+  ) => (
+    <div style={{ padding: '9px 12px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7 }}>
+        <span style={{ ...labelStyle, color: 'rgba(255,255,255,0.48)' }}>{label}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <input
+            type="number"
+            min={min}
+            max={max}
+            step={step}
+            value={value}
+            onChange={(e) => {
+              const next = Number(e.target.value)
+              if (Number.isFinite(next)) onChange(Math.min(max, Math.max(min, next)))
+            }}
+            style={{
+              width: 48,
+              background: 'rgba(255,255,255,0.06)',
+              border: '1px solid rgba(255,255,255,0.12)',
+              borderRadius: 3,
+              color: 'rgba(255,255,255,0.66)',
+              fontSize: 10,
+              fontFamily: 'monospace',
+              padding: '2px 4px',
+            }}
+          />
+          {value !== defaultValue && (
+            <button
+              onClick={() => onChange(defaultValue)}
+              title={`Reset ${label.toLowerCase()}`}
+              style={{
+                background: 'none',
+                border: '1px solid rgba(255,255,255,0.1)',
+                borderRadius: 3,
+                cursor: 'pointer',
+                color: 'rgba(255,255,255,0.35)',
+                fontSize: 11,
+                padding: '1px 5px',
+                lineHeight: 1.4,
+              }}
+            >
+              ↺
+            </button>
+          )}
+        </div>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        style={{ width: '100%', accentColor: '#7dd3fc' }}
+      />
+    </div>
+  )
 
   return (
     <div style={{ position: 'fixed', left: 16, bottom: 16, width: 300, zIndex: 11, userSelect: 'none', ...panelBg }}>
@@ -91,6 +189,26 @@ export default function SkinningPanel({ textures, onTextures }: Props) {
       </div>
 
       <div style={{ padding: '4px 0', maxHeight: 400, overflowY: 'auto' }}>
+        {sliderRow('PORE SCALE', poreScale, 4, 90, 1, DEFAULT_PORE_SCALE, onPoreScale)}
+        {sliderRow('PORE NORMAL', poreNormalStrength, 0, 2, 0.05, DEFAULT_PORE_NORMAL_STRENGTH, onPoreNormalStrength)}
+        {sliderRow('WRINKLE NORMAL', wrinkleNormalStrength, 0, 2, 0.05, DEFAULT_WRINKLE_NORMAL_STRENGTH, onWrinkleNormalStrength)}
+
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '9px 12px',
+          borderBottom: '1px solid rgba(255,255,255,0.06)',
+        }}>
+          <span style={{ ...labelStyle, color: 'rgba(255,255,255,0.48)' }}>FLIP NORMAL Y</span>
+          <input
+            type="checkbox"
+            checked={flipNormalY}
+            onChange={(e) => onFlipNormalY(e.target.checked)}
+            style={{ accentColor: '#7dd3fc' }}
+          />
+        </div>
+
         {SKIN_TEXTURE_SLOTS.map((slot) => {
           const isCustom = textures[slot] !== undefined
           return (

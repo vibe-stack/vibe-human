@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 
 import { TransformControls, useGLTF } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three/webgpu'
-import { createSkinMaterial, type SkinTextures } from './skinMaterial'
+import { createEyeMaterial, createSkinMaterial, type SkinTextures } from './skinMaterial'
 import {
   buildModelingMorphs,
   MODELING_CONTROLS,
@@ -24,6 +24,10 @@ type Props = {
   eyeLook: boolean
   focusLock: boolean
   skinTextures: SkinTextures
+  poreScale: number
+  poreNormalStrength: number
+  wrinkleNormalStrength: number
+  flipNormalY: boolean
   showModelingOverlay: boolean
   onModelingValues: Dispatch<SetStateAction<ModelingValues>>
   onSelectedModelingHandleId: (id: string) => void
@@ -68,6 +72,7 @@ const EYE_LOOK_ALPHA = 0.45
 const FOCUS_LOCK_EYE_ALPHA = 0.18
 const EYE_FORWARD = new THREE.Vector3(0, 0, 1)
 const EYE_OBJECT_NAMES = ['Eye_L', 'Eye_R']
+const EYE_MESH_NAMES = new Set(EYE_OBJECT_NAMES)
 
 function normalizeBoneName(name: string) {
   return name.replace(/^DEF-/, '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase()
@@ -83,6 +88,26 @@ function getBoneByName(bones: Record<string, THREE.Bone>, name: string) {
 function isSkinMesh(object: THREE.Object3D) {
   const mesh = object as THREE.Mesh
   return Boolean(mesh.isMesh && SKIN_MESH_NAMES.has(object.name))
+}
+
+function isEyeMesh(object: THREE.Object3D) {
+  const mesh = object as THREE.Mesh
+  return Boolean(mesh.isMesh && EYE_MESH_NAMES.has(object.name))
+}
+
+function ensureTangents(object: THREE.Object3D) {
+  const mesh = object as THREE.Mesh
+  if (!mesh.isMesh || !isSkinMesh(object)) return
+
+  const geometry = mesh.geometry
+  if (geometry.hasAttribute('tangent')) return
+  if (!geometry.index || !geometry.hasAttribute('position') || !geometry.hasAttribute('normal') || !geometry.hasAttribute('uv')) {
+    console.warn('Skin mesh cannot compute tangents: missing indexed position/normal/uv attributes')
+    return
+  }
+
+  geometry.computeTangents()
+  geometry.getAttribute('tangent').needsUpdate = true
 }
 
 const FACE_BONE_PATTERN = /^DEF-(brow|cheek|chin|eye|forehead|jaw|lid|lip|nose|teeth)/
@@ -233,6 +258,10 @@ export default function HumanModel({
   eyeLook,
   focusLock,
   skinTextures,
+  poreScale,
+  poreNormalStrength,
+  wrinkleNormalStrength,
+  flipNormalY,
   showModelingOverlay,
   onModelingValues,
   onSelectedModelingHandleId,
@@ -499,7 +528,14 @@ export default function HumanModel({
     let cancelled = false
     let mat: THREE.MeshPhysicalNodeMaterial | null = null
 
-    createSkinMaterial(skinTextures)
+    scene.traverse(ensureTangents)
+
+    createSkinMaterial(skinTextures, {
+      poreScale,
+      poreNormalStrength,
+      wrinkleNormalStrength,
+      flipNormalY,
+    })
       .then((created) => {
         if (cancelled) {
           created.dispose()
@@ -520,7 +556,34 @@ export default function HumanModel({
       cancelled = true
       mat?.dispose()
     }
-  }, [scene, skinTextures])
+  }, [flipNormalY, poreNormalStrength, poreScale, scene, skinTextures, wrinkleNormalStrength])
+
+  useEffect(() => {
+    let cancelled = false
+    let mat: THREE.MeshPhysicalNodeMaterial | null = null
+
+    createEyeMaterial()
+      .then((created) => {
+        if (cancelled) {
+          created.dispose()
+          return
+        }
+        mat = created
+        scene.traverse((obj) => {
+          if (!isEyeMesh(obj)) return
+          const mesh = obj as THREE.Mesh
+          mesh.material = mat as unknown as THREE.Material
+        })
+      })
+      .catch((error: unknown) => {
+        console.error('Failed to create eye material:', error)
+      })
+
+    return () => {
+      cancelled = true
+      mat?.dispose()
+    }
+  }, [scene])
 
   useEffect(() => {
     scene.traverse((obj) => {

@@ -15,7 +15,13 @@ import ControlPanel from './ControlPanel'
 import SkinningPanel from './SkinningPanel'
 import { createNeutralModelingValues, type ModelingMode } from './characterModeling'
 import { createNeutralEyeLook, createNeutralFacsValues } from './facs'
-import { type SkinTextures } from './skinMaterial'
+import {
+  DEFAULT_FLIP_NORMAL_Y,
+  DEFAULT_PORE_NORMAL_STRENGTH,
+  DEFAULT_PORE_SCALE,
+  DEFAULT_WRINKLE_NORMAL_STRENGTH,
+  type SkinTextures,
+} from './skinMaterial'
 
 function FovUpdater({ fov }: { fov: number }) {
   const { camera, invalidate } = useThree()
@@ -45,6 +51,10 @@ export default function App() {
   const [boneDebug, setBoneDebug] = useState<BoneDebug | null>(null)
   const [fov, setFov] = useState(45)
   const [skinTextures, setSkinTextures] = useState<SkinTextures>({})
+  const [poreScale, setPoreScale] = useState(DEFAULT_PORE_SCALE)
+  const [poreNormalStrength, setPoreNormalStrength] = useState(DEFAULT_PORE_NORMAL_STRENGTH)
+  const [wrinkleNormalStrength, setWrinkleNormalStrength] = useState(DEFAULT_WRINKLE_NORMAL_STRENGTH)
+  const [flipNormalY, setFlipNormalY] = useState(DEFAULT_FLIP_NORMAL_Y)
 
   const [showExpressions, setShowExpressions] = useState(false)
   const [showModeling, setShowModeling] = useState(false)
@@ -118,9 +128,12 @@ export default function App() {
         <color attach="background" args={['#080810']} />
         <fog attach="fog" args={['#080810', 2, 6]} />
 
-        <ambientLight intensity={0.4} />
-        <directionalLight position={[1, 2, 2]} intensity={1.2} castShadow />
-        <directionalLight position={[-1, 0, -1]} intensity={0.3} color="#8888ff" />
+        {/* Key light – front-left, warm, main illumination */}
+        <directionalLight position={[-1.2, 1.8, 2]} intensity={2.8} color="#fff5e8" castShadow />
+        {/* Fill light – front-right, cooler, opens up shadow side */}
+        <directionalLight position={[2, 0.6, 1.5]} intensity={0.9} color="#ccd8ff" />
+        {/* Rim light – behind-above, separates head from background */}
+        <directionalLight position={[0.4, 2.5, -2.5]} intensity={2.2} color="#ffe8d0" />
 
         <Suspense fallback={null}>
           <Environment files={`${import.meta.env.BASE_URL}potsdamer_platz_1k.hdr`} />
@@ -136,6 +149,10 @@ export default function App() {
             eyeLook={eyeLook}
             focusLock={focusLock}
             skinTextures={skinTextures}
+            poreScale={poreScale}
+            poreNormalStrength={poreNormalStrength}
+            wrinkleNormalStrength={wrinkleNormalStrength}
+            flipNormalY={flipNormalY}
             showModelingOverlay={showModeling}
             onModelingValues={setModelingValues}
             onSelectedModelingHandleId={setSelectedModelingHandleId}
@@ -189,7 +206,15 @@ export default function App() {
       {showSkinning && (
         <SkinningPanel
           textures={skinTextures}
+          poreScale={poreScale}
+          poreNormalStrength={poreNormalStrength}
+          wrinkleNormalStrength={wrinkleNormalStrength}
+          flipNormalY={flipNormalY}
           onTextures={setSkinTextures}
+          onPoreScale={setPoreScale}
+          onPoreNormalStrength={setPoreNormalStrength}
+          onWrinkleNormalStrength={setWrinkleNormalStrength}
+          onFlipNormalY={setFlipNormalY}
         />
       )}
     </div>
