@@ -253,10 +253,19 @@ export type HairMaterial = THREE.NodeMaterial & {
   _groomUniforms: GroomUniforms
 }
 
+export type HairMaterialOptions = {
+  widthScale?: number
+  opacityScale?: number
+  cardPattern?: number
+}
+
 type GroomUniforms = {
   widthRoot:        ReturnType<typeof uniform>
   widthTip:         ReturnType<typeof uniform>
+  widthScale:       ReturnType<typeof uniform>
   opacity:          ReturnType<typeof uniform>
+  opacityScale:     ReturnType<typeof uniform>
+  cardPattern:      ReturnType<typeof uniform>
   melanin:          ReturnType<typeof uniform>
   melaninRedness:   ReturnType<typeof uniform>
   melaninRandomize: ReturnType<typeof uniform>
@@ -280,11 +289,14 @@ type GroomUniforms = {
   rootFollicle:     ReturnType<typeof uniform>
 }
 
-export function createHairStrandMaterial(settings: HairMaterialSettings): HairMaterial {
+export function createHairStrandMaterial(settings: HairMaterialSettings, options: HairMaterialOptions = {}): HairMaterial {
   const uniforms: GroomUniforms = {
     widthRoot:        uniform(settings.strandWidthRoot),
     widthTip:         uniform(settings.strandWidthTip),
+    widthScale:       uniform(options.widthScale ?? 1),
     opacity:          uniform(settings.opacity),
+    opacityScale:     uniform(options.opacityScale ?? 1),
+    cardPattern:      uniform(options.cardPattern ?? 0),
     melanin:          uniform(settings.melanin),
     melaninRedness:   uniform(settings.melaninRedness),
     melaninRandomize: uniform(settings.melaninRandomize),
@@ -347,7 +359,7 @@ export function createHairStrandMaterial(settings: HairMaterialSettings): HairMa
     const rootTaper = saturate(tParam.div(max(u.rootDarkenLength, float(1e-3))))
     const rootTaperSmooth = rootTaper.mul(rootTaper).mul(float(3.0).sub(rootTaper.mul(2.0))) // smoothstep
     const taperFactor = mix(float(0.05), float(1.0), rootTaperSmooth)
-    const halfWidth = mix(u.widthRoot, u.widthTip, tParam).mul(0.5).mul(flyawayBump).mul(taperFactor)
+    const halfWidth = mix(u.widthRoot, u.widthTip, tParam).mul(0.5).mul(flyawayBump).mul(taperFactor).mul(u.widthScale)
 
     // World → pixel scale at this depth.
     const projMat = cameraProjectionMatrix as any
@@ -446,6 +458,8 @@ export function createHairStrandMaterial(settings: HairMaterialSettings): HairMa
   const edge = sideF.abs()
   const edgeAA = saturate(float(1.0).sub(edge).mul(4.0))
   const tipFade = saturate(float(1.0).sub(tParamF.mul(tParamF).mul(0.3)))
+  const cardFiber = sin(sideF.mul(42.0).add(tParamF.mul(7.0)).add(seedF.mul(19.0))).mul(0.5).add(0.5)
+  const cardFiberMask = mix(float(1.0), saturate(cardFiber.mul(1.25).add(0.08)), u.cardPattern)
   // Per-strand opacity jitter for flyaways — some strands are fainter.
   const flyawayAlpha = float(1.0).sub(u.flyaway.mul(seedF).mul(0.4))
   // Root alpha fade: smooth ramp 0 → 1 over the first `rootDarkenLength * 0.6`
@@ -455,7 +469,7 @@ export function createHairStrandMaterial(settings: HairMaterialSettings): HairMa
   // hard strand on top of skin and expect it to read as a follicle.
   const rootAlphaRamp = saturate(tParamF.div(max(u.rootDarkenLength.mul(0.6), float(1e-3))))
   const rootAlpha = rootAlphaRamp.mul(rootAlphaRamp).mul(float(3.0).sub(rootAlphaRamp.mul(2.0)))
-  const coverageAlpha = u.opacity.mul(edgeAA).mul(tipFade).mul(coverage).mul(flyawayAlpha).mul(rootAlpha)
+  const coverageAlpha = u.opacity.mul(u.opacityScale).mul(edgeAA).mul(tipFade).mul(coverage).mul(flyawayAlpha).mul(rootAlpha).mul(cardFiberMask)
 
   // Stochastic alpha dither.  Instead of a hard alphaTest cutoff (which gives
   // jagged silhouettes), we compare the coverage against a per-fragment hash
@@ -511,12 +525,16 @@ export function createHairStrandMaterial(settings: HairMaterialSettings): HairMa
 export function updateHairStrandMaterialUniforms(
   mat: HairMaterial,
   settings: HairMaterialSettings,
+  options?: HairMaterialOptions,
 ) {
   const u = mat._groomUniforms
   if (!u) return
   u.widthRoot.value        = settings.strandWidthRoot
   u.widthTip.value         = settings.strandWidthTip
+  if (options?.widthScale !== undefined) u.widthScale.value = options.widthScale
   u.opacity.value          = settings.opacity
+  if (options?.opacityScale !== undefined) u.opacityScale.value = options.opacityScale
+  if (options?.cardPattern !== undefined) u.cardPattern.value = options.cardPattern
   u.melanin.value          = settings.melanin
   u.melaninRedness.value   = settings.melaninRedness
   u.melaninRandomize.value = settings.melaninRandomize

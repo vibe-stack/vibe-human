@@ -90,25 +90,24 @@ function deriveFollicleColor(): { hex: string; strength: number } {
   return { hex, strength: hasMask ? 0.85 : 0 }
 }
 
-// The active hair material — the GroomRenderer registers it once at mount
-// so the store can push the follicle colour into it whenever the hair
-// colour or scalp paint changes.  Without this, the strand root would be
-// coloured by the absorption model while the skin is tinted independently,
-// and the boundary would never match.
-let registeredHairMaterial: HairMaterial | null = null
+// Active hair materials — the GroomRenderer registers them once at mount so
+// the store can push the follicle colour whenever the hair colour or scalp
+// paint changes.  Without this, strand roots would be coloured by absorption
+// while the skin is tinted independently, and the boundary would never match.
+const registeredHairMaterials = new Set<HairMaterial>()
 export function registerHairMaterialForGroom(mat: HairMaterial) {
-  registeredHairMaterial = mat
+  registeredHairMaterials.add(mat)
   applyFollicleTintToRegisteredSkins()
 }
 export function unregisterHairMaterialForGroom(mat: HairMaterial) {
-  if (registeredHairMaterial === mat) registeredHairMaterial = null
+  registeredHairMaterials.delete(mat)
 }
 
 function applyFollicleTintToRegisteredSkins() {
   const { hex, strength } = deriveFollicleColor()
   for (const mat of registeredSkinMaterials) setSkinFollicleTint(mat, hex, strength)
   // Push the same follicle colour into the strand root so they visually meet.
-  if (registeredHairMaterial) setHairRootFollicleColor(registeredHairMaterial, hex)
+  for (const mat of registeredHairMaterials) setHairRootFollicleColor(mat, hex)
 }
 
 // Update the follicle tint + UV-space scalp mask texture whenever the asset

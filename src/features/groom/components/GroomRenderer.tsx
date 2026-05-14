@@ -2,8 +2,21 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { useSnapshot } from 'valtio'
 import * as THREE from 'three/webgpu'
-import { createHairStrandMaterial, updateHairStrandMaterialUniforms } from '../shaders/hairStrandMaterial'
+import { createHairStrandMaterial, updateHairStrandMaterialUniforms, type HairMaterialOptions } from '../shaders/hairStrandMaterial'
 import { groomStore, getRegisteredGroomMesh, registerHairMaterialForGroom, unregisterHairMaterialForGroom } from '../store/groomStore'
+import type { GeneratedStrand } from '../core/types'
+
+const CARD_MATERIAL_OPTIONS: HairMaterialOptions = {
+  widthScale: 10,
+  opacityScale: 0.78,
+  cardPattern: 1,
+}
+
+const DETAIL_MATERIAL_OPTIONS: HairMaterialOptions = {
+  widthScale: 1,
+  opacityScale: 0.92,
+  cardPattern: 0,
+}
 
 // ---------------------------------------------------------------------------
 // Ribbon quad geometry
@@ -117,31 +130,74 @@ function buildSegmentGeometry(
   return geo
 }
 
+function selectVolumeCards(strands: readonly GeneratedStrand[], guideCount: number) {
+  if (!strands.length) return []
+
+  const targetCount = Math.min(
+    420,
+    Math.max(48, guideCount * 4, Math.round(Math.sqrt(strands.length) * 2.5)),
+  )
+  const step = Math.max(1, Math.floor(strands.length / targetCount))
+  const cards: GeneratedStrand[] = []
+
+  for (let index = 0; index < strands.length && cards.length < targetCount; index += step) {
+    cards.push(strands[index])
+  }
+
+  return cards
+}
+
+function selectDetailStrands(strands: readonly GeneratedStrand[]) {
+  if (strands.length <= 6000) return strands
+
+  const stride = strands.length > 35_000 ? 6 : strands.length > 16_000 ? 4 : 3
+  const flyawayThreshold = 0.86
+  return strands.filter((strand, index) => index % stride === 0 || strand.random > flyawayThreshold)
+}
+
 export default function GroomRenderer() {
   const { activeGroomAsset, generatedStrands, showGeneratedStrands, showGuides } = useSnapshot(groomStore)
   const targetMesh = getRegisteredGroomMesh(activeGroomAsset.targetMeshId)
   const transformRef = useRef<THREE.Group>(null)
 
   const strandMaterial = useMemo(
-    () => createHairStrandMaterial(activeGroomAsset.material),
+    () => createHairStrandMaterial(activeGroomAsset.material, DETAIL_MATERIAL_OPTIONS),
     // Material is built once; all settings flow through uniform updates below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   )
+  const cardMaterial = useMemo(() => {
+    const mat = createHairStrandMaterial(activeGroomAsset.material, CARD_MATERIAL_OPTIONS)
+    mat.name = 'HairVolumeCardMaterial'
+    mat.alphaTest = 0.38
+    mat.depthWrite = false
+    return mat
+    // Material is built once; all settings flow through uniform updates below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
-    updateHairStrandMaterialUniforms(strandMaterial, activeGroomAsset.material)
-  }, [activeGroomAsset.material, strandMaterial])
+    updateHairStrandMaterialUniforms(strandMaterial, activeGroomAsset.material, DETAIL_MATERIAL_OPTIONS)
+    updateHairStrandMaterialUniforms(cardMaterial, activeGroomAsset.material, CARD_MATERIAL_OPTIONS)
+  }, [activeGroomAsset.material, strandMaterial, cardMaterial])
 
   const guideMaterial = useMemo(
     () => new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.85, toneMapped: false }),
     [],
   )
 
+  const volumeCardGeometry = useMemo(() => {
+    if (!showGeneratedStrands || !generatedStrands.length) return null
+    const cards = selectVolumeCards(generatedStrands as GeneratedStrand[], activeGroomAsset.guides.length)
+    if (!cards.length) return null
+    return buildRibbonGeometry(cards.map((s) => ({ points: s.points, random: s.random })))
+  }, [activeGroomAsset.guides.length, generatedStrands, showGeneratedStrands])
+
   const strandGeometry = useMemo(() => {
     if (!showGeneratedStrands || !generatedStrands.length) return null
+    const strands = selectDetailStrands(generatedStrands as GeneratedStrand[])
     return buildRibbonGeometry(
-      generatedStrands.map((s) => ({ points: s.points, random: s.random })),
+      strands.map((s) => ({ points: s.points, random: s.random })),
     )
   }, [generatedStrands, showGeneratedStrands])
 
@@ -161,17 +217,28 @@ export default function GroomRenderer() {
 
   useEffect(() => {
     registerHairMaterialForGroom(strandMaterial)
-    return () => unregisterHairMaterialForGroom(strandMaterial)
-  }, [strandMaterial])
+    registerHairMaterialForGroom(cardMaterial)
+    return () => {
+      unregisterHairMaterialForGroom(strandMaterial)
+      unregisterHairMaterialForGroom(cardMaterial)
+    }
+  }, [strandMaterial, cardMaterial])
   useEffect(() => () => strandMaterial.dispose(), [strandMaterial])
+  useEffect(() => () => cardMaterial.dispose(), [cardMaterial])
   useEffect(() => () => guideMaterial.dispose(), [guideMaterial])
+  useEffect(() => () => volumeCardGeometry?.dispose(), [volumeCardGeometry])
   useEffect(() => () => strandGeometry?.dispose(), [strandGeometry])
   useEffect(() => () => guideGeometry?.dispose(), [guideGeometry])
 
-  if (!targetMesh || (!strandGeometry && !guideGeometry)) return null
+  if (!targetMesh || (!volumeCardGeometry && !strandGeometry && !guideGeometry)) return null
 
   return (
     <group ref={transformRef} matrixAutoUpdate={false}>
+      {volumeCardGeometry && (
+        <mesh geometry={volumeCardGeometry} renderOrder={58}>
+          <primitive object={cardMaterial} attach="material" />
+        </mesh>
+      )}
       {strandGeometry && (
         <mesh geometry={strandGeometry} renderOrder={60}>
           <primitive object={strandMaterial} attach="material" />
