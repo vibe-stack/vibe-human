@@ -42,6 +42,7 @@ type AppState = {
   showExpressions: boolean
   showModeling: boolean
   showSkinning: boolean
+  showHair: boolean
 }
 
 function resolveUpdater<T>(previous: T, next: Updater<T>) {
@@ -74,6 +75,7 @@ export const appState = proxy<AppState>({
   showExpressions: false,
   showModeling: false,
   showSkinning: false,
+  showHair: false,
 })
 
 export function setFacsValues(next: Updater<FacsValues>) {
@@ -176,6 +178,10 @@ export function setShowSkinning(value: boolean) {
   appState.showSkinning = value
 }
 
+export function setShowHair(value: boolean) {
+  appState.showHair = value
+}
+
 export function toggleShowExpressions() {
   appState.showExpressions = !appState.showExpressions
 }
@@ -186,4 +192,8 @@ export function toggleShowModeling() {
 
 export function toggleShowSkinning() {
   appState.showSkinning = !appState.showSkinning
+}
+
+export function toggleShowHair() {
+  appState.showHair = !appState.showHair
 }

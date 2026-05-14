@@ -2,7 +2,7 @@ import { Suspense, useEffect } from 'react'
 import { Canvas, extend, useThree, type ThreeToJSXElements } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import * as THREE from 'three/webgpu'
-import { Smile, Box, Layers } from 'lucide-react'
+import { Smile, Box, Layers, Scissors } from 'lucide-react'
 import { useSnapshot } from 'valtio'
 
 declare module '@react-three/fiber' {
@@ -15,7 +15,8 @@ import HumanModel from './HumanModel'
 import CharacterModelingPanel from './CharacterModelingPanel'
 import ControlPanel from './ControlPanel'
 import SkinningPanel from './SkinningPanel'
-import { appState, toggleShowExpressions, toggleShowModeling, toggleShowSkinning } from './appState'
+import GroomPanel from './features/groom/components/GroomPanel'
+import { appState, toggleShowExpressions, toggleShowHair, toggleShowModeling, toggleShowSkinning } from './appState'
 
 function FovUpdater() {
   const { camera, invalidate } = useThree()
@@ -33,12 +34,13 @@ function FovUpdater() {
 }
 
 export default function App() {
-  const { fov, isTransforming, showExpressions, showModeling, showSkinning } = useSnapshot(appState)
+  const { fov, isTransforming, showExpressions, showHair, showModeling, showSkinning } = useSnapshot(appState)
 
   const panels = [
     { key: 'expressions', label: 'Expressions', Icon: Smile, active: showExpressions, toggle: toggleShowExpressions },
     { key: 'modeling', label: 'Modeling', Icon: Box, active: showModeling, toggle: toggleShowModeling },
     { key: 'skinning', label: 'Skinning', Icon: Layers, active: showSkinning, toggle: toggleShowSkinning },
+    { key: 'hair', label: 'Hair', Icon: Scissors, active: showHair, toggle: toggleShowHair },
   ]
 
   return (
@@ -133,6 +135,7 @@ export default function App() {
       {showExpressions && <ControlPanel />}
       {showModeling && <CharacterModelingPanel />}
       {showSkinning && <SkinningPanel />}
+      {showHair && <GroomPanel />}
     </div>
   )
 }

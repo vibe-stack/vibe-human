@@ -5,6 +5,9 @@ import { useSnapshot } from 'valtio'
 import * as THREE from 'three/webgpu'
 import { appState, setBoneDebug, setIsTransforming } from './appState'
 import { createEyeMaterial, createSkinMaterial } from './skinMaterial'
+import GroomRenderer from './features/groom/components/GroomRenderer'
+import GroomViewportTools from './features/groom/components/GroomViewportTools'
+import { registerGroomMeshes } from './features/groom/store/groomStore'
 import {
   buildModelingMorphs,
   MODELING_CONTROLS,
@@ -228,6 +231,7 @@ export default function HumanModel() {
     surfaceRoughness,
     toneDepth,
     subsurfaceStrength,
+    showHair,
     showModeling: showModelingOverlay,
   } = useSnapshot(appState)
   const { scene } = useGLTF(MODEL_URL)
@@ -278,6 +282,7 @@ export default function HumanModel() {
     const eyeObjects: Record<string, THREE.Object3D> = {}
     const morphMeshes: MorphTargetMesh[] = []
     const skeletons: THREE.Skeleton[] = []
+    const groomMeshes: THREE.Mesh[] = []
 
     scene.traverse((obj) => {
       const mesh = obj as THREE.SkinnedMesh
@@ -289,6 +294,10 @@ export default function HumanModel() {
       const morphMesh = obj as Partial<MorphTargetMesh>
       if (morphMesh.morphTargetDictionary && morphMesh.morphTargetInfluences) {
         morphMeshes.push(morphMesh as MorphTargetMesh)
+      }
+
+      if (isSkinMesh(obj)) {
+        groomMeshes.push(obj as THREE.Mesh)
       }
 
       if (mesh.isSkinnedMesh) {
@@ -304,6 +313,7 @@ export default function HumanModel() {
     eyeObjectsRef.current = eyeObjects
     morphMeshesRef.current = morphMeshes
     skeletonsRef.current = skeletons
+    registerGroomMeshes(groomMeshes)
 
     const availableTargets = new Set(
       morphMeshes.flatMap((mesh) => Object.keys(mesh.morphTargetDictionary)),
@@ -632,6 +642,13 @@ export default function HumanModel() {
 
       {!showBones && showModelingOverlay && (
         <ModelingOverlay bones={modelingBones} />
+      )}
+
+      {showHair && (
+        <>
+          <GroomRenderer />
+          <GroomViewportTools />
+        </>
       )}
     </>
   )
