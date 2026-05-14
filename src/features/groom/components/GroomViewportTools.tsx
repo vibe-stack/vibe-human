@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import { subscribe, useSnapshot } from 'valtio'
 import * as THREE from 'three/webgpu'
@@ -25,15 +25,28 @@ type BrushHit = {
   worldNormal: THREE.Vector3
 } | null
 
+type ResolvedHit = {
+  worldPos: THREE.Vector3
+  worldNormal: THREE.Vector3
+  effectWorldPos: THREE.Vector3
+  triangleIndex: number | null
+  onGuide: boolean
+  onMesh: boolean
+  sourceMesh: THREE.Mesh
+}
+
 type DragState = {
   pointerId: number
   lastPointLocal: THREE.Vector3
+  lastClientX: number
+  lastClientY: number
   sourceMesh: THREE.Mesh
   tool: GroomTool
 }
 
 const BRUSH_TOOLS = new Set<GroomTool>(['paint-scalp', 'erase-scalp', 'add-guide', 'comb', 'smooth', 'cut', 'delete-guide'])
 const MASK_TOOLS = new Set<GroomTool>(['paint-scalp', 'erase-scalp'])
+const GUIDE_EDIT_TOOLS = new Set<GroomTool>(['comb', 'smooth', 'cut', 'delete-guide'])
 
 // -----------------------------------------------------------------------------
 // Scalp-mask visualization geometry
@@ -151,6 +164,17 @@ const _ndc = new THREE.Vector2()
 const _raycaster = new THREE.Raycaster()
 const _sphere = new THREE.Sphere()
 const _sphereHit = new THREE.Vector3()
+const _guideA = new THREE.Vector3()
+const _guideB = new THREE.Vector3()
+const _guideBestPoint = new THREE.Vector3()
+const _guideProjectedA = new THREE.Vector3()
+const _guideProjectedB = new THREE.Vector3()
+const _guideWorldPoint = new THREE.Vector3()
+const _cameraRight = new THREE.Vector3()
+const _cameraUp = new THREE.Vector3()
+const _deltaLocalStart = new THREE.Vector3()
+const _deltaLocalEnd = new THREE.Vector3()
+const _screenDeltaWorld = new THREE.Vector3()
 
 function clientToNDC(canvas: HTMLCanvasElement, clientX: number, clientY: number) {
   const rect = canvas.getBoundingClientRect()
@@ -181,6 +205,132 @@ function fallbackHitOnBoundingSphere(mesh: THREE.Mesh, camera: THREE.Camera, can
   return _raycaster.ray.origin.clone().addScaledVector(_raycaster.ray.direction, t)
 }
 
+function worldRadiusToScreenPixels(
+  worldPoint: THREE.Vector3,
+  camera: THREE.Camera,
+  canvas: HTMLCanvasElement,
+  radius: number,
+) {
+  const rect = canvas.getBoundingClientRect()
+  _cameraRight.setFromMatrixColumn(camera.matrixWorld, 0).normalize()
+  _cameraUp.setFromMatrixColumn(camera.matrixWorld, 1).normalize()
+
+  const cx = (worldPoint.clone().project(camera).x * 0.5 + 0.5) * rect.width
+  const cy = (-worldPoint.clone().project(camera).y * 0.5 + 0.5) * rect.height
+  const rx = worldPoint.clone().addScaledVector(_cameraRight, radius).project(camera)
+  const ry = worldPoint.clone().addScaledVector(_cameraUp, radius).project(camera)
+  const dx = (rx.x * 0.5 + 0.5) * rect.width - cx
+  const dy = (-rx.y * 0.5 + 0.5) * rect.height - cy
+  const ux = (ry.x * 0.5 + 0.5) * rect.width - cx
+  const uy = (-ry.y * 0.5 + 0.5) * rect.height - cy
+  return Math.max(Math.hypot(dx, dy), Math.hypot(ux, uy), 2)
+}
+
+function findGuideUnderBrush(
+  mesh: THREE.Mesh,
+  camera: THREE.Camera,
+  canvas: HTMLCanvasElement,
+  clientX: number,
+  clientY: number,
+  radius: number,
+) {
+  const guides = groomStore.activeGroomAsset.guides
+  if (!guides.length || radius <= 0) return null
+
+  const rect = canvas.getBoundingClientRect()
+  const pointerX = clientX - rect.left
+  const pointerY = clientY - rect.top
+
+  let bestDistanceSq = Infinity
+  for (const guide of guides) {
+    const pts = guide.points
+    for (let i = 0; i < pts.length - 1; i += 1) {
+      _guideA.set(pts[i][0], pts[i][1], pts[i][2]).applyMatrix4(mesh.matrixWorld)
+      _guideB.set(pts[i + 1][0], pts[i + 1][1], pts[i + 1][2]).applyMatrix4(mesh.matrixWorld)
+      _guideProjectedA.copy(_guideA).project(camera)
+      _guideProjectedB.copy(_guideB).project(camera)
+      if (_guideProjectedA.z < -1 && _guideProjectedB.z < -1) continue
+      if (_guideProjectedA.z > 1 && _guideProjectedB.z > 1) continue
+
+      const ax = (_guideProjectedA.x * 0.5 + 0.5) * rect.width
+      const ay = (-_guideProjectedA.y * 0.5 + 0.5) * rect.height
+      const bx = (_guideProjectedB.x * 0.5 + 0.5) * rect.width
+      const by = (-_guideProjectedB.y * 0.5 + 0.5) * rect.height
+      const abx = bx - ax
+      const aby = by - ay
+      const abLenSq = abx * abx + aby * aby
+      const t = abLenSq > 1e-8
+        ? THREE.MathUtils.clamp(((pointerX - ax) * abx + (pointerY - ay) * aby) / abLenSq, 0, 1)
+        : 0
+      const sx = ax + abx * t
+      const sy = ay + aby * t
+      const dx = pointerX - sx
+      const dy = pointerY - sy
+      const distanceSq = dx * dx + dy * dy
+      _guideWorldPoint.copy(_guideA).lerp(_guideB, t)
+      const brushRadiusPx = worldRadiusToScreenPixels(_guideWorldPoint, camera, canvas, radius)
+      if (distanceSq > brushRadiusPx * brushRadiusPx) continue
+      if (distanceSq < bestDistanceSq) {
+        bestDistanceSq = distanceSq
+        _guideBestPoint.copy(_guideWorldPoint)
+      }
+    }
+  }
+
+  return Number.isFinite(bestDistanceSq) ? _guideBestPoint.clone() : null
+}
+
+function worldUnitsPerPixelAt(
+  worldPoint: THREE.Vector3,
+  camera: THREE.Camera,
+  canvas: HTMLCanvasElement,
+) {
+  const rect = canvas.getBoundingClientRect()
+  const maybePerspective = camera as THREE.PerspectiveCamera
+  if (maybePerspective.isPerspectiveCamera) {
+    const distance = Math.max(1e-6, worldPoint.distanceTo(camera.position))
+    const fov = THREE.MathUtils.degToRad(maybePerspective.fov)
+    return (2 * Math.tan(fov * 0.5) * distance) / Math.max(1, rect.height)
+  }
+
+  const maybeOrtho = camera as THREE.OrthographicCamera
+  if (maybeOrtho.isOrthographicCamera) {
+    return ((maybeOrtho.top - maybeOrtho.bottom) / Math.max(1e-6, maybeOrtho.zoom)) / Math.max(1, rect.height)
+  }
+
+  return 0.001
+}
+
+function pointerDeltaInCameraPlane(
+  mesh: THREE.Mesh,
+  camera: THREE.Camera,
+  canvas: HTMLCanvasElement,
+  prevClientX: number,
+  prevClientY: number,
+  clientX: number,
+  clientY: number,
+  anchorWorld: THREE.Vector3,
+  maxLength: number,
+) {
+  const unitsPerPixel = worldUnitsPerPixelAt(anchorWorld, camera, canvas)
+  const dx = clientX - prevClientX
+  const dy = clientY - prevClientY
+  _cameraRight.setFromMatrixColumn(camera.matrixWorld, 0).normalize()
+  _cameraUp.setFromMatrixColumn(camera.matrixWorld, 1).normalize()
+  _screenDeltaWorld
+    .copy(_cameraRight).multiplyScalar(dx * unitsPerPixel)
+    .addScaledVector(_cameraUp, -dy * unitsPerPixel)
+  if (maxLength > 0 && _screenDeltaWorld.lengthSq() > maxLength * maxLength) {
+    _screenDeltaWorld.setLength(maxLength)
+  }
+
+  _deltaLocalStart.copy(anchorWorld)
+  _deltaLocalEnd.copy(anchorWorld).add(_screenDeltaWorld)
+  mesh.worldToLocal(_deltaLocalStart)
+  mesh.worldToLocal(_deltaLocalEnd)
+  return _deltaLocalEnd.sub(_deltaLocalStart).clone()
+}
+
 // -----------------------------------------------------------------------------
 // Main component
 // -----------------------------------------------------------------------------
@@ -197,9 +347,12 @@ export default function GroomViewportTools() {
   // Stable refs for values used inside DOM event handlers so we don't have
   // to re-install listeners on every change.
   const stateRef = useRef({ targetMesh, activeGroomTool, brushSize, brushStrength, isBrushTool })
-  stateRef.current = { targetMesh, activeGroomTool, brushSize, brushStrength, isBrushTool }
   const cameraRef = useRef(camera)
-  cameraRef.current = camera
+
+  useLayoutEffect(() => {
+    stateRef.current = { targetMesh, activeGroomTool, brushSize, brushStrength, isBrushTool }
+    cameraRef.current = camera
+  }, [targetMesh, activeGroomTool, brushSize, brushStrength, isBrushTool, camera])
 
   // ---------------------------------------------------------------------------
   // Scalp-mask visualization (rebuilt only when the set actually changes)
@@ -292,32 +445,49 @@ export default function GroomViewportTools() {
   useEffect(() => {
     const canvas = gl.domElement as HTMLCanvasElement
 
-    const resolveHit = (event: PointerEvent) => {
-      const { targetMesh: mesh } = stateRef.current
+    const resolveHit = (event: PointerEvent): ResolvedHit | null => {
+      const { targetMesh: mesh, activeGroomTool: tool, brushSize: bs } = stateRef.current
       if (!mesh) return null
+
+      const guideHit = GUIDE_EDIT_TOOLS.has(tool)
+        ? findGuideUnderBrush(mesh, cameraRef.current, canvas, event.clientX, event.clientY, bs)
+        : null
+      const guideEffectWorldPos = guideHit?.clone() ?? null
+
+      const withGuideEffect = (
+        base: Omit<ResolvedHit, 'effectWorldPos' | 'onGuide'>,
+      ): ResolvedHit => ({
+        ...base,
+        effectWorldPos: guideEffectWorldPos ?? base.worldPos.clone(),
+        onGuide: !!guideEffectWorldPos,
+      })
+
       const intersection = raycastMesh(mesh, cameraRef.current, canvas, event.clientX, event.clientY)
       if (intersection?.face) {
         const worldNormal = intersection.face.normal.clone()
           .transformDirection(intersection.object.matrixWorld)
           .normalize()
-        return {
+        return withGuideEffect({
           worldPos: intersection.point.clone(),
           worldNormal,
           triangleIndex: typeof intersection.faceIndex === 'number' ? intersection.faceIndex : null,
           onMesh: true,
           sourceMesh: mesh,
-        }
+        })
       }
+
       const fallback = fallbackHitOnBoundingSphere(mesh, cameraRef.current, canvas, event.clientX, event.clientY)
       if (!fallback) return null
-      return {
+      return withGuideEffect({
         worldPos: fallback,
         worldNormal: cameraRef.current.position.clone().sub(fallback).normalize(),
         triangleIndex: null,
         onMesh: false,
         sourceMesh: mesh,
-      }
+      })
     }
+
+    const hitLocalEffectPoint = (hit: ResolvedHit) => hit.sourceMesh.worldToLocal(hit.effectWorldPos.clone())
 
     const onPointerDown = (event: PointerEvent) => {
       if (event.button !== 0) return
@@ -335,13 +505,20 @@ export default function GroomViewportTools() {
       event.stopPropagation()
 
       brushHitRef.current = { worldPos: hit.worldPos, worldNormal: hit.worldNormal }
-      const localPoint = hit.sourceMesh.worldToLocal(hit.worldPos.clone())
+      const localPoint = hitLocalEffectPoint(hit)
 
       if (MASK_TOOLS.has(tool)) {
         if (!hit.onMesh) return
         const idx = hit.triangleIndex ?? findClosestTriangle(hit.sourceMesh, localPoint)
         if (idx === null) return
-        dragRef.current = { pointerId: event.pointerId, lastPointLocal: localPoint.clone(), sourceMesh: hit.sourceMesh, tool }
+        dragRef.current = {
+          pointerId: event.pointerId,
+          lastPointLocal: localPoint.clone(),
+          lastClientX: event.clientX,
+          lastClientY: event.clientY,
+          sourceMesh: hit.sourceMesh,
+          tool,
+        }
         beginGroomDrag()
         const affected = collectTrianglesInBrush(
           hit.sourceMesh, localPoint,
@@ -360,14 +537,28 @@ export default function GroomViewportTools() {
 
       if (tool === 'smooth') {
         beginGroomDrag()
-        dragRef.current = { pointerId: event.pointerId, lastPointLocal: localPoint.clone(), sourceMesh: hit.sourceMesh, tool }
+        dragRef.current = {
+          pointerId: event.pointerId,
+          lastPointLocal: localPoint.clone(),
+          lastClientX: event.clientX,
+          lastClientY: event.clientY,
+          sourceMesh: hit.sourceMesh,
+          tool,
+        }
         updateGuideTools('smooth', localPoint)
         return
       }
 
       if (tool === 'cut') {
         beginGroomDrag()
-        dragRef.current = { pointerId: event.pointerId, lastPointLocal: localPoint.clone(), sourceMesh: hit.sourceMesh, tool }
+        dragRef.current = {
+          pointerId: event.pointerId,
+          lastPointLocal: localPoint.clone(),
+          lastClientX: event.clientX,
+          lastClientY: event.clientY,
+          sourceMesh: hit.sourceMesh,
+          tool,
+        }
         updateGuideTools('cut', localPoint)
         return
       }
@@ -378,7 +569,14 @@ export default function GroomViewportTools() {
       }
 
       if (tool === 'comb') {
-        dragRef.current = { pointerId: event.pointerId, lastPointLocal: localPoint.clone(), sourceMesh: hit.sourceMesh, tool }
+        dragRef.current = {
+          pointerId: event.pointerId,
+          lastPointLocal: localPoint.clone(),
+          lastClientX: event.clientX,
+          lastClientY: event.clientY,
+          sourceMesh: hit.sourceMesh,
+          tool,
+        }
         beginGroomDrag()
       }
     }
@@ -392,7 +590,7 @@ export default function GroomViewportTools() {
       if (!drag || event.pointerId !== drag.pointerId) return
 
       const { brushSize: bs, brushStrength: bst } = stateRef.current
-      const localPoint = drag.sourceMesh.worldToLocal(hit.worldPos.clone())
+      const localPoint = hitLocalEffectPoint(hit)
 
       if (drag.tool === 'paint-scalp' || drag.tool === 'erase-scalp') {
         if (!hit.onMesh) return
@@ -417,8 +615,25 @@ export default function GroomViewportTools() {
       }
 
       if (drag.tool === 'comb') {
-        const delta = localPoint.clone().sub(drag.lastPointLocal)
+        if (!hit.onGuide && !hit.onMesh) {
+          drag.lastClientX = event.clientX
+          drag.lastClientY = event.clientY
+          return
+        }
+        const delta = pointerDeltaInCameraPlane(
+          drag.sourceMesh,
+          cameraRef.current,
+          canvas,
+          drag.lastClientX,
+          drag.lastClientY,
+          event.clientX,
+          event.clientY,
+          hit.worldPos,
+          bs * 0.75,
+        )
         drag.lastPointLocal.copy(localPoint)
+        drag.lastClientX = event.clientX
+        drag.lastClientY = event.clientY
         updateGuideTools('comb', localPoint, delta)
       }
     }

@@ -106,6 +106,30 @@ function scaleGuidePoints(points: Vec3Tuple[], scale: number) {
   })
 }
 
+function preserveSegmentLengths(originalPoints: Vec3Tuple[], deformedPoints: THREE.Vector3[]) {
+  if (originalPoints.length < 2 || deformedPoints.length < 2) return deformedPoints
+
+  const constrained = [tupleToVector(originalPoints[0])]
+  for (let index = 1; index < originalPoints.length; index += 1) {
+    const originalPrev = tupleToVector(originalPoints[index - 1])
+    const originalPoint = tupleToVector(originalPoints[index])
+    const segmentLength = originalPoint.distanceTo(originalPrev)
+    const prev = constrained[index - 1]
+    const direction = deformedPoints[index].clone().sub(prev)
+
+    if (direction.lengthSq() <= 1e-12) {
+      direction.copy(originalPoint).sub(originalPrev)
+    }
+    if (direction.lengthSq() <= 1e-12) {
+      constrained.push(prev.clone())
+    } else {
+      constrained.push(prev.clone().addScaledVector(direction.normalize(), segmentLength))
+    }
+  }
+
+  return constrained
+}
+
 export function applyGuideSettingsToGuides(
   guides: GuideCurve[],
   settings: GroomModifierSettings,
@@ -236,22 +260,23 @@ export function combGuidesAtPoint(
     // get partial influence so combing the tip drags the upper half along
     // with it — this is how XGen / Houdini behave.
     const segments = Math.max(1, guide.points.length - 1)
+    const deformedPoints = guide.points.map((point, index) => {
+      if (index === 0) return tupleToVector(point) // root is bound to scalp
+      const t = index / segments
+      // Bias: a triangular tent centered at hitT, but anything above it
+      // gets at least 60% of the influence (so the tip follows the hand).
+      const above = t >= hitT
+      const dt = above ? (t - hitT) : (hitT - t)
+      const tent = above
+        ? 1 - dt * 0.4
+        : Math.max(0, 1 - dt * 1.6)
+      const w = falloff * strength * tent
+      return tupleToVector(point).addScaledVector(deltaLocal, w)
+    })
+
     return {
       ...guide,
-      points: guide.points.map((point, index) => {
-        if (index === 0) return point // root is bound to scalp
-        const t = index / segments
-        // Bias: a triangular tent centered at hitT, but anything above it
-        // gets at least 60% of the influence (so the tip follows the hand).
-        const above = t >= hitT
-        const dt = above ? (t - hitT) : (hitT - t)
-        const tent = above
-          ? 1 - dt * 0.4
-          : Math.max(0, 1 - dt * 1.6)
-        const w = falloff * strength * tent
-        const next = tupleToVector(point).addScaledVector(deltaLocal, w)
-        return vectorToTuple(next)
-      }),
+      points: preserveSegmentLengths(guide.points, deformedPoints).map(vectorToTuple),
     }
   })
 }
