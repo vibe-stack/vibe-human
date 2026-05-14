@@ -56,12 +56,24 @@ function buildObjectPath(object: THREE.Object3D) {
 }
 
 function regenerateGeneratedStrandsInternal() {
-  groomStore.generatedStrands = generateStrandsFromGuides(groomStore.activeGroomAsset)
+  const mesh = getRegisteredGroomMesh(groomStore.activeGroomAsset.targetMeshId)
+  groomStore.generatedStrands = generateStrandsFromGuides(groomStore.activeGroomAsset, mesh ?? undefined)
+}
+
+// Strand regeneration is expensive (10k+ strands → ~50ms).  During an
+// interactive drag we *skip strand regeneration entirely* and only rebuild
+// once at pointer up — guide overlay edits remain visible in real time.
+let dragInProgress = false
+export function beginGroomDrag() { dragInProgress = true }
+export function endGroomDrag() {
+  dragInProgress = false
+  regenerateGeneratedStrandsInternal()
 }
 
 function setGuides(nextGuides: GroomAsset['guides']) {
   groomStore.activeGroomAsset.guides = nextGuides
-  regenerateGeneratedStrandsInternal()
+  // Defer strand regen during drags; guide overlay still updates live.
+  if (!dragInProgress) regenerateGeneratedStrandsInternal()
 }
 
 export const groomStore = proxy<GroomState>({
@@ -141,17 +153,38 @@ export function useSelectedMeshAsGroomTarget() {
 
 export function clearScalpMask() {
   groomStore.activeGroomAsset.scalpMask.selectedTriangleIndices = []
+  groomStore.generatedStrands = []
+}
+
+// Working set kept in sync with the proxy so we don't pay O(N log N) on
+// every drag tick.  Reset whenever the array reference changes externally.
+let scalpMaskSet: Set<number> | null = null
+let scalpMaskSetVersion: number[] | null = null
+
+function ensureScalpMaskSet(): Set<number> {
+  const arr = groomStore.activeGroomAsset.scalpMask.selectedTriangleIndices
+  if (scalpMaskSet && scalpMaskSetVersion === arr) return scalpMaskSet
+  scalpMaskSet = new Set(arr)
+  scalpMaskSetVersion = arr as number[]
+  return scalpMaskSet
 }
 
 export function updateScalpMaskTriangles(triangleIndices: number[], mode: 'add' | 'remove') {
-  const current = new Set(groomStore.activeGroomAsset.scalpMask.selectedTriangleIndices)
-
+  const set = ensureScalpMaskSet()
+  let changed = false
   for (const triangleIndex of triangleIndices) {
-    if (mode === 'add') current.add(triangleIndex)
-    else current.delete(triangleIndex)
+    if (mode === 'add') {
+      if (!set.has(triangleIndex)) { set.add(triangleIndex); changed = true }
+    } else if (set.delete(triangleIndex)) {
+      changed = true
+    }
   }
-
-  groomStore.activeGroomAsset.scalpMask.selectedTriangleIndices = Array.from(current).sort((a, b) => a - b)
+  if (!changed) return
+  // Maintain insertion-order array; skip the sort during drags.
+  const next = Array.from(set)
+  if (!dragInProgress) next.sort((a, b) => a - b)
+  scalpMaskSetVersion = next
+  groomStore.activeGroomAsset.scalpMask.selectedTriangleIndices = next
 }
 
 export function addGuideAtSurfacePoint(mesh: THREE.Mesh, triangleIndex: number, pointLocal: THREE.Vector3) {

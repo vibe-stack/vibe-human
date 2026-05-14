@@ -123,7 +123,7 @@ export default function App() {
 
         <OrbitControls
           enabled={!isTransforming}
-          mouseButtons={{ LEFT: 0, MIDDLE: 2, RIGHT: 1 }}
+          mouseButtons={{ LEFT: 1, MIDDLE: 0, RIGHT: 2 }}
           minDistance={0.2}
           maxDistance={5}
           minPolarAngle={Math.PI * 0.2}

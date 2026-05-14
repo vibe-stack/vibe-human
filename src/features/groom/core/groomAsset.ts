@@ -1,26 +1,23 @@
 import type { GeneratedStrand, GroomAsset, GroomModifierSettings, HairMaterialSettings } from './types'
 
 export const GROOM_ASSET_VERSION = 1
-export const MAX_GUIDE_COUNT = 200
-export const MAX_CHILDREN_PER_GUIDE = 10
-export const MAX_GUIDE_SEGMENTS = 8
+export const MAX_GUIDE_COUNT = 800
+export const MAX_STRAND_COUNT = 80_000
+export const MAX_GUIDE_SEGMENTS = 12
 
 const DEFAULT_SETTINGS: GroomModifierSettings = {
   guideLength: 0.16,
   guideRadius: 0.003,
-  guideSegments: 7,
-  density: 1,
-  childrenPerGuide: 6,
-  strandWidthRoot: 0.0028,
-  strandWidthTip: 0.00055,
-  clumpStrength: 0.45,
-  clumpRadius: 0.008,
-  noiseAmplitude: 0.0025,
+  guideSegments: 8,
+  strandDensity: 3.5,
+  clumpStrength: 0.55,
+  clumpRadius: 0.006,
+  noiseAmplitude: 0.003,
   noiseFrequency: 3.2,
-  curlStrength: 0.0012,
+  curlStrength: 0.0015,
   curlFrequency: 4.8,
-  frizzStrength: 0.00085,
-  cutRandomness: 0.08,
+  frizzStrength: 0.001,
+  cutRandomness: 0.12,
 }
 
 const DEFAULT_MATERIAL: HairMaterialSettings = {
@@ -29,6 +26,8 @@ const DEFAULT_MATERIAL: HairMaterialSettings = {
   roughness: 0.62,
   specularStrength: 0.48,
   opacity: 0.9,
+  strandWidthRoot: 0.0022,
+  strandWidthTip: 0.00045,
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -55,11 +54,8 @@ export function clampGroomSettings(settings: GroomModifierSettings): GroomModifi
   return {
     guideLength: clamp(settings.guideLength, 0.02, 0.4),
     guideRadius: clamp(settings.guideRadius, 0.0005, 0.02),
-    guideSegments: clampInteger(settings.guideSegments, 3, MAX_GUIDE_SEGMENTS),
-    density: clamp(settings.density, 0.2, 2),
-    childrenPerGuide: clampInteger(settings.childrenPerGuide, 1, MAX_CHILDREN_PER_GUIDE),
-    strandWidthRoot: clamp(settings.strandWidthRoot, 0.0003, 0.01),
-    strandWidthTip: clamp(settings.strandWidthTip, 0.0001, 0.006),
+    guideSegments: clampInteger(settings.guideSegments, 3, 12),
+    strandDensity: clamp(settings.strandDensity, 0.1, 20),
     clumpStrength: clamp(settings.clumpStrength, 0, 1),
     clumpRadius: clamp(settings.clumpRadius, 0, 0.03),
     noiseAmplitude: clamp(settings.noiseAmplitude, 0, 0.03),
@@ -78,6 +74,8 @@ export function clampHairMaterialSettings(material: HairMaterialSettings): HairM
     roughness: clamp(material.roughness, 0, 1),
     specularStrength: clamp(material.specularStrength, 0, 1),
     opacity: clamp(material.opacity, 0.05, 1),
+    strandWidthRoot: clamp(material.strandWidthRoot, 0.0003, 0.01),
+    strandWidthTip: clamp(material.strandWidthTip, 0.0001, 0.006),
   }
 }
 

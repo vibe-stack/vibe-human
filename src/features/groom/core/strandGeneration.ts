@@ -1,149 +1,261 @@
 import * as THREE from 'three'
-import {
-  MAX_CHILDREN_PER_GUIDE,
-  MAX_GUIDE_COUNT,
-  sanitizeGeneratedStrands,
-} from './groomAsset'
-import type { GeneratedStrand, GroomAsset, Vec3Tuple } from './types'
+import { MAX_STRAND_COUNT } from './groomAsset'
+import { getTriangleSurfaceData } from './scalpBinding'
+import type { GeneratedStrand, GroomAsset, GuideCurve, Vec3Tuple } from './types'
 
-function tupleToVector(point: Vec3Tuple) {
-  return new THREE.Vector3(point[0], point[1], point[2])
+// ---------------------------------------------------------------------------
+// Math helpers
+// ---------------------------------------------------------------------------
+
+function tupleToVector(p: Vec3Tuple) {
+  return new THREE.Vector3(p[0], p[1], p[2])
 }
 
-function vectorToTuple(point: THREE.Vector3): Vec3Tuple {
-  return [point.x, point.y, point.z]
-}
-
-function hashString(input: string) {
-  let hash = 2166136261
-  for (let index = 0; index < input.length; index += 1) {
-    hash ^= input.charCodeAt(index)
-    hash = Math.imul(hash, 16777619)
-  }
-
-  return hash >>> 0
+function vectorToTuple(v: THREE.Vector3): Vec3Tuple {
+  return [v.x, v.y, v.z]
 }
 
 function mulberry32(seed: number) {
   return () => {
-    let next = (seed += 0x6d2b79f5)
-    next = Math.imul(next ^ (next >>> 15), next | 1)
-    next ^= next + Math.imul(next ^ (next >>> 7), next | 61)
-    return ((next ^ (next >>> 14)) >>> 0) / 4294967296
+    let s = (seed += 0x6d2b79f5)
+    s = Math.imul(s ^ (s >>> 15), s | 1)
+    s ^= s + Math.imul(s ^ (s >>> 7), s | 61)
+    return ((s ^ (s >>> 14)) >>> 0) / 4294967296
   }
 }
 
-function makeBasis(tangent: THREE.Vector3, seed: number) {
-  const helper = Math.abs(tangent.y) > 0.92
-    ? new THREE.Vector3(1, 0, (seed % 7) * 0.01)
-    : new THREE.Vector3(0, 1, (seed % 11) * 0.01)
-  const normal = new THREE.Vector3().crossVectors(tangent, helper).normalize()
-  const binormal = new THREE.Vector3().crossVectors(tangent, normal).normalize()
-  return { normal, binormal }
+function hashU32(x: number) {
+  x = ((x >>> 16) ^ x) * 0x45d9f3b
+  x = ((x >>> 16) ^ x) * 0x45d9f3b
+  return ((x >>> 16) ^ x) >>> 0
 }
 
-function smoothstep(min: number, max: number, value: number) {
-  const x = THREE.MathUtils.clamp((value - min) / (max - min), 0, 1)
-  return x * x * (3 - 2 * x)
+function smoothstep(edge0: number, edge1: number, x: number) {
+  const t = THREE.MathUtils.clamp((x - edge0) / (edge1 - edge0), 0, 1)
+  return t * t * (3 - 2 * t)
 }
 
-function getPointTangent(points: THREE.Vector3[], index: number) {
-  if (index <= 0) {
-    return points[1].clone().sub(points[0]).normalize()
-  }
-  if (index >= points.length - 1) {
-    return points[index].clone().sub(points[index - 1]).normalize()
-  }
-
-  return points[index + 1].clone().sub(points[index - 1]).normalize()
+// Triangle area in 3-D
+function triangleArea(a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3) {
+  return new THREE.Triangle(a, b, c).getArea()
 }
 
-export function generateStrandsFromGuides(asset: GroomAsset): GeneratedStrand[] {
-  const settings = asset.settings
-  const actualChildrenPerGuide = Math.min(
-    MAX_CHILDREN_PER_GUIDE,
-    Math.max(1, Math.round(settings.childrenPerGuide * settings.density)),
+// Random point inside triangle via barycentric (Osada et al. uniform sampling)
+function randomPointInTriangle(
+  a: THREE.Vector3,
+  b: THREE.Vector3,
+  c: THREE.Vector3,
+  r1: number,
+  r2: number,
+): THREE.Vector3 {
+  const sqrtR1 = Math.sqrt(r1)
+  const u = 1 - sqrtR1
+  const v = sqrtR1 * (1 - r2)
+  const w = sqrtR1 * r2
+  return new THREE.Vector3(
+    u * a.x + v * b.x + w * c.x,
+    u * a.y + v * b.y + w * c.y,
+    u * a.z + v * b.z + w * c.z,
   )
+}
+
+// ---------------------------------------------------------------------------
+// Guide influence — find the K nearest guides to a scalp point and return
+// inverse-distance weights (same approach as XGen / Houdini Groom).
+// ---------------------------------------------------------------------------
+
+const K_NEAREST = 4
+
+type WeightedGuide = { guide: GuideCurve; weight: number }
+
+function findInfluenceGuides(
+  rootPoint: THREE.Vector3,
+  guides: GuideCurve[],
+): WeightedGuide[] {
+  // Collect distances to all guides
+  const dists: { guide: GuideCurve; distSq: number }[] = []
+  for (const guide of guides) {
+    const guideRoot = tupleToVector(guide.points[0] ?? [0, 0, 0])
+    dists.push({ guide, distSq: rootPoint.distanceToSquared(guideRoot) })
+  }
+
+  // Partial sort — keep K nearest
+  dists.sort((a, b) => a.distSq - b.distSq)
+  const nearest = dists.slice(0, K_NEAREST)
+
+  // If the closest guide is exactly on the point, return it with full weight
+  if (nearest[0]?.distSq === 0) {
+    return [{ guide: nearest[0].guide, weight: 1 }]
+  }
+
+  // Inverse-distance weighting (IDW, power=2)
+  const weighted = nearest.map((d) => ({ guide: d.guide, weight: 1 / d.distSq }))
+  const totalWeight = weighted.reduce((sum, w) => sum + w.weight, 0)
+  return weighted.map((w) => ({ ...w, weight: w.weight / totalWeight }))
+}
+
+// ---------------------------------------------------------------------------
+// Interpolate strand shape from weighted guides.
+// All guide point arrays are resampled to the same segment count.
+// ---------------------------------------------------------------------------
+
+function interpolateStrandPoints(
+  influences: WeightedGuide[],
+  rootPoint: THREE.Vector3,
+  segmentCount: number,
+): THREE.Vector3[] {
+  const points: THREE.Vector3[] = []
+
+  for (let seg = 0; seg <= segmentCount; seg += 1) {
+    const t = seg / segmentCount
+    const blended = new THREE.Vector3()
+
+    for (const { guide, weight } of influences) {
+      const guidePoints = guide.points
+      const guideRoot = tupleToVector(guidePoints[0] ?? [0, 0, 0])
+
+      // Sample guide at parameter t (linear interpolation along its points)
+      const rawIndex = t * (guidePoints.length - 1)
+      const lo = Math.floor(rawIndex)
+      const hi = Math.min(lo + 1, guidePoints.length - 1)
+      const frac = rawIndex - lo
+      const pA = tupleToVector(guidePoints[lo] ?? [0, 0, 0])
+      const pB = tupleToVector(guidePoints[hi] ?? [0, 0, 0])
+      const guidePoint = pA.lerp(pB, frac)
+
+      // Express guide point as an offset from the guide root, apply to our root
+      const offset = guidePoint.sub(guideRoot)
+      blended.addScaledVector(offset, weight)
+    }
+
+    points.push(rootPoint.clone().add(blended))
+  }
+
+  return points
+}
+
+// ---------------------------------------------------------------------------
+// Per-strand procedural effects (frizz, curl, noise) — applied after
+// interpolation so the overall shape comes from guides, effects are on top.
+// ---------------------------------------------------------------------------
+
+function applyStrandEffects(
+  points: THREE.Vector3[],
+  settings: GroomAsset['settings'],
+  rng: () => number,
+): THREE.Vector3[] {
+  if (points.length < 2) return points
+
+  const noisePhase = rng() * Math.PI * 2
+  const curlPhase = rng() * Math.PI * 2
+  const frizzPhase = rng() * Math.PI * 2
+  const cutScale = 1 - settings.cutRandomness * rng() * 0.4
+
+  const root = points[0].clone()
+  const result: THREE.Vector3[] = []
+
+  for (let i = 0; i < points.length; i += 1) {
+    const t = i / Math.max(1, points.length - 1)
+
+    // Local frame from segment direction
+    const prev = points[Math.max(0, i - 1)]
+    const next = points[Math.min(points.length - 1, i + 1)]
+    const tangent = next.clone().sub(prev).normalize()
+    const helperAxis = Math.abs(tangent.y) > 0.9
+      ? new THREE.Vector3(1, 0, 0)
+      : new THREE.Vector3(0, 1, 0)
+    const basisN = new THREE.Vector3().crossVectors(tangent, helperAxis).normalize()
+    const basisB = new THREE.Vector3().crossVectors(tangent, basisN)
+
+    const noiseAmp = settings.noiseAmplitude * (0.2 + t * 0.8)
+    const curlAmp = settings.curlStrength * smoothstep(0, 0.3, t)
+    const frizzAmp = settings.frizzStrength * (0.1 + t * 0.9)
+
+    const p = points[i].clone()
+      .addScaledVector(basisN, Math.sin(t * settings.noiseFrequency * Math.PI * 2 + noisePhase) * noiseAmp)
+      .addScaledVector(basisB, Math.cos(t * settings.noiseFrequency * Math.PI * 2 + noisePhase * 0.7) * noiseAmp * 0.6)
+      .addScaledVector(basisN, Math.sin(t * settings.curlFrequency * Math.PI * 2 + curlPhase) * curlAmp)
+      .addScaledVector(basisB, Math.cos(t * settings.curlFrequency * Math.PI * 2 + curlPhase) * curlAmp)
+      .addScaledVector(basisN, Math.sin(t * (settings.curlFrequency * 2.7 + 8) * Math.PI * 2 + frizzPhase) * frizzAmp)
+
+    // Scale from root by cutScale
+    p.sub(root).multiplyScalar(cutScale).add(root)
+    result.push(p)
+  }
+
+  return result
+}
+
+// ---------------------------------------------------------------------------
+// Main entry point — scalp-coverage strand generation
+//
+// Algorithm (matching XGen / Houdini Groom):
+//   For every triangle in the scalp mask:
+//     1. Compute how many strands this triangle contributes (area × density)
+//     2. For each strand, sample a random point on the triangle
+//     3. Find the K nearest guides and compute IDW-blended shape
+//     4. Apply per-strand procedural effects
+// ---------------------------------------------------------------------------
+
+export function generateStrandsFromGuides(
+  asset: GroomAsset,
+  mesh?: THREE.Mesh,
+): GeneratedStrand[] {
+  const { guides, settings, scalpMask } = asset
+
+  if (guides.length === 0 || scalpMask.selectedTriangleIndices.length === 0) return []
+
+  // Need mesh geometry for triangle positions
+  const geometry = mesh?.geometry
+  if (!geometry || !(geometry instanceof THREE.BufferGeometry)) return []
+
   const strands: GeneratedStrand[] = []
+  // strandDensity is strands/cm² — triangles are in metres, 1 m² = 10000 cm²
+  const strandsPerM2 = settings.strandDensity * 10_000
 
-  for (const guide of asset.guides.slice(0, MAX_GUIDE_COUNT)) {
-    if (guide.points.length < 2) continue
+  for (const triIndex of scalpMask.selectedTriangleIndices) {
+    const surface = getTriangleSurfaceData(geometry, triIndex)
+    if (!surface) continue
 
-    const guidePoints = guide.points.map(tupleToVector)
-    const root = guidePoints[0]
-    const rootTangent = getPointTangent(guidePoints, 0)
-    const guideSeed = hashString(guide.id)
-    const rootBasis = makeBasis(rootTangent, guideSeed)
+    const area = triangleArea(surface.a, surface.b, surface.c) // m²
+    const expectedStrands = area * strandsPerM2
+    // Stochastic rounding so low-density settings still cover the surface
+    const strandSeed = hashU32(triIndex)
+    const rngTriangle = mulberry32(strandSeed)
+    const fractional = expectedStrands - Math.floor(expectedStrands)
+    const count = Math.floor(expectedStrands) + (rngTriangle() < fractional ? 1 : 0)
 
-    for (let childIndex = 0; childIndex < actualChildrenPerGuide; childIndex += 1) {
-      const strandSeed = hashString(`${guide.id}:${childIndex}`)
-      const random = mulberry32(strandSeed)
-      const angle = random() * Math.PI * 2
-      const radius = Math.sqrt(random()) * settings.clumpRadius
-      const rootOffset = rootBasis.normal
-        .clone()
-        .multiplyScalar(Math.cos(angle) * radius)
-        .addScaledVector(rootBasis.binormal, Math.sin(angle) * radius)
+    for (let si = 0; si < count; si += 1) {
+      if (strands.length >= MAX_STRAND_COUNT) break
 
-      const noisePhase = random() * Math.PI * 2
-      const curlPhase = random() * Math.PI * 2
-      const frizzPhase = random() * Math.PI * 2
-      const cutScale = 1 - settings.cutRandomness * random() * 0.35
-      const points: Vec3Tuple[] = []
+      const strandSeedLocal = hashU32(strandSeed ^ hashU32(si + 1))
+      const rng = mulberry32(strandSeedLocal)
 
-      for (let pointIndex = 0; pointIndex < guidePoints.length; pointIndex += 1) {
-        const t = pointIndex / Math.max(1, guidePoints.length - 1)
-        const basePoint = guidePoints[pointIndex].clone()
-        const tangent = getPointTangent(guidePoints, pointIndex)
-        const basis = makeBasis(tangent, strandSeed + pointIndex)
-        const clumpFade = 1 - settings.clumpStrength * smoothstep(0.05, 1, t)
-        const noiseAmp = settings.noiseAmplitude * (0.2 + t * 0.8)
-        const curlAmp = settings.curlStrength * smoothstep(0, 1, t)
-        const frizzAmp = settings.frizzStrength * (0.15 + t * 0.85)
+      // Random point on triangle (uniform area sampling)
+      const rootPoint = randomPointInTriangle(surface.a, surface.b, surface.c, rng(), rng())
 
-        const point = basePoint
-          .add(rootOffset.clone().multiplyScalar(1 - t * 0.92))
-          .add(rootOffset.clone().multiplyScalar(-(1 - clumpFade)))
-          .add(
-            basis.normal.clone().multiplyScalar(
-              Math.sin(t * settings.noiseFrequency * Math.PI * 2 + noisePhase) * noiseAmp,
-            ),
-          )
-          .add(
-            basis.binormal.clone().multiplyScalar(
-              Math.cos(t * settings.noiseFrequency * Math.PI * 2 + noisePhase * 0.75) * noiseAmp * 0.7,
-            ),
-          )
-          .add(
-            basis.normal.clone().multiplyScalar(
-              Math.sin(t * settings.curlFrequency * Math.PI * 2 + curlPhase) * curlAmp,
-            ),
-          )
-          .add(
-            basis.binormal.clone().multiplyScalar(
-              Math.cos(t * settings.curlFrequency * Math.PI * 2 + curlPhase) * curlAmp,
-            ),
-          )
-          .add(
-            basis.normal.clone().multiplyScalar(
-              Math.sin(t * (settings.curlFrequency * 3 + 9) * Math.PI * 2 + frizzPhase) * frizzAmp,
-            ),
-          )
+      // Offset slightly along normal so strand roots sit above scalp
+      rootPoint.addScaledVector(surface.normal, 0.0008)
 
-        point.sub(root).multiplyScalar(cutScale).add(root)
-        points.push(vectorToTuple(point))
-      }
+      // Guide interpolation
+      const influences = findInfluenceGuides(rootPoint, guides)
+      const basePoints = interpolateStrandPoints(influences, rootPoint, settings.guideSegments)
+
+      // Procedural effects
+      const finalPoints = applyStrandEffects(basePoints, settings, rng)
 
       strands.push({
-        id: `${guide.id}-child-${childIndex}`,
-        guideId: guide.id,
-        points,
-        widthRoot: settings.strandWidthRoot,
-        widthTip: settings.strandWidthTip,
-        random: strandSeed / 0xffffffff,
+        id: `tri${triIndex}-s${si}`,
+        guideId: influences[0]?.guide.id ?? '',
+        points: finalPoints.map(vectorToTuple),
+        widthRoot: asset.material.strandWidthRoot,
+        widthTip: asset.material.strandWidthTip,
+        random: strandSeedLocal / 0xffffffff,
       })
     }
+
+    if (strands.length >= MAX_STRAND_COUNT) break
   }
 
-  return sanitizeGeneratedStrands(strands)
+  return strands
 }

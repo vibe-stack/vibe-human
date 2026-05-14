@@ -322,11 +322,7 @@ export default function HumanModel() {
       control.negativeTarget,
       control.positiveTarget,
     ])
-    const missingTargets = requiredTargets.filter((target) => !availableTargets.has(target))
-
-    if (missingTargets.length) {
-      console.warn('Missing character modeling morph targets:', missingTargets)
-    }
+    requiredTargets.filter((target) => !availableTargets.has(target))
 
     const nextDebugBones = Object.values(bones)
       .filter((bone) => FACE_BONE_PATTERN.test(bone.name))
@@ -374,11 +370,6 @@ export default function HumanModel() {
   useFrame((_, delta) => {
     const bones = bonesRef.current
     const rest = restRef.current
-
-    // DEBUG TEMP
-    if (Math.random() < 0.005) {
-      console.log('[modeling debug] bones:', Object.keys(bones).length, 'meshes:', morphMeshesRef.current.length, 'values:', JSON.stringify(modelingValuesRef.current))
-    }
 
     if (!Object.keys(bones).length) return
 
@@ -630,12 +621,7 @@ export default function HumanModel() {
             const rest = restRef.current[selectedBone.name]
             if (!rest) return
 
-            const debug = getBoneDebug(selectedBone, rest)
-            const poseKey = selectedBone.name.replace(/^DEF-/, '')
-            console.log(
-              `'${poseKey}': { position: [${debug.deltaPosition.join(', ')}] },`,
-              debug,
-            )
+            getBoneDebug(selectedBone, rest)
           }}
         />
       )}

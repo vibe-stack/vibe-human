@@ -139,7 +139,7 @@ export function generateGuidesFromScalpSelection(
 
   const targetCount = Math.min(
     MAX_GUIDE_COUNT,
-    Math.max(1, Math.round(triangleIndices.length / 10)),
+    Math.max(1, Math.round(triangleIndices.length / 3)),
   )
   const step = triangleIndices.length / targetCount
   const guides: GuideCurve[] = []
@@ -171,8 +171,50 @@ export function guideRootPosition(guide: GuideCurve) {
   return tupleToVector(guide.points[0] ?? [0, 0, 0])
 }
 
+// Distance from `pointLocal` to the closest point on the polyline that
+// represents the guide.  Also returns the t parameter (0..1) of the closest
+// point, so tools can apply their effect more strongly at the strand tip when
+// the user is grooming the tip rather than the root.
+const _ga = new THREE.Vector3()
+const _gb = new THREE.Vector3()
+const _gd = new THREE.Vector3()
+const _gp = new THREE.Vector3()
+function guideClosestPoint(guide: GuideCurve, pointLocal: THREE.Vector3): { distance: number; t: number } {
+  const pts = guide.points
+  if (pts.length === 0) return { distance: Infinity, t: 0 }
+  if (pts.length === 1) {
+    _ga.set(pts[0][0], pts[0][1], pts[0][2])
+    return { distance: _ga.distanceTo(pointLocal), t: 0 }
+  }
+
+  let bestDistSq = Infinity
+  let bestSegment = 0
+  let bestLocalT = 0
+  for (let i = 0; i < pts.length - 1; i += 1) {
+    _ga.set(pts[i][0], pts[i][1], pts[i][2])
+    _gb.set(pts[i + 1][0], pts[i + 1][1], pts[i + 1][2])
+    _gd.subVectors(_gb, _ga)
+    const segLenSq = _gd.lengthSq() || 1e-12
+    const u = THREE.MathUtils.clamp(
+      _gp.subVectors(pointLocal, _ga).dot(_gd) / segLenSq,
+      0, 1,
+    )
+    _gp.copy(_ga).addScaledVector(_gd, u)
+    const distSq = _gp.distanceToSquared(pointLocal)
+    if (distSq < bestDistSq) {
+      bestDistSq = distSq
+      bestSegment = i
+      bestLocalT = u
+    }
+  }
+
+  const segments = pts.length - 1
+  const t = (bestSegment + bestLocalT) / segments
+  return { distance: Math.sqrt(bestDistSq), t }
+}
+
 function guideFalloff(guide: GuideCurve, pointLocal: THREE.Vector3, radius: number) {
-  const distance = guideRootPosition(guide).distanceTo(pointLocal)
+  const { distance } = guideClosestPoint(guide, pointLocal)
   if (distance > radius) return 0
   return 1 - distance / radius
 }
@@ -185,15 +227,29 @@ export function combGuidesAtPoint(
   strength: number,
 ) {
   return guides.map((guide) => {
-    const falloff = guideFalloff(guide, pointLocal, radius)
-    if (falloff <= 0) return guide
+    const { distance, t: hitT } = guideClosestPoint(guide, pointLocal)
+    if (distance > radius) return guide
+    const falloff = 1 - distance / radius
 
+    // Per-vertex weighting: stronger at the hit location, soft falloff toward
+    // root (locked) and toward the strand end.  Vertices below the hit also
+    // get partial influence so combing the tip drags the upper half along
+    // with it — this is how XGen / Houdini behave.
+    const segments = Math.max(1, guide.points.length - 1)
     return {
       ...guide,
       points: guide.points.map((point, index) => {
-        if (index === 0) return point
-        const t = index / Math.max(1, guide.points.length - 1)
-        const next = tupleToVector(point).addScaledVector(deltaLocal, falloff * strength * t)
+        if (index === 0) return point // root is bound to scalp
+        const t = index / segments
+        // Bias: a triangular tent centered at hitT, but anything above it
+        // gets at least 60% of the influence (so the tip follows the hand).
+        const above = t >= hitT
+        const dt = above ? (t - hitT) : (hitT - t)
+        const tent = above
+          ? 1 - dt * 0.4
+          : Math.max(0, 1 - dt * 1.6)
+        const w = falloff * strength * tent
+        const next = tupleToVector(point).addScaledVector(deltaLocal, w)
         return vectorToTuple(next)
       }),
     }

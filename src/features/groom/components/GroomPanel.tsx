@@ -230,7 +230,7 @@ export default function GroomPanel() {
             label="Guide Segments"
             value={activeGroomAsset.settings.guideSegments}
             min={3}
-            max={8}
+            max={12}
             step={1}
             onChange={(value) => setModifierSetting('guideSegments', value)}
           />
@@ -239,38 +239,30 @@ export default function GroomPanel() {
           </div>
         </Section>
 
-        <Section title="CHILDREN / DENSITY">
+        <Section title="DENSITY">
           <SliderRow
-            label="Children Per Guide"
-            value={activeGroomAsset.settings.childrenPerGuide}
-            min={1}
-            max={10}
-            step={1}
-            onChange={(value) => setModifierSetting('childrenPerGuide', value)}
-          />
-          <SliderRow
-            label="Density"
-            value={activeGroomAsset.settings.density}
-            min={0.2}
-            max={2}
-            step={0.01}
-            onChange={(value) => setModifierSetting('density', value)}
+            label="Strand Density (strands/cm²)"
+            value={activeGroomAsset.settings.strandDensity}
+            min={0.1}
+            max={20}
+            step={0.1}
+            onChange={(value) => setModifierSetting('strandDensity', value)}
           />
           <SliderRow
             label="Strand Width Root"
-            value={activeGroomAsset.settings.strandWidthRoot}
+            value={activeGroomAsset.material.strandWidthRoot}
             min={0.0003}
             max={0.008}
             step={0.0001}
-            onChange={(value) => setModifierSetting('strandWidthRoot', value)}
+            onChange={(value) => setHairMaterialSetting('strandWidthRoot', value)}
           />
           <SliderRow
             label="Strand Width Tip"
-            value={activeGroomAsset.settings.strandWidthTip}
+            value={activeGroomAsset.material.strandWidthTip}
             min={0.0001}
             max={0.004}
             step={0.0001}
-            onChange={(value) => setModifierSetting('strandWidthTip', value)}
+            onChange={(value) => setHairMaterialSetting('strandWidthTip', value)}
           />
           <button onClick={regenerateGeneratedStrands} style={buttonStyle}>REGENERATE STRANDS</button>
         </Section>

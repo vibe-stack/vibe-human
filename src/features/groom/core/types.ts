@@ -21,10 +21,8 @@ export type GroomModifierSettings = {
   guideLength: number
   guideRadius: number
   guideSegments: number
-  density: number
-  childrenPerGuide: number
-  strandWidthRoot: number
-  strandWidthTip: number
+  /** strands per cm² of scalp surface */
+  strandDensity: number
   clumpStrength: number
   clumpRadius: number
   noiseAmplitude: number
@@ -41,6 +39,8 @@ export type HairMaterialSettings = {
   roughness: number
   specularStrength: number
   opacity: number
+  strandWidthRoot: number
+  strandWidthTip: number
 }
 
 export type GroomAsset = {
