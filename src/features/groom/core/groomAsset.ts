@@ -21,13 +21,29 @@ const DEFAULT_SETTINGS: GroomModifierSettings = {
 }
 
 const DEFAULT_MATERIAL: HairMaterialSettings = {
-  rootColor: '#322117',
-  tipColor: '#8f6a4e',
-  roughness: 0.62,
-  specularStrength: 0.48,
-  opacity: 0.9,
-  strandWidthRoot: 0.0022,
-  strandWidthTip: 0.00045,
+  // Default to a natural medium-brown.
+  melanin: 0.68,
+  melaninRedness: 0.20,
+  melaninRandomize: 0.10,
+  tintColor: '#ffffff',
+  rootDarken: 0.45,
+  rootDarkenLength: 0.18,
+
+  specularStrength: 0.6,
+  primaryShift: -0.06,         // ~ -3.4°, tilts highlight toward the root
+  primaryHighlightTint: '#ffffff',
+  secondaryShift: 0.045,        // ~ +2.6°, tilts secondary toward the tip
+  secondaryHighlightTint: '#ffd9a8',
+  roughness: 0.32,
+  roughnessAzimuthal: 0.4,
+
+  scatter: 0.55,
+  transmissionTint: '#a47352',
+
+  opacity: 0.95,
+  strandWidthRoot: 0.0018,
+  strandWidthTip: 0.0004,
+  flyaway: 0.25,
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -69,13 +85,28 @@ export function clampGroomSettings(settings: GroomModifierSettings): GroomModifi
 
 export function clampHairMaterialSettings(material: HairMaterialSettings): HairMaterialSettings {
   return {
-    rootColor: material.rootColor,
-    tipColor: material.tipColor,
-    roughness: clamp(material.roughness, 0, 1),
-    specularStrength: clamp(material.specularStrength, 0, 1),
-    opacity: clamp(material.opacity, 0.05, 1),
-    strandWidthRoot: clamp(material.strandWidthRoot, 0.0003, 0.01),
-    strandWidthTip: clamp(material.strandWidthTip, 0.0001, 0.006),
+    melanin:                clamp(material.melanin, 0, 1),
+    melaninRedness:         clamp(material.melaninRedness, 0, 1),
+    melaninRandomize:       clamp(material.melaninRandomize, 0, 0.5),
+    tintColor:              material.tintColor,
+    rootDarken:             clamp(material.rootDarken, 0, 1),
+    rootDarkenLength:       clamp(material.rootDarkenLength, 0, 1),
+
+    specularStrength:       clamp(material.specularStrength, 0, 1),
+    primaryShift:           clamp(material.primaryShift, -0.2, 0.2),
+    primaryHighlightTint:   material.primaryHighlightTint,
+    secondaryShift:         clamp(material.secondaryShift, -0.2, 0.2),
+    secondaryHighlightTint: material.secondaryHighlightTint,
+    roughness:              clamp(material.roughness, 0, 1),
+    roughnessAzimuthal:     clamp(material.roughnessAzimuthal, 0, 1),
+
+    scatter:                clamp(material.scatter, 0, 1),
+    transmissionTint:       material.transmissionTint,
+
+    opacity:                clamp(material.opacity, 0.05, 1),
+    strandWidthRoot:        clamp(material.strandWidthRoot, 0.0003, 0.01),
+    strandWidthTip:         clamp(material.strandWidthTip, 0.0001, 0.006),
+    flyaway:                clamp(material.flyaway, 0, 1),
   }
 }
 

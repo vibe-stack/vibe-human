@@ -278,17 +278,41 @@ export default function GroomPanel() {
           <SliderRow label="Cut Randomness" value={activeGroomAsset.settings.cutRandomness} min={0} max={1} step={0.01} onChange={(value) => setModifierSetting('cutRandomness', value)} />
         </Section>
 
-        <Section title="MATERIAL">
+        <Section title="MELANIN">
+          <SliderRow label="Melanin" value={activeGroomAsset.material.melanin} min={0} max={1} step={0.01} onChange={(value) => setHairMaterialSetting('melanin', value)} />
+          <SliderRow label="Redness (pheomelanin)" value={activeGroomAsset.material.melaninRedness} min={0} max={1} step={0.01} onChange={(value) => setHairMaterialSetting('melaninRedness', value)} />
+          <SliderRow label="Per-strand Variance" value={activeGroomAsset.material.melaninRandomize} min={0} max={0.5} step={0.005} onChange={(value) => setHairMaterialSetting('melaninRandomize', value)} />
           <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.56)' }}>Root Color</span>
-            <input type="color" value={activeGroomAsset.material.rootColor} onChange={(event) => setHairMaterialSetting('rootColor', event.target.value)} />
+            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.56)' }}>Tint (multiplicative)</span>
+            <input type="color" value={activeGroomAsset.material.tintColor} onChange={(event) => setHairMaterialSetting('tintColor', event.target.value)} />
           </label>
+          <SliderRow label="Root Darken" value={activeGroomAsset.material.rootDarken} min={0} max={1} step={0.01} onChange={(value) => setHairMaterialSetting('rootDarken', value)} />
+          <SliderRow label="Root Darken Length" value={activeGroomAsset.material.rootDarkenLength} min={0} max={1} step={0.01} onChange={(value) => setHairMaterialSetting('rootDarkenLength', value)} />
+        </Section>
+
+        <Section title="HIGHLIGHTS">
+          <SliderRow label="Specular Strength" value={activeGroomAsset.material.specularStrength} min={0} max={1.5} step={0.01} onChange={(value) => setHairMaterialSetting('specularStrength', value)} />
+          <SliderRow label="Longitudinal Roughness" value={activeGroomAsset.material.roughness} min={0.05} max={1} step={0.01} onChange={(value) => setHairMaterialSetting('roughness', value)} />
+          <SliderRow label="Azimuthal Roughness" value={activeGroomAsset.material.roughnessAzimuthal} min={0.05} max={1} step={0.01} onChange={(value) => setHairMaterialSetting('roughnessAzimuthal', value)} />
+          <SliderRow label="Primary Shift" value={activeGroomAsset.material.primaryShift} min={-0.15} max={0.15} step={0.005} onChange={(value) => setHairMaterialSetting('primaryShift', value)} />
           <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.56)' }}>Tip Color</span>
-            <input type="color" value={activeGroomAsset.material.tipColor} onChange={(event) => setHairMaterialSetting('tipColor', event.target.value)} />
+            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.56)' }}>Primary Tint</span>
+            <input type="color" value={activeGroomAsset.material.primaryHighlightTint} onChange={(event) => setHairMaterialSetting('primaryHighlightTint', event.target.value)} />
           </label>
-          <SliderRow label="Roughness" value={activeGroomAsset.material.roughness} min={0} max={1} step={0.01} onChange={(value) => setHairMaterialSetting('roughness', value)} />
-          <SliderRow label="Specular Strength" value={activeGroomAsset.material.specularStrength} min={0} max={1} step={0.01} onChange={(value) => setHairMaterialSetting('specularStrength', value)} />
+          <SliderRow label="Secondary Shift" value={activeGroomAsset.material.secondaryShift} min={-0.15} max={0.15} step={0.005} onChange={(value) => setHairMaterialSetting('secondaryShift', value)} />
+          <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.56)' }}>Secondary Tint</span>
+            <input type="color" value={activeGroomAsset.material.secondaryHighlightTint} onChange={(event) => setHairMaterialSetting('secondaryHighlightTint', event.target.value)} />
+          </label>
+        </Section>
+
+        <Section title="SCATTERING">
+          <SliderRow label="Multi-scatter" value={activeGroomAsset.material.scatter} min={0} max={1} step={0.01} onChange={(value) => setHairMaterialSetting('scatter', value)} />
+          <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.56)' }}>Transmission Tint</span>
+            <input type="color" value={activeGroomAsset.material.transmissionTint} onChange={(event) => setHairMaterialSetting('transmissionTint', event.target.value)} />
+          </label>
+          <SliderRow label="Flyaway" value={activeGroomAsset.material.flyaway} min={0} max={1} step={0.01} onChange={(value) => setHairMaterialSetting('flyaway', value)} />
           <SliderRow label="Opacity" value={activeGroomAsset.material.opacity} min={0.05} max={1} step={0.01} onChange={(value) => setHairMaterialSetting('opacity', value)} />
         </Section>
 

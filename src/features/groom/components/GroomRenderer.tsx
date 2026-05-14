@@ -15,25 +15,39 @@ import { groomStore, getRegisteredGroomMesh } from '../store/groomStore'
 //   uv.y     – t along the strand (0 root → 1 tip)
 // ---------------------------------------------------------------------------
 function buildRibbonGeometry(
-  lines: ReadonlyArray<{ points: ReadonlyArray<readonly [number, number, number]> }>,
+  lines: ReadonlyArray<{ points: ReadonlyArray<readonly [number, number, number]>; random: number }>,
 ) {
-  const positions: number[] = []
-  const tangents: number[] = []
-  const uvs: number[] = []
-  const indices: number[] = []
+  // Pre-size the typed arrays.  Each strand contributes (pts*2) vertices and
+  // (pts-1)*6 indices.
+  let vertCount = 0
+  let idxCount = 0
+  for (const line of lines) {
+    if (line.points.length < 2) continue
+    vertCount += line.points.length * 2
+    idxCount += (line.points.length - 1) * 6
+  }
 
+  const positions = new Float32Array(vertCount * 3)
+  const tangents = new Float32Array(vertCount * 3)
+  const uvs = new Float32Array(vertCount * 2)
+  const seeds = new Float32Array(vertCount)
+  const indices = new Uint32Array(idxCount)
+
+  let vWrite = 0
+  let iWrite = 0
   let vertexOffset = 0
 
   for (const line of lines) {
     const pts = line.points
     if (pts.length < 2) continue
     const last = pts.length - 1
+    const seed = line.random
 
     for (let i = 0; i < pts.length; i += 1) {
       const t = i / last
       const px = pts[i][0], py = pts[i][1], pz = pts[i][2]
 
-      // Forward-difference tangent (at the tip we reuse the last segment)
+      // Forward-difference tangent (at the tip we reuse the last segment).
       const j = i < last ? i + 1 : i
       const k = i < last ? i : i - 1
       let tx = pts[j][0] - pts[k][0]
@@ -42,28 +56,36 @@ function buildRibbonGeometry(
       const tl = Math.hypot(tx, ty, tz) || 1
       tx /= tl; ty /= tl; tz /= tl
 
-      // Two vertices per ring (left, right) sharing position+tangent.
-      positions.push(px, py, pz, px, py, pz)
-      tangents.push(tx, ty, tz, tx, ty, tz)
-      uvs.push(-1, t, 1, t)
+      // Two vertices per ring (left=-1, right=+1) sharing pos/tangent/seed.
+      positions[vWrite]     = px; positions[vWrite + 1] = py; positions[vWrite + 2] = pz
+      positions[vWrite + 3] = px; positions[vWrite + 4] = py; positions[vWrite + 5] = pz
+      tangents[vWrite]      = tx; tangents[vWrite + 1]  = ty; tangents[vWrite + 2]  = tz
+      tangents[vWrite + 3]  = tx; tangents[vWrite + 4]  = ty; tangents[vWrite + 5]  = tz
+      uvs[(vWrite / 3) * 2]     = -1; uvs[(vWrite / 3) * 2 + 1] = t
+      uvs[(vWrite / 3) * 2 + 2] =  1; uvs[(vWrite / 3) * 2 + 3] = t
+      seeds[vWrite / 3]     = seed
+      seeds[vWrite / 3 + 1] = seed
+      vWrite += 6
 
       if (i > 0) {
         const bl = vertexOffset + (i - 1) * 2
         const br = vertexOffset + (i - 1) * 2 + 1
         const tl2 = vertexOffset + i * 2
         const tr = vertexOffset + i * 2 + 1
-        indices.push(bl, br, tl2, br, tr, tl2)
+        indices[iWrite]     = bl; indices[iWrite + 1] = br; indices[iWrite + 2] = tl2
+        indices[iWrite + 3] = br; indices[iWrite + 4] = tr; indices[iWrite + 5] = tl2
+        iWrite += 6
       }
     }
-
     vertexOffset += pts.length * 2
   }
 
   const geo = new THREE.BufferGeometry()
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
-  geo.setAttribute('tangent', new THREE.Float32BufferAttribute(tangents, 3))
-  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
-  geo.setIndex(indices)
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geo.setAttribute('tangent', new THREE.BufferAttribute(tangents, 3))
+  geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2))
+  geo.setAttribute('strandSeed', new THREE.BufferAttribute(seeds, 1))
+  geo.setIndex(new THREE.BufferAttribute(indices, 1))
   return geo
 }
 
@@ -118,7 +140,9 @@ export default function GroomRenderer() {
 
   const strandGeometry = useMemo(() => {
     if (!showGeneratedStrands || !generatedStrands.length) return null
-    return buildRibbonGeometry(generatedStrands.map((s) => ({ points: s.points })))
+    return buildRibbonGeometry(
+      generatedStrands.map((s) => ({ points: s.points, random: s.random })),
+    )
   }, [generatedStrands, showGeneratedStrands])
 
   const guideGeometry = useMemo(() => {

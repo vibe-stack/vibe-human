@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu'
-import { texture, uv, mix, normalMap, float, clamp, vec2, vec3, normalView, positionViewDirection, dot, smoothstep, normalize, pow } from 'three/tsl'
+import { attribute, texture, uniform, uv, mix, normalMap, float, clamp, saturate, vec2, vec3, normalView, positionViewDirection, dot, smoothstep, normalize, pow } from 'three/tsl'
 
 export const DEFAULT_PORE_SCALE = 30
 export const DEFAULT_PORE_NORMAL_STRENGTH = 1
@@ -172,7 +172,27 @@ export async function createSkinMaterial(
 
   const scatterRim   = pow(clamp(float(1.0).sub(NdotV), float(0.0), float(1.0)), float(2.25))
   const scatterMask  = smoothstep(float(0.05), float(0.9), scatterRim).mul(settings.subsurfaceStrength)
-  const scatterColor = mix(baseColor, bloodTint, scatterMask.mul(0.12))
+  let   scatterColor = mix(baseColor, bloodTint, scatterMask.mul(0.12))
+
+  // -------------------------------------------------------------------------
+  // Scalp tint pass — MetaHuman-style follicle base.
+  //
+  // When a hair groom paints scalp triangles, those triangles get a non-zero
+  // value in a per-vertex `scalpMask` attribute we write from the groom store.
+  // Vertices without the attribute default to 0 (no tint).  The skin color is
+  // multiplied toward a darker follicle colour wherever the mask is non-zero,
+  // softening the hard skin/hair boundary you otherwise see at the silhouette.
+  //
+  // The follicle colour + intensity are uniforms updated externally by the
+  // groom store so the tint matches the active hair colour.
+  // -------------------------------------------------------------------------
+  const scalpMaskAttr = attribute('scalpMask', 'float') as any
+  const scalpMask = saturate(scalpMaskAttr)
+  const uFollicleColor = uniform(new THREE.Color(0x000000))
+  const uFollicleStrength = uniform(0.0)
+  const folliclePush: any = scalpMask.mul(uFollicleStrength)
+  const follicleTinted: any = (scatterColor as any).mul(vec3(uFollicleColor as any))
+  scatterColor = mix(scatterColor, follicleTinted, folliclePush) as any
   const oilFilm      = clamp(
     specular.mul(0.12).add(float(settings.oiliness).mul(0.18)),
     float(0.0),
@@ -224,7 +244,38 @@ export async function createSkinMaterial(
   mat.clearcoatRoughness = 0.44 + (1.0 - settings.oiliness) * 0.16
   mat.needsUpdate       = true
 
+  // Expose follicle uniforms for the groom system.
+  ;(mat as unknown as SkinMaterialWithFollicle).__follicleUniforms = {
+    follicleColor:    uFollicleColor,
+    follicleStrength: uFollicleStrength,
+  }
+
   return mat
+}
+
+type FollicleUniforms = {
+  follicleColor:    ReturnType<typeof uniform>
+  follicleStrength: ReturnType<typeof uniform>
+}
+export type SkinMaterialWithFollicle = THREE.MeshSSSNodeMaterial & {
+  __follicleUniforms?: FollicleUniforms
+}
+
+/**
+ * Update the per-skin-material follicle tint.  Called by the groom store when
+ * either the active hair colour or the scalp mask changes — the colour drives
+ * how the painted region looks, and the mask drives where it applies (via the
+ * mesh's `scalpMask` vertex attribute, updated separately).
+ */
+export function setSkinFollicleTint(
+  mat: THREE.Material,
+  colorHex: string,
+  strength: number,
+) {
+  const u = (mat as SkinMaterialWithFollicle).__follicleUniforms
+  if (!u) return
+  ;(u.follicleColor.value as THREE.Color).set(colorHex)
+  u.follicleStrength.value = strength
 }
 
 export async function createEyeMaterial(): Promise<THREE.MeshPhysicalNodeMaterial> {

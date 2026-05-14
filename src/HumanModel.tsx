@@ -7,7 +7,7 @@ import { appState, setBoneDebug, setIsTransforming } from './appState'
 import { createEyeMaterial, createSkinMaterial } from './skinMaterial'
 import GroomRenderer from './features/groom/components/GroomRenderer'
 import GroomViewportTools from './features/groom/components/GroomViewportTools'
-import { registerGroomMeshes } from './features/groom/store/groomStore'
+import { registerGroomMeshes, registerSkinMaterialForGroom, unregisterSkinMaterialForGroom } from './features/groom/store/groomStore'
 import {
   buildModelingMorphs,
   MODELING_CONTROLS,
@@ -512,6 +512,8 @@ export default function HumanModel() {
           const mesh = obj as THREE.Mesh
           mesh.material = mat as unknown as THREE.Material
         })
+        // Let the groom system push follicle tint updates into this material.
+        registerSkinMaterialForGroom(mat as unknown as THREE.Material)
       })
       .catch((error: unknown) => {
         console.error('Failed to create skin material:', error)
@@ -519,7 +521,10 @@ export default function HumanModel() {
 
     return () => {
       cancelled = true
-      mat?.dispose()
+      if (mat) {
+        unregisterSkinMaterialForGroom(mat as unknown as THREE.Material)
+        mat.dispose()
+      }
     }
   }, [flipNormalY, oiliness, poreNormalStrength, poreScale, scene, skinTextures, subsurfaceStrength, surfaceRoughness, toneDepth, wrinkleNormalStrength])
 
