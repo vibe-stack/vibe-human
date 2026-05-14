@@ -379,7 +379,7 @@ export function generateStrandsFromGuides(
 
     const rootDensity = rootDensityForTriangle(triIndex, densityData, settings)
     const area = triangleArea(surface.a, surface.b, surface.c) // m²
-    const expectedStrands = area * strandsPerM2 * rootDensity.density
+    const expectedStrands = area * strandsPerM2
     // Stochastic rounding so low-density settings still cover the surface
     const strandSeed = hashU32(triIndex)
     const rngTriangle = mulberry32(strandSeed)
@@ -427,11 +427,11 @@ export function generateStrandsFromGuides(
         1 - settings.clumpStrength * 0.45,
       )
       const lengthScale = THREE.MathUtils.clamp(
-        0.45 + rootDensity.edgeRamp * 0.55 - rng() * settings.cutRandomness * 0.18,
-        0.25,
+        0.72 + rootDensity.edgeRamp * 0.28 - rng() * settings.cutRandomness * 0.12,
+        0.48,
         1,
       )
-      const flyawayMask = THREE.MathUtils.clamp((1 - rootDensity.edgeRamp) * 0.55 + rng() * 0.45, 0, 1)
+      const flyawayMask = THREE.MathUtils.clamp((1 - rootDensity.edgeRamp) * 0.35 + rng() * 0.32, 0, 1)
       const finalScaledPoints = scalePointsFromRoot(finalPoints, lengthScale)
 
       strands.push({

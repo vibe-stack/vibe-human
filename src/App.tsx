@@ -15,7 +15,7 @@ import HumanModel from './HumanModel'
 import CharacterModelingPanel from './CharacterModelingPanel'
 import ControlPanel from './ControlPanel'
 import SkinningPanel from './SkinningPanel'
-import GroomPanel from './features/groom/components/GroomPanel'
+import GroomPanel, { BrushToolbar } from './features/groom/components/GroomPanel'
 import { appState, toggleShowExpressions, toggleShowHair, toggleShowModeling, toggleShowSkinning } from './appState'
 
 function FovUpdater() {
@@ -109,12 +109,12 @@ export default function App() {
         {/* <fog attach="fog" args={['#080810', 2, 6]} /> */}
 
         {/* Key light – front-left, warm, main illumination */}
-        <spotLight position={[-0.6, 0.8, 1.0]} target-position={[0, 0, 0]} intensity={6.0} color="#fff5e8" angle={0.45} penumbra={0.4} distance={5} decay={2} castShadow />
+        <spotLight position={[-0.6, 0.8, 1.0]} target-position={[0, 0, 0]} intensity={3.0} color="#fff5e8" angle={0.45} penumbra={0.4} distance={5} decay={2} castShadow />
         {/* Fill light – front-right, cool, soft — opposite side from key, still in front */}
         <spotLight position={[0.8, 0.2, 0.9]} target-position={[0, 0, 0]} intensity={2.0} color="#ccd8ff" angle={0.5} penumbra={0.6} distance={5} decay={2} />
         {/* Rim lights – directional from behind, parallel rays only hit back-facing normals (silhouette), never the nose */}
-        <directionalLight position={[-0.6, 0.2, -1]} intensity={3.5} color="#ffd9b0" />
-        <directionalLight position={[ 0.6, 0.2, -1]} intensity={3.5} color="#ffd9b0" />
+        <directionalLight position={[-0.3, 0.2, -1]} intensity={1.5} color="#ffd9b0" />
+        <directionalLight position={[ 0.3, 0.2, -1]} intensity={1.5} color="#ffd9b0" />
 
         <Suspense fallback={null}>
           {/* <Environment files={`${import.meta.env.BASE_URL}potsdamer_platz_1k.hdr`} /> */}
@@ -136,6 +136,7 @@ export default function App() {
       {showModeling && <CharacterModelingPanel />}
       {showSkinning && <SkinningPanel />}
       {showHair && <GroomPanel />}
+      {showHair && <BrushToolbar />}
     </div>
   )
 }

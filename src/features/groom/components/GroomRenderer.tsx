@@ -7,8 +7,8 @@ import { groomStore, getRegisteredGroomMesh, registerHairMaterialForGroom, unreg
 import type { GeneratedStrand } from '../core/types'
 
 const CARD_MATERIAL_OPTIONS: HairMaterialOptions = {
-  widthScale: 10,
-  opacityScale: 0.78,
+  widthScale: 14,
+  opacityScale: 1.12,
   cardPattern: 1,
   densityShadowScale: 1.35,
   flyawayOpacityBoost: 0,
@@ -16,10 +16,10 @@ const CARD_MATERIAL_OPTIONS: HairMaterialOptions = {
 
 const DETAIL_MATERIAL_OPTIONS: HairMaterialOptions = {
   widthScale: 1,
-  opacityScale: 0.92,
+  opacityScale: 1,
   cardPattern: 0,
   densityShadowScale: 0.9,
-  flyawayOpacityBoost: 0.14,
+  flyawayOpacityBoost: 0.2,
 }
 
 // ---------------------------------------------------------------------------
@@ -153,8 +153,8 @@ function selectVolumeCards(strands: readonly GeneratedStrand[], guideCount: numb
   if (!strands.length) return []
 
   const targetCount = Math.min(
-    420,
-    Math.max(48, guideCount * 4, Math.round(Math.sqrt(strands.length) * 2.5)),
+    1200,
+    Math.max(96, guideCount * 8, Math.round(Math.sqrt(strands.length) * 5)),
   )
   const candidates = strands
     .filter((strand) => strand.rootDensity > 0.42 && strand.flyawayMask < 0.72)
@@ -175,9 +175,9 @@ function selectVolumeCards(strands: readonly GeneratedStrand[], guideCount: numb
 }
 
 function selectDetailStrands(strands: readonly GeneratedStrand[]) {
-  if (strands.length <= 6000) return strands
+  if (strands.length <= 40_000) return strands
 
-  const stride = strands.length > 35_000 ? 6 : strands.length > 16_000 ? 4 : 3
+  const stride = strands.length > 70_000 ? 3 : 2
   const flyawayThreshold = 0.86
   return strands.filter((strand, index) => (
     index % stride === 0 ||

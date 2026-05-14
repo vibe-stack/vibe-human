@@ -480,10 +480,10 @@ export function createHairStrandMaterial(settings: HairMaterialSettings, options
   const cardFiberMask = mix(float(1.0), saturate(cardFiber.mul(1.25).add(0.08)), u.cardPattern)
   // Per-strand opacity jitter for flyaways — some strands are fainter.
   const flyawayAlpha = float(1.0)
-    .sub(u.flyaway.mul(seedF).mul(0.32))
-    .sub(flyawayMaskF.mul(0.34))
+    .sub(u.flyaway.mul(seedF).mul(0.22))
+    .sub(flyawayMaskF.mul(0.16))
     .add(flyawayMaskF.mul(u.flyawayOpacityBoost))
-  const lengthAlpha = mix(float(0.72), float(1.0), lengthScaleF)
+  const lengthAlpha = mix(float(0.88), float(1.0), lengthScaleF)
   // Root alpha fade: smooth ramp 0 → 1 over the first `rootDarkenLength * 0.6`
   // of the strand.  The bottom of the strand is genuinely transparent, so
   // the painted scalp underneath shows through where the strand emerges —
@@ -491,7 +491,9 @@ export function createHairStrandMaterial(settings: HairMaterialSettings, options
   // hard strand on top of skin and expect it to read as a follicle.
   const rootAlphaRamp = saturate(tParamF.div(max(u.rootDarkenLength.mul(0.6), float(1e-3))))
   const rootAlpha = rootAlphaRamp.mul(rootAlphaRamp).mul(float(3.0).sub(rootAlphaRamp.mul(2.0)))
-  const coverageAlpha = u.opacity.mul(u.opacityScale).mul(edgeAA).mul(tipFade).mul(coverage).mul(flyawayAlpha).mul(lengthAlpha).mul(rootAlpha).mul(cardFiberMask)
+  const cardRootFill = u.cardPattern.mul(rootDensityF).mul(0.55)
+  const effectiveRootAlpha = max(rootAlpha, cardRootFill)
+  const coverageAlpha = u.opacity.mul(u.opacityScale).mul(edgeAA).mul(tipFade).mul(coverage).mul(flyawayAlpha).mul(lengthAlpha).mul(effectiveRootAlpha).mul(cardFiberMask)
 
   // Stochastic alpha dither.  Instead of a hard alphaTest cutoff (which gives
   // jagged silhouettes), we compare the coverage against a per-fragment hash
