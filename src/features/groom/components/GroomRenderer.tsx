@@ -3,7 +3,7 @@ import { useFrame } from '@react-three/fiber'
 import { useSnapshot } from 'valtio'
 import * as THREE from 'three/webgpu'
 import { createHairStrandMaterial, updateHairStrandMaterialUniforms } from '../shaders/hairStrandMaterial'
-import { groomStore, getRegisteredGroomMesh } from '../store/groomStore'
+import { groomStore, getRegisteredGroomMesh, registerHairMaterialForGroom, unregisterHairMaterialForGroom } from '../store/groomStore'
 
 // ---------------------------------------------------------------------------
 // Ribbon quad geometry
@@ -159,6 +159,10 @@ export default function GroomRenderer() {
     transformRef.current.matrix.copy(targetMesh.matrixWorld)
   })
 
+  useEffect(() => {
+    registerHairMaterialForGroom(strandMaterial)
+    return () => unregisterHairMaterialForGroom(strandMaterial)
+  }, [strandMaterial])
   useEffect(() => () => strandMaterial.dispose(), [strandMaterial])
   useEffect(() => () => guideMaterial.dispose(), [guideMaterial])
   useEffect(() => () => strandGeometry?.dispose(), [strandGeometry])

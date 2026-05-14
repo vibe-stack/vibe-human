@@ -29,7 +29,10 @@ const DEFAULT_MATERIAL: HairMaterialSettings = {
   rootDarken: 0.45,
   rootDarkenLength: 0.18,
 
-  specularStrength: 0.6,
+  // Karis quotes typical hair specular ∈ [0.05, 0.2].  Now that the BSDF
+  // lobes are energy-normalized, 0.12 reads as a clean highlight rather than
+  // a white blob.
+  specularStrength: 0.12,
   primaryShift: -0.06,         // ~ -3.4°, tilts highlight toward the root
   primaryHighlightTint: '#ffffff',
   secondaryShift: 0.045,        // ~ +2.6°, tilts secondary toward the tip
@@ -37,13 +40,14 @@ const DEFAULT_MATERIAL: HairMaterialSettings = {
   roughness: 0.32,
   roughnessAzimuthal: 0.4,
 
-  scatter: 0.55,
+  scatter: 0.35,
   transmissionTint: '#a47352',
 
   opacity: 0.95,
   strandWidthRoot: 0.0018,
   strandWidthTip: 0.0004,
   flyaway: 0.25,
+  shadowStrength: 0.7,
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -92,7 +96,7 @@ export function clampHairMaterialSettings(material: HairMaterialSettings): HairM
     rootDarken:             clamp(material.rootDarken, 0, 1),
     rootDarkenLength:       clamp(material.rootDarkenLength, 0, 1),
 
-    specularStrength:       clamp(material.specularStrength, 0, 1),
+    specularStrength:       clamp(material.specularStrength, 0, 0.4),
     primaryShift:           clamp(material.primaryShift, -0.2, 0.2),
     primaryHighlightTint:   material.primaryHighlightTint,
     secondaryShift:         clamp(material.secondaryShift, -0.2, 0.2),
@@ -107,6 +111,7 @@ export function clampHairMaterialSettings(material: HairMaterialSettings): HairM
     strandWidthRoot:        clamp(material.strandWidthRoot, 0.0003, 0.01),
     strandWidthTip:         clamp(material.strandWidthTip, 0.0001, 0.006),
     flyaway:                clamp(material.flyaway, 0, 1),
+    shadowStrength:         clamp(material.shadowStrength, 0, 1),
   }
 }
 

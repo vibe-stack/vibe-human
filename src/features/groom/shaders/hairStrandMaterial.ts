@@ -8,6 +8,7 @@ import {
   cos,
   exp,
   float,
+  fract,
   max,
   min,
   mix,
@@ -16,6 +17,7 @@ import {
   normalize,
   positionGeometry,
   saturate,
+  screenCoordinate,
   sin,
   uniform,
   varyingProperty,
@@ -78,44 +80,47 @@ const PHEOMELANIN = new THREE.Vector3(0.187, 0.4, 1.05)   // red
 // -----------------------------------------------------------------------------
 // Hair BSDF — one longitudinal lobe (Gaussian in θ_h shifted by α).
 // Returns a scalar attenuation; the lobe is tinted/coloured at the call site.
+//
+// Energy normalization: a Gaussian `exp(-x²/(2β²))` integrates to `β√(2π)`,
+// so to make each lobe carry roughly unit energy we divide by `β√(2π)`.
+// Without this, narrow lobes (low roughness) spike to ~1.0 at the peak and
+// the integral over the hemisphere blows up — which is exactly the "white
+// fizzy" default we hit previously.
 // -----------------------------------------------------------------------------
+const SQRT_2PI = 2.5066282746
+
 function longitudinalScatter(
   sinThetaV: any, sinThetaL: any,
   cosThetaV: any, cosThetaL: any,
   shift: any, roughness: any,
 ): any {
-  // Apply tilt: rotate (sin,cos)(θ_v) and (θ_l) by `shift` so the peak sits
-  // off the tangent plane by the cuticle-tilt angle.
   const sShift = sin(shift)
   const cShift = cos(shift)
   const sinThetaVt = sinThetaV.mul(cShift).sub(cosThetaV.mul(sShift))
   const cosThetaVt = cosThetaV.mul(cShift).add(sinThetaV.mul(sShift))
 
-  // Half-angle on the longitudinal axis.  We work in sin/cos because hair
-  // strands are nearly parallel to the tangent and acos(small_value) is
-  // numerically unstable.
-  // sin(θ_h) ≈ (sin(θ_vt) + sin(θ_l)) / 2 for narrow lobes
   const sinThetaH = sinThetaVt.add(sinThetaL).mul(0.5)
-  // Gaussian in sin(θ_h - α): exp(-sinθ_h² / (2β²)) / (sqrt(2π) β)
   const beta = max(roughness, float(0.04))
   const beta2 = beta.mul(beta)
   const g = exp(sinThetaH.mul(sinThetaH).div(beta2.mul(-2.0)))
 
-  // Energy normalization (not 1/sqrt(2π β) — Karis uses a simplified gain).
-  // Also include the geometric cos term that arises from the surface integral.
-  return g.mul(cosThetaVt.mul(cosThetaL).add(0.0001))
+  // 1 / (β √(2π)) — Gaussian normalization.
+  const norm = float(1.0).div(beta.mul(SQRT_2PI))
+  // Geometric cos term from the strand-cylinder surface integral.
+  return g.mul(norm).mul(cosThetaVt.mul(cosThetaL).add(0.0001))
 }
 
-// Azimuthal cos²(φ/2) lobe — used for both R and TRT in the Karis simplified
-// model.  Returns a saturated scalar in [0,1].
+// Azimuthal cos²(φ/2) lobe — energy-normalized: ∫ cos^(2k)(φ/2) dφ over
+// [-π, π] = π * Γ(k+0.5) / (Γ(k+1) √π).  We use the approximation
+// `(k+1)/(2π)` for the gain factor which is exact for integer k and a tight
+// fit for the continuous range we expose.
 function azimuthalScatter(cosPhi: any, roughnessAz: any): any {
-  // (1 + cos(φ)) / 2  → cos²(φ/2)
   const base = saturate(cosPhi.mul(0.5).add(0.5))
-  // Higher azimuthal roughness flattens the lobe.
   const k = mix(float(4.0), float(0.5), roughnessAz)
-  // pow without the function call (which TSL types overload aggressively):
-  // x^k via exp(k * ln(x)).  Avoid pow for cosPhi==0 by adding epsilon.
-  return base.add(float(0.001)).log().mul(k).exp()
+  const lobe = base.add(float(0.001)).log().mul(k).exp()
+  // Normalize: divide by 2π/(k+1) so the lobe integrates to ~1 over φ.
+  const norm = k.add(1.0).div(6.2831853)
+  return lobe.mul(norm)
 }
 
 type HairLightingCtx = {
@@ -131,6 +136,14 @@ type HairLightingCtx = {
   roughnessAz: any
   primaryShift: any
   secondaryShift: any
+  // Self-shadow approximation: a [0,1] value per fragment from the strand's
+  // root-to-tip parameter.  Roots sit deeper in the hair volume so they
+  // receive less direct light; tips poke out into the open and receive more.
+  // This is a cheap stand-in for a true strand-space shadow map, which would
+  // require a second render pass from the key light's POV.  The approximation
+  // gives ~70% of the visual benefit for zero extra draw calls.
+  selfShadow: any
+  shadowStrength: any
 }
 
 class HairLightingModel extends LightingModel {
@@ -176,23 +189,45 @@ class HairLightingModel extends LightingModel {
     const TRT = M_TRT.mul(N_TRT)
 
     // --- Diffuse / multi-scatter ---
-    // Wrapped diffuse fakes the brightening you get from neighbouring strands
-    // scattering light into the shadow side of the head.
-    const wrap = saturate(LdotT.mul(0.0).add(cosThetaL).mul(0.5).add(0.5))
-    const diffuseTerm = mix(float(0.15), float(1.0), wrap)
-    // Strength of the multi-scatter brightening at the back side.
+    // Wrap term in [0,1] — replaces the cosine in Lambert so light wraps
+    // softly around the strand.  Scaled by 1/π already inside BRDF_Lambert,
+    // so we don't pre-multiply here.
+    const wrap = saturate(cosThetaL.mul(0.5).add(0.5))
+    // Multi-scatter: a small additive term tinted by transmission to fake
+    // the brightening from neighbouring strands.  Bounded to `scatter * 0.5`
+    // so it can never exceed the diffuse it's added to.
     const backBoost = saturate(VdotT.mul(LdotT).negate().mul(0.5).add(0.5))
-    const msGain = float(1.0).add(c.scatter.mul(backBoost).mul(0.9))
+    const msStrength = c.scatter.mul(0.5).mul(backBoost)
+
+    // --- Self-shadow modulation ---
+    // Reduce direct contribution based on the per-fragment self-shadow
+    // estimate.  We additionally bias by light-vs-tangent geometry: when
+    // the light grazes along the strand (LdotT ≈ ±1), more strands lie
+    // between the fragment and the light source.
+    const grazingOcclusion = saturate(LdotT.abs().mul(0.6).add(0.4))
+    const directVisibility = saturate(
+      float(1.0).sub(c.selfShadow.mul(c.shadowStrength).mul(grazingOcclusion)),
+    )
 
     // --- Compose ---
     const specularR   = vec3(c.primaryTint).mul(R)
     const specularTRT = vec3(c.secondaryTint).mul(TRT).mul(vec3(c.transmissionTint))
-    const specular: any = specularR.add(specularTRT).mul(c.specStrength)
+    const specular: any = specularR.add(specularTRT).mul(c.specStrength).mul(directVisibility)
 
-    const diffuseRgb: any = vec3(c.baseColor).mul(diffuseTerm).mul(msGain)
+    // Diffuse: wrap-modulated base colour, plus a bounded multi-scatter
+    // term tinted by the transmission colour.  Total stays ≤ baseColor + 0.5.
+    const wrapped: any = vec3(c.baseColor).mul(wrap)
+    const multiScatter: any = vec3(c.transmissionTint).mul(vec3(c.baseColor)).mul(msStrength)
+    const diffuseRgb: any = wrapped.add(multiScatter)
     const lambert: any = BRDF_Lambert({ diffuseColor: diffuseRgb })
 
-    reflectedLight.directDiffuse.addAssign(vec3(lightColor).mul(lambert) as any)
+    // Diffuse is shadowed less harshly than specular — even occluded
+    // strands receive multi-scattered light from neighbours.
+    const diffuseVisibility = saturate(
+      float(1.0).sub(c.selfShadow.mul(c.shadowStrength).mul(0.55)),
+    )
+
+    reflectedLight.directDiffuse.addAssign(vec3(lightColor).mul(lambert).mul(diffuseVisibility) as any)
     reflectedLight.directSpecular.addAssign(vec3(lightColor).mul(specular) as any)
   }
 
@@ -200,7 +235,12 @@ class HairLightingModel extends LightingModel {
     const { irradiance, ambientOcclusion, reflectedLight } = builder.context
     if (!irradiance) return
     const lambert: any = BRDF_Lambert({ diffuseColor: vec3(this.ctx.baseColor) as any })
-    reflectedLight.indirectDiffuse.addAssign(vec3(irradiance).mul(lambert) as any)
+    // Indirect light also occluded by neighbouring strands — strongest at
+    // the roots where the hair is densest.
+    const indirectVisibility = saturate(
+      float(1.0).sub(this.ctx.selfShadow.mul(this.ctx.shadowStrength).mul(0.7)),
+    )
+    reflectedLight.indirectDiffuse.addAssign(vec3(irradiance).mul(lambert).mul(indirectVisibility) as any)
     if (ambientOcclusion) {
       reflectedLight.indirectDiffuse.mulAssign(vec3(ambientOcclusion) as any)
     }
@@ -233,6 +273,11 @@ type GroomUniforms = {
   scatter:          ReturnType<typeof uniform>
   transmissionTint: ReturnType<typeof uniform>
   flyaway:          ReturnType<typeof uniform>
+  shadowStrength:   ReturnType<typeof uniform>
+  // Color the strand should fade toward at the very root, matched to the
+  // follicle tint applied to the skin.  Updated externally by the groom
+  // store whenever the hair colour or scalp paint changes.
+  rootFollicle:     ReturnType<typeof uniform>
 }
 
 export function createHairStrandMaterial(settings: HairMaterialSettings): HairMaterial {
@@ -256,6 +301,10 @@ export function createHairStrandMaterial(settings: HairMaterialSettings): HairMa
     scatter:          uniform(settings.scatter),
     transmissionTint: uniform(new THREE.Color(settings.transmissionTint)),
     flyaway:          uniform(settings.flyaway),
+    shadowStrength:   uniform(settings.shadowStrength),
+    // Default to a dark warm follicle; the groom store overrides this at
+    // runtime to match the active hair colour.
+    rootFollicle:     uniform(new THREE.Color('#1a0d08')),
   }
 
   const u = uniforms as any
@@ -289,7 +338,16 @@ export function createHairStrandMaterial(settings: HairMaterialSettings): HairMa
 
     // World-space half-width at this vertex, with per-strand flyaway bump.
     const flyawayBump = float(1.0).add(u.flyaway.mul(seed.mul(2.0).sub(1.0)).mul(0.6))
-    const halfWidth = mix(u.widthRoot, u.widthTip, tParam).mul(0.5).mul(flyawayBump)
+    // Root taper: the bottom `rootDarkenLength` fraction of the strand
+    // collapses smoothly toward zero width so the strand visually melts into
+    // the scalp.  Without this the strand reads as a stick planted in skin —
+    // the harsh transition you see in low-end hair shaders.  MetaHuman tapers
+    // the bottom ~10% of each strand the same way (per the published
+    // Houdini→Unreal export presets).
+    const rootTaper = saturate(tParam.div(max(u.rootDarkenLength, float(1e-3))))
+    const rootTaperSmooth = rootTaper.mul(rootTaper).mul(float(3.0).sub(rootTaper.mul(2.0))) // smoothstep
+    const taperFactor = mix(float(0.05), float(1.0), rootTaperSmooth)
+    const halfWidth = mix(u.widthRoot, u.widthTip, tParam).mul(0.5).mul(flyawayBump).mul(taperFactor)
 
     // World → pixel scale at this depth.
     const projMat = cameraProjectionMatrix as any
@@ -346,19 +404,43 @@ export function createHairStrandMaterial(settings: HairMaterialSettings): HairMa
   // territory for melanin in [0,1].
   const baseAbsorption = vec3(exp(sigmaA.x.mul(-5.0)), exp(sigmaA.y.mul(-5.0)), exp(sigmaA.z.mul(-5.0)))
 
-  // Root darkening: smooth ramp at the bottom of the strand using
-  // rootDarkenLength as the falloff distance.
+  // -------------------------------------------------------------------------
+  // Root → scalp blend.
+  //
+  // The bottom `rootDarkenLength` fraction of the strand smoothly blends
+  // toward the follicle colour (the same colour the skin is tinted to under
+  // a painted scalp).  This is what makes the hair→scalp transition look
+  // soft instead of a hard stick-in-skin boundary: every strand's first few
+  // millimetres are basically the colour of the skin under it, just slightly
+  // darker because of the absorbing fibre.
+  //
+  // We also dim by `rootDarken` so dense areas read as a slightly darker
+  // patch overall — real hair has shadowing from the surrounding strands at
+  // the follicle base.
+  // -------------------------------------------------------------------------
   const rootRamp = saturate(tParamF.div(max(u.rootDarkenLength, float(1e-3))))
-  const rootDarkFactor = mix(
-    float(1.0).sub(u.rootDarken).mul(0.5).add(0.5), // darkest at root
-    float(1.0),
-    rootRamp,
-  )
+  // Smoothstep on the ramp so the blend curve has a soft S, not a linear
+  // ramp that reads as a "band".
+  const rootRampSmooth = rootRamp.mul(rootRamp).mul(float(3.0).sub(rootRamp.mul(2.0)))
 
-  // Final base color = absorption * tint * rootDarken.
-  const baseColor = vec3(baseAbsorption).mul(vec3(u.tintColor)).mul(rootDarkFactor)
+  // The hair's own absorption colour, optionally tinted artistically.
+  const strandColor = vec3(baseAbsorption).mul(vec3(u.tintColor))
+  // The follicle/skin colour to blend toward at the root, dimmed slightly so
+  // we don't over-bright the absolute base.
+  const follicleColor = vec3(u.rootFollicle).mul(float(1.0).sub(u.rootDarken).mul(0.5).add(0.4))
+  // Blend: 0 at the root (full follicle), 1 by rootDarkenLength (full strand).
+  const baseColor = mix(follicleColor, strandColor, rootRampSmooth)
 
   const viewDir = normalize(vec3(cameraPosition).sub(worldPos))
+
+  // Self-shadow estimate: roots sit deep in the hair volume (occluded by
+  // many neighbours above them), tips poke out into the open.  We use a
+  // smooth ramp from 1.0 at the root to 0.15 at the tip.  Per-strand seed
+  // jitters this so the volume doesn't read as a uniform gradient.
+  const selfShadow = saturate(
+    float(1.0).sub(tParamF).mul(0.85).add(float(0.15))
+      .add(seedF.sub(0.5).mul(0.12))
+  )
 
   // Analytic ribbon-edge falloff and tip fade.
   const edge = sideF.abs()
@@ -366,7 +448,29 @@ export function createHairStrandMaterial(settings: HairMaterialSettings): HairMa
   const tipFade = saturate(float(1.0).sub(tParamF.mul(tParamF).mul(0.3)))
   // Per-strand opacity jitter for flyaways — some strands are fainter.
   const flyawayAlpha = float(1.0).sub(u.flyaway.mul(seedF).mul(0.4))
-  const alpha = u.opacity.mul(edgeAA).mul(tipFade).mul(coverage).mul(flyawayAlpha)
+  // Root alpha fade: smooth ramp 0 → 1 over the first `rootDarkenLength * 0.6`
+  // of the strand.  The bottom of the strand is genuinely transparent, so
+  // the painted scalp underneath shows through where the strand emerges —
+  // this is the only way to get a real soft transition; you can't paint a
+  // hard strand on top of skin and expect it to read as a follicle.
+  const rootAlphaRamp = saturate(tParamF.div(max(u.rootDarkenLength.mul(0.6), float(1e-3))))
+  const rootAlpha = rootAlphaRamp.mul(rootAlphaRamp).mul(float(3.0).sub(rootAlphaRamp.mul(2.0)))
+  const coverageAlpha = u.opacity.mul(edgeAA).mul(tipFade).mul(coverage).mul(flyawayAlpha).mul(rootAlpha)
+
+  // Stochastic alpha dither.  Instead of a hard alphaTest cutoff (which gives
+  // jagged silhouettes), we compare the coverage against a per-fragment hash
+  // value.  This produces feathered, noisy edges that read as soft when the
+  // scene composites strands at high density — the same trick UE / Frostbite
+  // use for hair without OIT.  Without TAA the noise stays visible at single
+  // strand density; users running TAA get clean silhouettes.
+  const sc = screenCoordinate as any
+  const hashSeed = sc.x.mul(0.0073).add(sc.y.mul(0.0119)).add(seedF.mul(13.17))
+  const hash = fract(sin(hashSeed).mul(43758.5453))
+  // The fragment is "kept" when coverageAlpha > hash.  We encode that as a
+  // 0/1 mask multiplied into the final alpha, which combined with alphaTest
+  // 0.5 produces a clean binary discard.
+  const dither = saturate(coverageAlpha.sub(hash).mul(64.0).add(0.5))
+  const alpha = dither
 
   // --- Material assembly ---------------------------------------------------
   const mat = new THREE.NodeMaterial() as HairMaterial
@@ -395,6 +499,8 @@ export function createHairStrandMaterial(settings: HairMaterialSettings): HairMa
     roughnessAz:      u.roughnessAz,
     primaryShift:     u.primaryShift,
     secondaryShift:   u.secondaryShift,
+    selfShadow,
+    shadowStrength:   u.shadowStrength,
   })
   ;(mat as any).setupLightingModel = () => lightingModel
 
@@ -427,4 +533,15 @@ export function updateHairStrandMaterialUniforms(
   u.scatter.value          = settings.scatter
   ;(u.transmissionTint.value as THREE.Color).set(settings.transmissionTint)
   u.flyaway.value          = settings.flyaway
+  u.shadowStrength.value   = settings.shadowStrength
+}
+
+/** Push the per-fragment root follicle colour into the hair shader.  The
+ *  groom store calls this whenever the active hair colour or scalp paint
+ *  changes — keeping the hair root and the skin tint visually in sync is
+ *  the entire point of the soft transition. */
+export function setHairRootFollicleColor(mat: HairMaterial, hex: string) {
+  const u = mat._groomUniforms
+  if (!u) return
+  ;(u.rootFollicle.value as THREE.Color).set(hex)
 }

@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu'
-import { attribute, texture, uniform, uv, mix, normalMap, float, clamp, saturate, vec2, vec3, normalView, positionViewDirection, dot, smoothstep, normalize, pow } from 'three/tsl'
+import { texture, uniform, uv, mix, normalMap, float, clamp, saturate, vec2, vec3, normalView, positionViewDirection, dot, smoothstep, normalize, pow } from 'three/tsl'
 
 export const DEFAULT_PORE_SCALE = 30
 export const DEFAULT_PORE_NORMAL_STRENGTH = 1
@@ -177,17 +177,27 @@ export async function createSkinMaterial(
   // -------------------------------------------------------------------------
   // Scalp tint pass — MetaHuman-style follicle base.
   //
-  // When a hair groom paints scalp triangles, those triangles get a non-zero
-  // value in a per-vertex `scalpMask` attribute we write from the groom store.
-  // Vertices without the attribute default to 0 (no tint).  The skin color is
-  // multiplied toward a darker follicle colour wherever the mask is non-zero,
-  // softening the hard skin/hair boundary you otherwise see at the silhouette.
+  // The groom system rasterises every painted scalp triangle into a
+  // UV-space Float32 texture and Gaussian-blurs it; the result is a soft
+  // mask whose values fall off over a few millimetres of skin.  We sample
+  // it here with the mesh's UV coords and use it to push skin colour
+  // toward the follicle tint.  This is what gives the soft hair→skin
+  // transition you see in XGen / MetaHuman; vertex-paint can't produce a
+  // gradient because it only marks vertices, not the area between them.
   //
-  // The follicle colour + intensity are uniforms updated externally by the
-  // groom store so the tint matches the active hair colour.
+  // The texture defaults to a 1x1 black DataTexture so the material is
+  // valid before any scalp has been painted.  `setSkinScalpMaskTexture`
+  // swaps in the real texture once the groom system has built it.
   // -------------------------------------------------------------------------
-  const scalpMaskAttr = attribute('scalpMask', 'float') as any
-  const scalpMask = saturate(scalpMaskAttr)
+  // 1×1 default — replaced via setSkinScalpMaskTexture() once the groom
+  // system builds the real texture.  The texture node holds onto a mutable
+  // reference, so we can update `.value` later without rebuilding the shader.
+  const initialMask = new THREE.DataTexture(
+    new Float32Array([0]), 1, 1, THREE.RedFormat, THREE.FloatType,
+  )
+  initialMask.needsUpdate = true
+  const scalpMaskTexNode = texture(initialMask, uv()) as any
+  const scalpMask = saturate(scalpMaskTexNode.r)
   const uFollicleColor = uniform(new THREE.Color(0x000000))
   const uFollicleStrength = uniform(0.0)
   const folliclePush: any = scalpMask.mul(uFollicleStrength)
@@ -244,10 +254,11 @@ export async function createSkinMaterial(
   mat.clearcoatRoughness = 0.44 + (1.0 - settings.oiliness) * 0.16
   mat.needsUpdate       = true
 
-  // Expose follicle uniforms for the groom system.
+  // Expose follicle uniforms + scalp mask texture node for the groom system.
   ;(mat as unknown as SkinMaterialWithFollicle).__follicleUniforms = {
     follicleColor:    uFollicleColor,
     follicleStrength: uFollicleStrength,
+    scalpMaskTexNode,
   }
 
   return mat
@@ -256,6 +267,9 @@ export async function createSkinMaterial(
 type FollicleUniforms = {
   follicleColor:    ReturnType<typeof uniform>
   follicleStrength: ReturnType<typeof uniform>
+  // The TSL texture node — we swap its `.value` to change which texture
+  // gets sampled for the scalp mask.
+  scalpMaskTexNode: { value: THREE.Texture }
 }
 export type SkinMaterialWithFollicle = THREE.MeshSSSNodeMaterial & {
   __follicleUniforms?: FollicleUniforms
@@ -276,6 +290,18 @@ export function setSkinFollicleTint(
   if (!u) return
   ;(u.follicleColor.value as THREE.Color).set(colorHex)
   u.follicleStrength.value = strength
+}
+
+/**
+ * Swap the scalp mask texture that the skin shader samples.  The groom
+ * system owns the texture's lifetime (it's the same DataTexture for the
+ * lifetime of the groom asset; only the pixel data is mutated when the
+ * scalp is repainted).
+ */
+export function setSkinScalpMaskTexture(mat: THREE.Material, tex: THREE.Texture) {
+  const u = (mat as SkinMaterialWithFollicle).__follicleUniforms
+  if (!u) return
+  u.scalpMaskTexNode.value = tex
 }
 
 export async function createEyeMaterial(): Promise<THREE.MeshPhysicalNodeMaterial> {

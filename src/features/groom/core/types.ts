@@ -78,6 +78,10 @@ export type HairMaterialSettings = {
   strandWidthRoot: number
   strandWidthTip: number
   flyaway: number               // 0..1 randomized per-strand spec/width boost
+  // Strand self-shadow strength.  Approximates the volumetric occlusion
+  // that roots receive from neighbouring strands above them; without it
+  // hair reads as a flat sheet under direct light.
+  shadowStrength: number        // 0..1
 }
 
 export type GroomAsset = {

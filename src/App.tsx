@@ -106,7 +106,7 @@ export default function App() {
       >
         <FovUpdater />
         <color attach="background" args={['#252525']} />
-        <fog attach="fog" args={['#080810', 2, 6]} />
+        {/* <fog attach="fog" args={['#080810', 2, 6]} /> */}
 
         {/* Key light – front-left, warm, main illumination */}
         <spotLight position={[-0.6, 0.8, 1.0]} target-position={[0, 0, 0]} intensity={6.0} color="#fff5e8" angle={0.45} penumbra={0.4} distance={5} decay={2} castShadow />

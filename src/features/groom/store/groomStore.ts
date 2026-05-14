@@ -14,7 +14,9 @@ import {
   combGuidesAtPoint,
 } from '../core/guideCurves'
 import { computeBarycentricForPoint, getTriangleCount, getTriangleSurfaceData } from '../core/scalpBinding'
-import { setSkinFollicleTint } from '../../../skinMaterial'
+import { setSkinFollicleTint, setSkinScalpMaskTexture } from '../../../skinMaterial'
+import { createScalpMaskTexture, type ScalpMaskTexture } from '../core/scalpMaskTexture'
+import { setHairRootFollicleColor, type HairMaterial } from '../shaders/hairStrandMaterial'
 import { generateStrandsFromGuides } from '../core/strandGeneration'
 import type {
   GeneratedStrand,
@@ -45,8 +47,21 @@ const registeredMeshes = new Map<string, THREE.Mesh>()
 // mask vertex attribute updates.  Registered by the host scene (HumanModel
 // imports `registerSkinMaterialForGroom` after creating the skin material).
 const registeredSkinMaterials = new Set<THREE.Material>()
+
+// Lazily created once we have a skin material to feed it into.  Lives for
+// the lifetime of the app — only the pixel data is mutated when the user
+// paints or erases scalp.
+let scalpMaskTexture: ScalpMaskTexture | null = null
+function ensureScalpMaskTexture(): ScalpMaskTexture {
+  if (!scalpMaskTexture) scalpMaskTexture = createScalpMaskTexture()
+  return scalpMaskTexture
+}
+
 export function registerSkinMaterialForGroom(mat: THREE.Material) {
   registeredSkinMaterials.add(mat)
+  // Bind our scalp mask texture into the new material so it samples the
+  // same data the groom system has been writing into.
+  setSkinScalpMaskTexture(mat, ensureScalpMaskTexture().texture)
   applyFollicleTintToRegisteredSkins()
 }
 export function unregisterSkinMaterialForGroom(mat: THREE.Material) {
@@ -72,60 +87,44 @@ function deriveFollicleColor(): { hex: string; strength: number } {
   const hex = `#${toHex(sigma[0]).toString(16).padStart(2, '0')}${toHex(sigma[1]).toString(16).padStart(2, '0')}${toHex(sigma[2]).toString(16).padStart(2, '0')}`
   // Strength scales with whether there's any scalp painted at all.
   const hasMask = groomStore.activeGroomAsset.scalpMask.selectedTriangleIndices.length > 0
-  return { hex, strength: hasMask ? 0.78 : 0 }
+  return { hex, strength: hasMask ? 0.85 : 0 }
+}
+
+// The active hair material — the GroomRenderer registers it once at mount
+// so the store can push the follicle colour into it whenever the hair
+// colour or scalp paint changes.  Without this, the strand root would be
+// coloured by the absorption model while the skin is tinted independently,
+// and the boundary would never match.
+let registeredHairMaterial: HairMaterial | null = null
+export function registerHairMaterialForGroom(mat: HairMaterial) {
+  registeredHairMaterial = mat
+  applyFollicleTintToRegisteredSkins()
+}
+export function unregisterHairMaterialForGroom(mat: HairMaterial) {
+  if (registeredHairMaterial === mat) registeredHairMaterial = null
 }
 
 function applyFollicleTintToRegisteredSkins() {
-  if (!registeredSkinMaterials.size) return
   const { hex, strength } = deriveFollicleColor()
   for (const mat of registeredSkinMaterials) setSkinFollicleTint(mat, hex, strength)
+  // Push the same follicle colour into the strand root so they visually meet.
+  if (registeredHairMaterial) setHairRootFollicleColor(registeredHairMaterial, hex)
 }
 
-// Write a `scalpMask` Float32 vertex attribute onto the target mesh whose
-// vertices are flagged 1 wherever they participate in a selected triangle.
-// The shader reads this attribute and tints those areas toward the follicle
-// colour; this softens the hair/skin transition (MetaHuman-style).
-function writeScalpMaskAttribute(mesh: THREE.Mesh, triangleIndices: ReadonlyArray<number>) {
-  const geometry = mesh.geometry
-  if (!(geometry instanceof THREE.BufferGeometry)) return
-  const position = geometry.getAttribute('position') as THREE.BufferAttribute | undefined
-  if (!position) return
-
-  let attr = geometry.getAttribute('scalpMask') as THREE.BufferAttribute | undefined
-  if (!attr || attr.count !== position.count) {
-    attr = new THREE.BufferAttribute(new Float32Array(position.count), 1)
-    geometry.setAttribute('scalpMask', attr)
-  }
-  const arr = attr.array as Float32Array
-  arr.fill(0)
-
-  const index = geometry.index
-  for (const tri of triangleIndices) {
-    if (index) {
-      const start = tri * 3
-      if (start + 2 >= index.count) continue
-      arr[index.getX(start)]     = 1
-      arr[index.getX(start + 1)] = 1
-      arr[index.getX(start + 2)] = 1
-    } else {
-      const start = tri * 3
-      arr[start]     = 1
-      arr[start + 1] = 1
-      arr[start + 2] = 1
-    }
-  }
-  attr.needsUpdate = true
-}
-
-// Update the follicle tint + scalp mask attribute whenever the asset changes.
-// Throttled via rAF so paint drags don't allocate or re-upload per tick.
+// Update the follicle tint + UV-space scalp mask texture whenever the asset
+// changes.  Throttled via rAF so paint drags don't rasterize per tick.
 let scalpAttrDirty = 0
 function scheduleScalpAttrSync() {
   if (scalpAttrDirty) return
   scalpAttrDirty = requestAnimationFrame(() => {
     scalpAttrDirty = 0
     const mesh = getRegisteredGroomMesh(groomStore.activeGroomAsset.targetMeshId)
-    if (mesh) writeScalpMaskAttribute(mesh, groomStore.activeGroomAsset.scalpMask.selectedTriangleIndices)
+    if (mesh && mesh.geometry instanceof THREE.BufferGeometry) {
+      ensureScalpMaskTexture().rebuild(
+        mesh.geometry,
+        groomStore.activeGroomAsset.scalpMask.selectedTriangleIndices,
+      )
+    }
     applyFollicleTintToRegisteredSkins()
   })
 }

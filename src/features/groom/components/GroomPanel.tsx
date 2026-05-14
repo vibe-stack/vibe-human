@@ -313,6 +313,7 @@ export default function GroomPanel() {
             <input type="color" value={activeGroomAsset.material.transmissionTint} onChange={(event) => setHairMaterialSetting('transmissionTint', event.target.value)} />
           </label>
           <SliderRow label="Flyaway" value={activeGroomAsset.material.flyaway} min={0} max={1} step={0.01} onChange={(value) => setHairMaterialSetting('flyaway', value)} />
+          <SliderRow label="Self Shadow" value={activeGroomAsset.material.shadowStrength} min={0} max={1} step={0.01} onChange={(value) => setHairMaterialSetting('shadowStrength', value)} />
           <SliderRow label="Opacity" value={activeGroomAsset.material.opacity} min={0.05} max={1} step={0.01} onChange={(value) => setHairMaterialSetting('opacity', value)} />
         </Section>
 
