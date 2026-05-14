@@ -7,10 +7,14 @@ import { groomStore, getRegisteredGroomMesh, registerHairMaterialForGroom, unreg
 import type { GeneratedStrand } from '../core/types'
 
 const CARD_MATERIAL_OPTIONS: HairMaterialOptions = {
-  widthScale: 14,
-  opacityScale: 1.12,
+  widthScale: 1,
+  opacityScale: 0.82,
   cardPattern: 1,
-  densityShadowScale: 1.35,
+  geometryRibbon: 1,
+  alphaHashStrength: 0.25,
+  edgeSoftness: 1.85,
+  rootFillScale: 0.74,
+  densityShadowScale: 1.45,
   flyawayOpacityBoost: 0,
 }
 
@@ -18,8 +22,24 @@ const DETAIL_MATERIAL_OPTIONS: HairMaterialOptions = {
   widthScale: 1,
   opacityScale: 1,
   cardPattern: 0,
+  geometryRibbon: 0,
+  alphaHashStrength: 1,
+  edgeSoftness: 4,
+  rootFillScale: 0,
   densityShadowScale: 0.9,
-  flyawayOpacityBoost: 0.2,
+  flyawayOpacityBoost: 0,
+}
+
+const FLYAWAY_MATERIAL_OPTIONS: HairMaterialOptions = {
+  widthScale: 0.8,
+  opacityScale: 0.42,
+  cardPattern: 0,
+  geometryRibbon: 0,
+  alphaHashStrength: 0.3,
+  edgeSoftness: 2.7,
+  rootFillScale: 0,
+  densityShadowScale: 0.55,
+  flyawayOpacityBoost: 0.32,
 }
 
 // ---------------------------------------------------------------------------
@@ -126,6 +146,230 @@ function buildRibbonGeometry(
   return geo
 }
 
+type CardGroup = {
+  strands: GeneratedStrand[]
+  score: number
+}
+
+function strandDensityScore(strand: GeneratedStrand) {
+  return Math.max(strand.rootDensity, strand.rootOcclusion ?? 0)
+}
+
+function strandIsFlyaway(strand: GeneratedStrand) {
+  return strand.flyawayMask > 0.68 || strand.random > 0.86
+}
+
+function smoothstep(edge0: number, edge1: number, value: number) {
+  const t = THREE.MathUtils.clamp((value - edge0) / Math.max(edge1 - edge0, 1e-6), 0, 1)
+  return t * t * (3 - 2 * t)
+}
+
+function buildCardGroups(strands: readonly GeneratedStrand[], guideCount: number): CardGroup[] {
+  if (!strands.length) return []
+
+  const grouped = new Map<number, GeneratedStrand[]>()
+  for (const strand of strands) {
+    if (strand.points.length < 2 || strandIsFlyaway(strand)) continue
+    if (strandDensityScore(strand) < 0.34) continue
+    const group = grouped.get(strand.clumpId)
+    if (group) group.push(strand)
+    else grouped.set(strand.clumpId, [strand])
+  }
+
+  const groups: CardGroup[] = []
+  for (const groupStrands of grouped.values()) {
+    if (groupStrands.length < 2) continue
+    let score = 0
+    for (const strand of groupStrands) {
+      score += strandDensityScore(strand) * 1.8 + strand.lengthScale * 0.5 - strand.flyawayMask
+    }
+    groups.push({ strands: groupStrands, score: score / groupStrands.length + Math.min(groupStrands.length, 18) * 0.045 })
+  }
+
+  const targetCount = Math.min(
+    520,
+    Math.max(48, guideCount * 4, Math.round(Math.sqrt(strands.length) * 2.2)),
+  )
+
+  return groups
+    .sort((a, b) => b.score - a.score)
+    .slice(0, targetCount)
+}
+
+function buildClumpCardGeometry(cardGroups: readonly CardGroup[], clumpRadius: number) {
+  const validGroups = cardGroups.filter((group) => group.strands.some((strand) => strand.points.length >= 2))
+  let vertCount = 0
+  let idxCount = 0
+
+  for (const group of validGroups) {
+    const pointCount = Math.min(...group.strands.map((strand) => strand.points.length))
+    if (pointCount < 2) continue
+    vertCount += pointCount * 2
+    idxCount += (pointCount - 1) * 6
+  }
+
+  const positions = new Float32Array(vertCount * 3)
+  const tangents = new Float32Array(vertCount * 3)
+  const uvs = new Float32Array(vertCount * 2)
+  const seeds = new Float32Array(vertCount)
+  const rootDensities = new Float32Array(vertCount)
+  const rootOcclusions = new Float32Array(vertCount)
+  const flyawayMasks = new Float32Array(vertCount)
+  const lengthScales = new Float32Array(vertCount)
+  const indices = new Uint32Array(idxCount)
+
+  let vWrite = 0
+  let iWrite = 0
+  let vertexOffset = 0
+  const center = new THREE.Vector3()
+  const prevCenter = new THREE.Vector3()
+  const nextCenter = new THREE.Vector3()
+  const tangent = new THREE.Vector3()
+  const root = new THREE.Vector3()
+  const rootTangent = new THREE.Vector3()
+  const side = new THREE.Vector3()
+  const candidateSide = new THREE.Vector3()
+  const point = new THREE.Vector3()
+  const helper = new THREE.Vector3()
+
+  for (const group of validGroups) {
+    const source = [...group.strands]
+      .sort((a, b) => strandDensityScore(b) - strandDensityScore(a))
+      .slice(0, 14)
+    const pointCount = Math.min(...source.map((strand) => strand.points.length))
+    if (pointCount < 2) continue
+
+    let seed = 0
+    let rootDensity = 0
+    let rootOcclusion = 0
+    let flyawayMask = 0
+    let lengthScale = 0
+    for (const strand of source) {
+      seed += strand.random
+      rootDensity += strand.rootDensity
+      rootOcclusion += strand.rootOcclusion ?? strand.rootDensity
+      flyawayMask += strand.flyawayMask
+      lengthScale += strand.lengthScale
+    }
+    seed /= source.length
+    rootDensity /= source.length
+    rootOcclusion /= source.length
+    flyawayMask /= source.length
+    lengthScale /= source.length
+
+    root.set(0, 0, 0)
+    nextCenter.set(0, 0, 0)
+    for (const strand of source) {
+      root.add(point.fromArray(strand.points[0]))
+      nextCenter.add(point.fromArray(strand.points[1]))
+    }
+    root.multiplyScalar(1 / source.length)
+    nextCenter.multiplyScalar(1 / source.length)
+    rootTangent.copy(nextCenter).sub(root).normalize()
+    if (rootTangent.lengthSq() <= 1e-8) rootTangent.set(0, 1, 0)
+
+    side.set(0, 0, 0)
+    let rootSpread = 0
+    for (const strand of source) {
+      candidateSide.fromArray(strand.points[0]).sub(root)
+      candidateSide.addScaledVector(rootTangent, -candidateSide.dot(rootTangent))
+      const spread = candidateSide.length()
+      rootSpread += spread
+      if (spread > 1e-5) side.add(candidateSide.normalize().multiplyScalar(spread))
+    }
+    rootSpread /= source.length
+    if (side.lengthSq() <= 1e-10) {
+      helper.set(Math.abs(rootTangent.y) > 0.92 ? 1 : 0, Math.abs(rootTangent.y) > 0.92 ? 0 : 1, 0)
+      side.crossVectors(rootTangent, helper)
+    }
+    side.normalize()
+
+    const width = THREE.MathUtils.clamp(
+      Math.max(clumpRadius * 1.85, rootSpread * 3.2, source[0].widthRoot * 9),
+      0.004,
+      0.055,
+    )
+    const last = pointCount - 1
+
+    for (let i = 0; i < pointCount; i += 1) {
+      const t = i / last
+      center.set(0, 0, 0)
+      prevCenter.set(0, 0, 0)
+      nextCenter.set(0, 0, 0)
+      const prevIndex = Math.max(0, i - 1)
+      const nextIndex = Math.min(last, i + 1)
+
+      for (const strand of source) {
+        center.add(point.fromArray(strand.points[i]))
+        prevCenter.add(point.fromArray(strand.points[prevIndex]))
+        nextCenter.add(point.fromArray(strand.points[nextIndex]))
+      }
+      center.multiplyScalar(1 / source.length)
+      prevCenter.multiplyScalar(1 / source.length)
+      nextCenter.multiplyScalar(1 / source.length)
+      tangent.copy(nextCenter).sub(prevCenter).normalize()
+      if (tangent.lengthSq() <= 1e-8) tangent.copy(rootTangent)
+
+      candidateSide.copy(side).addScaledVector(tangent, -side.dot(tangent))
+      if (candidateSide.lengthSq() <= 1e-10) candidateSide.crossVectors(tangent, rootTangent)
+      if (candidateSide.lengthSq() <= 1e-10) {
+        helper.set(Math.abs(tangent.y) > 0.92 ? 1 : 0, Math.abs(tangent.y) > 0.92 ? 0 : 1, 0)
+        candidateSide.crossVectors(tangent, helper)
+      }
+      candidateSide.normalize()
+
+      const rootTaper = smoothstep(0, 0.18, t)
+      const tipTaper = 1 - smoothstep(0.68, 1, t) * 0.86
+      const profileWidth = width * (0.22 + rootTaper * 0.78) * tipTaper
+      const halfWidth = profileWidth * 0.5
+      const left = center.clone().addScaledVector(candidateSide, -halfWidth)
+      const right = center.clone().addScaledVector(candidateSide, halfWidth)
+
+      positions[vWrite]     = left.x;  positions[vWrite + 1] = left.y;  positions[vWrite + 2] = left.z
+      positions[vWrite + 3] = right.x; positions[vWrite + 4] = right.y; positions[vWrite + 5] = right.z
+      tangents[vWrite]      = tangent.x; tangents[vWrite + 1] = tangent.y; tangents[vWrite + 2] = tangent.z
+      tangents[vWrite + 3]  = tangent.x; tangents[vWrite + 4] = tangent.y; tangents[vWrite + 5] = tangent.z
+      uvs[(vWrite / 3) * 2]     = -1; uvs[(vWrite / 3) * 2 + 1] = t
+      uvs[(vWrite / 3) * 2 + 2] =  1; uvs[(vWrite / 3) * 2 + 3] = t
+      seeds[vWrite / 3] = seed
+      seeds[vWrite / 3 + 1] = seed
+      rootDensities[vWrite / 3] = rootDensity
+      rootDensities[vWrite / 3 + 1] = rootDensity
+      rootOcclusions[vWrite / 3] = rootOcclusion
+      rootOcclusions[vWrite / 3 + 1] = rootOcclusion
+      flyawayMasks[vWrite / 3] = flyawayMask
+      flyawayMasks[vWrite / 3 + 1] = flyawayMask
+      lengthScales[vWrite / 3] = lengthScale
+      lengthScales[vWrite / 3 + 1] = lengthScale
+      vWrite += 6
+
+      if (i > 0) {
+        const bl = vertexOffset + (i - 1) * 2
+        const br = vertexOffset + (i - 1) * 2 + 1
+        const tl = vertexOffset + i * 2
+        const tr = vertexOffset + i * 2 + 1
+        indices[iWrite] = bl; indices[iWrite + 1] = br; indices[iWrite + 2] = tl
+        indices[iWrite + 3] = br; indices[iWrite + 4] = tr; indices[iWrite + 5] = tl
+        iWrite += 6
+      }
+    }
+
+    vertexOffset += pointCount * 2
+  }
+
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geo.setAttribute('tangent', new THREE.BufferAttribute(tangents, 3))
+  geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2))
+  geo.setAttribute('strandSeed', new THREE.BufferAttribute(seeds, 1))
+  geo.setAttribute('rootDensity', new THREE.BufferAttribute(rootDensities, 1))
+  geo.setAttribute('rootOcclusion', new THREE.BufferAttribute(rootOcclusions, 1))
+  geo.setAttribute('flyawayMask', new THREE.BufferAttribute(flyawayMasks, 1))
+  geo.setAttribute('lengthScale', new THREE.BufferAttribute(lengthScales, 1))
+  geo.setIndex(new THREE.BufferAttribute(indices, 1))
+  return geo
+}
+
 // Guide curves stay as line segments — they're debug overlays, not hair
 function buildSegmentGeometry(
   lines: ReadonlyArray<{ points: ReadonlyArray<readonly [number, number, number]> }>,
@@ -154,43 +398,26 @@ function buildSegmentGeometry(
   return geo
 }
 
-function selectVolumeCards(strands: readonly GeneratedStrand[], guideCount: number) {
-  if (!strands.length) return []
+function selectBodyStrands(strands: readonly GeneratedStrand[]) {
+  const body = strands.filter((strand) => !strandIsFlyaway(strand))
+  if (body.length <= 40_000) return body
 
-  const targetCount = Math.min(
-    1200,
-    Math.max(96, guideCount * 8, Math.round(Math.sqrt(strands.length) * 5)),
-  )
-  const candidates = strands
-    .filter((strand) => Math.max(strand.rootDensity, strand.rootOcclusion ?? 0) > 0.42 && strand.flyawayMask < 0.72)
-    .sort((a, b) => {
-      const densityA = Math.max(a.rootDensity, a.rootOcclusion ?? 0)
-      const densityB = Math.max(b.rootDensity, b.rootOcclusion ?? 0)
-      const scoreA = densityA * 2.25 + a.lengthScale - a.flyawayMask
-      const scoreB = densityB * 2.25 + b.lengthScale - b.flyawayMask
-      return scoreB - scoreA
-    })
-  const source = candidates.length >= 12 ? candidates : [...strands]
-  const step = Math.max(1, Math.floor(source.length / targetCount))
-  const cards: GeneratedStrand[] = []
-
-  for (let index = 0; index < source.length && cards.length < targetCount; index += step) {
-    cards.push(source[index])
-  }
-
-  return cards
+  const stride = body.length > 70_000 ? 3 : 2
+  return body.filter((strand, index) => (
+    index % stride === 0 ||
+    strandDensityScore(strand) < 0.38
+  ))
 }
 
-function selectDetailStrands(strands: readonly GeneratedStrand[]) {
-  if (strands.length <= 40_000) return strands
+function selectFlyawayStrands(strands: readonly GeneratedStrand[]) {
+  const flyaways = strands.filter(strandIsFlyaway)
+  const maxFlyaways = 10_000
+  if (flyaways.length <= maxFlyaways) return flyaways
 
-  const stride = strands.length > 70_000 ? 3 : 2
-  const flyawayThreshold = 0.86
-  return strands.filter((strand, index) => (
+  const stride = Math.ceil(flyaways.length / maxFlyaways)
+  return flyaways.filter((strand, index) => (
     index % stride === 0 ||
-    strand.random > flyawayThreshold ||
-    strand.flyawayMask > 0.68 ||
-    strand.rootDensity < 0.38
+    strand.flyawayMask > 0.82
   ))
 }
 
@@ -205,10 +432,21 @@ export default function GroomRenderer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   )
+  const flyawayMaterial = useMemo(() => {
+    const mat = createHairStrandMaterial(activeGroomAsset.material, FLYAWAY_MATERIAL_OPTIONS)
+    mat.name = 'HairFlyawayMaterial'
+    mat.transparent = true
+    mat.alphaTest = 0.03
+    mat.depthWrite = false
+    return mat
+    // Material is built once; all settings flow through uniform updates below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const cardMaterial = useMemo(() => {
     const mat = createHairStrandMaterial(activeGroomAsset.material, CARD_MATERIAL_OPTIONS)
     mat.name = 'HairVolumeCardMaterial'
-    mat.alphaTest = 0.38
+    mat.transparent = true
+    mat.alphaTest = 0.025
     mat.depthWrite = false
     return mat
     // Material is built once; all settings flow through uniform updates below.
@@ -217,8 +455,9 @@ export default function GroomRenderer() {
 
   useEffect(() => {
     updateHairStrandMaterialUniforms(strandMaterial, activeGroomAsset.material, DETAIL_MATERIAL_OPTIONS)
+    updateHairStrandMaterialUniforms(flyawayMaterial, activeGroomAsset.material, FLYAWAY_MATERIAL_OPTIONS)
     updateHairStrandMaterialUniforms(cardMaterial, activeGroomAsset.material, CARD_MATERIAL_OPTIONS)
-  }, [activeGroomAsset.material, strandMaterial, cardMaterial])
+  }, [activeGroomAsset.material, strandMaterial, flyawayMaterial, cardMaterial])
 
   const guideMaterial = useMemo(
     () => new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.85, toneMapped: false }),
@@ -227,14 +466,22 @@ export default function GroomRenderer() {
 
   const volumeCardGeometry = useMemo(() => {
     if (!showGeneratedStrands || !generatedStrands.length) return null
-    const cards = selectVolumeCards(generatedStrands as GeneratedStrand[], activeGroomAsset.guides.length)
-    if (!cards.length) return null
-    return buildRibbonGeometry(cards)
-  }, [activeGroomAsset.guides.length, generatedStrands, showGeneratedStrands])
+    const cardGroups = buildCardGroups(generatedStrands as GeneratedStrand[], activeGroomAsset.guides.length)
+    if (!cardGroups.length) return null
+    return buildClumpCardGeometry(cardGroups, activeGroomAsset.settings.clumpRadius)
+  }, [activeGroomAsset.guides.length, activeGroomAsset.settings.clumpRadius, generatedStrands, showGeneratedStrands])
 
   const strandGeometry = useMemo(() => {
     if (!showGeneratedStrands || !generatedStrands.length) return null
-    const strands = selectDetailStrands(generatedStrands as GeneratedStrand[])
+    const strands = selectBodyStrands(generatedStrands as GeneratedStrand[])
+    if (!strands.length) return null
+    return buildRibbonGeometry(strands)
+  }, [generatedStrands, showGeneratedStrands])
+
+  const flyawayGeometry = useMemo(() => {
+    if (!showGeneratedStrands || !generatedStrands.length) return null
+    const strands = selectFlyawayStrands(generatedStrands as GeneratedStrand[])
+    if (!strands.length) return null
     return buildRibbonGeometry(strands)
   }, [generatedStrands, showGeneratedStrands])
 
@@ -254,20 +501,24 @@ export default function GroomRenderer() {
 
   useEffect(() => {
     registerHairMaterialForGroom(strandMaterial)
+    registerHairMaterialForGroom(flyawayMaterial)
     registerHairMaterialForGroom(cardMaterial)
     return () => {
       unregisterHairMaterialForGroom(strandMaterial)
+      unregisterHairMaterialForGroom(flyawayMaterial)
       unregisterHairMaterialForGroom(cardMaterial)
     }
-  }, [strandMaterial, cardMaterial])
+  }, [strandMaterial, flyawayMaterial, cardMaterial])
   useEffect(() => () => strandMaterial.dispose(), [strandMaterial])
+  useEffect(() => () => flyawayMaterial.dispose(), [flyawayMaterial])
   useEffect(() => () => cardMaterial.dispose(), [cardMaterial])
   useEffect(() => () => guideMaterial.dispose(), [guideMaterial])
   useEffect(() => () => volumeCardGeometry?.dispose(), [volumeCardGeometry])
   useEffect(() => () => strandGeometry?.dispose(), [strandGeometry])
+  useEffect(() => () => flyawayGeometry?.dispose(), [flyawayGeometry])
   useEffect(() => () => guideGeometry?.dispose(), [guideGeometry])
 
-  if (!targetMesh || (!volumeCardGeometry && !strandGeometry && !guideGeometry)) return null
+  if (!targetMesh || (!volumeCardGeometry && !strandGeometry && !flyawayGeometry && !guideGeometry)) return null
 
   return (
     <group ref={transformRef} matrixAutoUpdate={false}>
@@ -281,8 +532,13 @@ export default function GroomRenderer() {
           <primitive object={strandMaterial} attach="material" />
         </mesh>
       )}
+      {flyawayGeometry && (
+        <mesh geometry={flyawayGeometry} renderOrder={62}>
+          <primitive object={flyawayMaterial} attach="material" />
+        </mesh>
+      )}
       {guideGeometry && (
-        <lineSegments geometry={guideGeometry} renderOrder={61}>
+        <lineSegments geometry={guideGeometry} renderOrder={63}>
           <primitive object={guideMaterial} attach="material" />
         </lineSegments>
       )}

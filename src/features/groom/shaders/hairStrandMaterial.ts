@@ -257,6 +257,10 @@ export type HairMaterialOptions = {
   widthScale?: number
   opacityScale?: number
   cardPattern?: number
+  geometryRibbon?: number
+  alphaHashStrength?: number
+  edgeSoftness?: number
+  rootFillScale?: number
   densityShadowScale?: number
   flyawayOpacityBoost?: number
 }
@@ -268,6 +272,10 @@ type GroomUniforms = {
   opacity:          ReturnType<typeof uniform>
   opacityScale:     ReturnType<typeof uniform>
   cardPattern:      ReturnType<typeof uniform>
+  geometryRibbon:   ReturnType<typeof uniform>
+  alphaHashStrength: ReturnType<typeof uniform>
+  edgeSoftness:     ReturnType<typeof uniform>
+  rootFillScale:    ReturnType<typeof uniform>
   densityShadowScale: ReturnType<typeof uniform>
   flyawayOpacityBoost: ReturnType<typeof uniform>
   melanin:          ReturnType<typeof uniform>
@@ -301,6 +309,10 @@ export function createHairStrandMaterial(settings: HairMaterialSettings, options
     opacity:          uniform(settings.opacity),
     opacityScale:     uniform(options.opacityScale ?? 1),
     cardPattern:      uniform(options.cardPattern ?? 0),
+    geometryRibbon:   uniform(options.geometryRibbon ?? 0),
+    alphaHashStrength: uniform(options.alphaHashStrength ?? 1),
+    edgeSoftness:     uniform(options.edgeSoftness ?? 4),
+    rootFillScale:    uniform(options.rootFillScale ?? 0.62),
     densityShadowScale: uniform(options.densityShadowScale ?? 1),
     flyawayOpacityBoost: uniform(options.flyawayOpacityBoost ?? 0),
     melanin:          uniform(settings.melanin),
@@ -385,12 +397,13 @@ export function createHairStrandMaterial(settings: HairMaterialSettings, options
     const ndcScale = widthPx.div(halfViewportPx)
     const clipOffsetX = perpFixed.x.mul(ndcScale).mul(centerClip.w)
     const clipOffsetY = perpFixed.y.mul(ndcScale).mul(centerClip.w)
-    const finalClip = vec4(
+    const expandedClip = vec4(
       centerClip.x.add(side.mul(clipOffsetX)),
       centerClip.y.add(side.mul(clipOffsetY)),
       centerClip.z,
       centerClip.w,
     )
+    const finalClip = mix(expandedClip, centerClip, u.geometryRibbon)
 
     const worldPos = modelWorldMatrix.mul(vec4(positionGeometry, 1.0)).xyz
     const tangentWorld = normalize(modelWorldMatrix.mul(vec4(tangentLocal, 0.0)).xyz)
@@ -399,7 +412,7 @@ export function createHairStrandMaterial(settings: HairMaterialSettings, options
     varyingProperty('vec3', 'vHairWorldPos').assign(worldPos)
     varyingProperty('float', 'vHairT').assign(tParam)
     varyingProperty('float', 'vHairSide').assign(side)
-    varyingProperty('float', 'vHairCoverage').assign(coverageScale)
+    varyingProperty('float', 'vHairCoverage').assign(mix(coverageScale, float(1.0), u.geometryRibbon))
     varyingProperty('float', 'vHairSeed').assign(seed)
     varyingProperty('float', 'vRootDensity').assign(rootDensity)
     varyingProperty('float', 'vRootOcclusion').assign(rootOcclusion)
@@ -480,7 +493,7 @@ export function createHairStrandMaterial(settings: HairMaterialSettings, options
 
   // Analytic ribbon-edge falloff and tip fade.
   const edge = sideF.abs()
-  const edgeAA = saturate(float(1.0).sub(edge).mul(4.0))
+  const edgeAA = saturate(float(1.0).sub(edge).mul(u.edgeSoftness))
   const tipFade = saturate(float(1.0).sub(tParamF.mul(tParamF).mul(0.3)))
   const cardFiber = sin(sideF.mul(42.0).add(tParamF.mul(7.0)).add(seedF.mul(19.0))).mul(0.5).add(0.5)
   const cardFiberMask = mix(float(1.0), saturate(cardFiber.mul(1.25).add(0.08)), u.cardPattern)
@@ -497,7 +510,7 @@ export function createHairStrandMaterial(settings: HairMaterialSettings, options
   // hard strand on top of skin and expect it to read as a follicle.
   const rootAlphaRamp = saturate(tParamF.div(max(u.rootDarkenLength.mul(0.6), float(1e-3))))
   const rootAlpha = rootAlphaRamp.mul(rootAlphaRamp).mul(float(3.0).sub(rootAlphaRamp.mul(2.0)))
-  const cardRootFill = u.cardPattern.mul(localDensity).mul(0.62)
+  const cardRootFill = u.cardPattern.mul(localDensity).mul(u.rootFillScale)
   const effectiveRootAlpha = max(rootAlpha, cardRootFill)
   const coverageAlpha = u.opacity.mul(u.opacityScale).mul(edgeAA).mul(tipFade).mul(coverage).mul(flyawayAlpha).mul(lengthAlpha).mul(effectiveRootAlpha).mul(cardFiberMask)
 
@@ -514,7 +527,7 @@ export function createHairStrandMaterial(settings: HairMaterialSettings, options
   // 0/1 mask multiplied into the final alpha, which combined with alphaTest
   // 0.5 produces a clean binary discard.
   const dither = saturate(coverageAlpha.sub(hash).mul(64.0).add(0.5))
-  const alpha = dither
+  const alpha = mix(coverageAlpha, dither, u.alphaHashStrength)
 
   // --- Material assembly ---------------------------------------------------
   const mat = new THREE.NodeMaterial() as HairMaterial
@@ -565,6 +578,10 @@ export function updateHairStrandMaterialUniforms(
   u.opacity.value          = settings.opacity
   if (options?.opacityScale !== undefined) u.opacityScale.value = options.opacityScale
   if (options?.cardPattern !== undefined) u.cardPattern.value = options.cardPattern
+  if (options?.geometryRibbon !== undefined) u.geometryRibbon.value = options.geometryRibbon
+  if (options?.alphaHashStrength !== undefined) u.alphaHashStrength.value = options.alphaHashStrength
+  if (options?.edgeSoftness !== undefined) u.edgeSoftness.value = options.edgeSoftness
+  if (options?.rootFillScale !== undefined) u.rootFillScale.value = options.rootFillScale
   if (options?.densityShadowScale !== undefined) u.densityShadowScale.value = options.densityShadowScale
   if (options?.flyawayOpacityBoost !== undefined) u.flyawayOpacityBoost.value = options.flyawayOpacityBoost
   u.melanin.value          = settings.melanin
