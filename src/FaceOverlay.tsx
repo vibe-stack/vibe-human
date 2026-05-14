@@ -1,5 +1,7 @@
 import { useRef, useState, type KeyboardEvent as KE, type PointerEvent as PE } from 'react'
-import { FACS_CONTROLS, FACS_VALUE_MAX, type EyeLookValues, type FacsValues } from './facs'
+import { useSnapshot } from 'valtio'
+import { appState, setEyeLook2D, setFacsValues } from './appState'
+import { FACS_CONTROLS, FACS_VALUE_MAX, type FacsValues } from './facs'
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 const DOT        = '#f0e040'
@@ -402,30 +404,27 @@ function padKeyValue(e: KE, ctrl: FacsPad | TweakerXY, vals: FacsValues) {
   return next
 }
 
-// ── Props ─────────────────────────────────────────────────────────────────────
-type Props = {
-  facsValues: FacsValues
-  eyeLook2D: EyeLookValues
-  onChange: (id: string, value: number) => void
-  onEyeLook2D: (v: EyeLookValues) => void
+function updateFacsControl(id: string, value: number) {
+  setFacsValues((previous) => ({ ...previous, [id]: value }))
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
-export default function FaceOverlay({ facsValues, eyeLook2D, onChange, onEyeLook2D }: Props) {
+export default function FaceOverlay() {
   return (
     <div style={{ display:'flex', gap:0, alignItems:'stretch', width:'100%', height:'100%' }}>
       <div style={{ flex:'0 0 56.5%', minWidth:0, height:'100%' }}>
-        <MainPanel facsValues={facsValues} eyeLook2D={eyeLook2D} onChange={onChange} onEyeLook2D={onEyeLook2D} />
+        <MainPanel />
       </div>
       <div style={{ flex:'0 0 43.5%', minWidth:0, height:'100%' }}>
-        <TweakersPanel facsValues={facsValues} eyeLook2D={eyeLook2D} onChange={onChange} onEyeLook2D={onEyeLook2D} />
+        <TweakersPanel />
       </div>
     </div>
   )
 }
 
 // ── Main panel ────────────────────────────────────────────────────────────────
-function MainPanel({ facsValues, eyeLook2D, onChange, onEyeLook2D }: Props) {
+function MainPanel() {
+  const { facsValues, eyeLook2D } = useSnapshot(appState)
   const dragRef = useRef<AnyDrag | null>(null)
   const svgRef  = useRef<SVGSVGElement | null>(null)
   const [activeKey, setActiveKey] = useState<string | null>(null)
@@ -440,19 +439,19 @@ function MainPanel({ facsValues, eyeLook2D, onChange, onEyeLook2D }: Props) {
     if (d.kind === 'dot') {
       const dy = (d.startY - e.clientY) / s
       const nv = Math.max(0, Math.min(d.maxVal, d.startVal + (dy / 80) * d.maxVal))
-      onChange(d.id, nv)
+      updateFacsControl(d.id, nv)
     } else if (d.kind === 'eye') {
       const dx = (e.clientX - d.startX) / (40 * s)
       const dy = -(e.clientY - d.startY) / (30 * s)
       const nx = Math.max(-1, Math.min(1, d.startVX + dx))
       const ny = Math.max(-1, Math.min(1, d.startVY + dy))
-      onEyeLook2D(d.eye === 'L'
+      setEyeLook2D(d.eye === 'L'
         ? { ...eyeLook2D, leftX: nx, leftY: ny }
         : { ...eyeLook2D, rightX: nx, rightY: ny })
     } else if (d.kind === 'pad') {
       const dx = (e.clientX - d.startX) / (d.w * 0.45 * s)
       const dy = -(e.clientY - d.startY) / (d.h * 0.45 * s)
-      applyPad(d, dx, dy, onChange)
+      applyPad(d, dx, dy, updateFacsControl)
     } else if (d.kind === 'slider') {
       const dx = (e.clientX - d.startX) / s
       const dy = (e.clientY - d.startY) / s
@@ -460,7 +459,7 @@ function MainPanel({ facsValues, eyeLook2D, onChange, onEyeLook2D }: Props) {
         ? dx * d.dirX + dy * d.dirY
         : d.axis === 'v' ? -dy : dx
       const nv = Math.max(0, Math.min(d.maxVal, d.startVal + (travel / d.length) * d.maxVal))
-      onChange(d.id, nv)
+      updateFacsControl(d.id, nv)
     }
   }
 
@@ -491,7 +490,7 @@ function MainPanel({ facsValues, eyeLook2D, onChange, onEyeLook2D }: Props) {
               }}
               onKeyDown={e => {
                 const next = sliderKeyValue(e, val, mx)
-                if (next !== null) onChange(ctrl.id, next)
+                if (next !== null) updateFacsControl(ctrl.id, next)
               }}
               onFocus={() => setActiveKey(`dot:${ctrl.id}:${i}`)}
               onBlur={() => setActiveKey(null)}
@@ -515,7 +514,7 @@ function MainPanel({ facsValues, eyeLook2D, onChange, onEyeLook2D }: Props) {
               onKeyDown={e => {
                 const next = getEyeKeyValues(e, ex, ey)
                 if (!next) return
-                onEyeLook2D(ctrl.eye === 'L'
+                setEyeLook2D(ctrl.eye === 'L'
                   ? { ...eyeLook2D, leftX: next.x, leftY: next.y }
                   : { ...eyeLook2D, rightX: next.x, rightY: next.y })
               }}
@@ -537,7 +536,7 @@ function MainPanel({ facsValues, eyeLook2D, onChange, onEyeLook2D }: Props) {
               onBlur={() => setActiveKey(null)}
               onKeyDown={e => {
                 const next = padKeyValue(e, ctrl, facsValues)
-                if (next) setPadFromNormalized(ctrl, next.x, next.y, onChange)
+                if (next) setPadFromNormalized(ctrl, next.x, next.y, updateFacsControl)
               }}
             />
           )
@@ -572,7 +571,7 @@ function MainPanel({ facsValues, eyeLook2D, onChange, onEyeLook2D }: Props) {
               onBlur={() => setActiveKey(null)}
               onKeyDown={e => {
                 const next = sliderKeyValue(e, val, mx)
-                if (next !== null) onChange(ctrl.id, next)
+                if (next !== null) updateFacsControl(ctrl.id, next)
               }}
             />
           )
@@ -583,7 +582,8 @@ function MainPanel({ facsValues, eyeLook2D, onChange, onEyeLook2D }: Props) {
 }
 
 // ── Tweakers panel ─────────────────────────────────────────────────────────────
-function TweakersPanel({ facsValues, eyeLook2D, onChange, onEyeLook2D }: Props) {
+function TweakersPanel() {
+  const { facsValues, eyeLook2D } = useSnapshot(appState)
   const dragRef = useRef<AnyDrag | null>(null)
   const svgRef  = useRef<SVGSVGElement | null>(null)
   const [activeKey, setActiveKey] = useState<string | null>(null)
@@ -598,17 +598,17 @@ function TweakersPanel({ facsValues, eyeLook2D, onChange, onEyeLook2D }: Props) 
     if (d.kind === 'slider') {
       const travel = d.axis === 'v' ? (d.startY - e.clientY) / s : (e.clientX - d.startX) / s
       const nv = Math.max(0, Math.min(d.maxVal, d.startVal + (travel / d.length) * d.maxVal))
-      onChange(d.id, nv)
+      updateFacsControl(d.id, nv)
     } else if (d.kind === 'pad') {
       const dx = (e.clientX - d.startX) / (d.w * 0.45 * s)
       const dy = -(e.clientY - d.startY) / (d.h * 0.45 * s)
-      applyPad(d, dx, dy, onChange)
+      applyPad(d, dx, dy, updateFacsControl)
     } else if (d.kind === 'eye') {
       const dx = (e.clientX - d.startX) / (40 * s)
       const dy = -(e.clientY - d.startY) / (30 * s)
       const nx = Math.max(-1, Math.min(1, d.startVX + dx))
       const ny = Math.max(-1, Math.min(1, d.startVY + dy))
-      onEyeLook2D(d.eye === 'L'
+      setEyeLook2D(d.eye === 'L'
         ? { ...eyeLook2D, leftX: nx, leftY: ny }
         : { ...eyeLook2D, rightX: nx, rightY: ny })
     }
@@ -661,7 +661,7 @@ function TweakersPanel({ facsValues, eyeLook2D, onChange, onEyeLook2D }: Props) 
               aria-valuenow={Number(val.toFixed(2))}
               onKeyDown={e => {
                 const next = sliderKeyValue(e, val, mx)
-                if (next !== null) onChange(ctrl.id, next)
+                if (next !== null) updateFacsControl(ctrl.id, next)
               }}
               onFocus={() => setActiveKey(`ts:${ctrl.id}:${i}`)}
               onBlur={() => setActiveKey(null)}
@@ -707,7 +707,7 @@ function TweakersPanel({ facsValues, eyeLook2D, onChange, onEyeLook2D }: Props) 
               onBlur={() => setActiveKey(null)}
               onKeyDown={e => {
                 const next = padKeyValue(e, ctrl, facsValues)
-                if (next) setPadFromNormalized(ctrl, next.x, next.y, onChange)
+                if (next) setPadFromNormalized(ctrl, next.x, next.y, updateFacsControl)
               }}
             />
           )
@@ -735,7 +735,7 @@ function TweakersPanel({ facsValues, eyeLook2D, onChange, onEyeLook2D }: Props) 
               onKeyDown={e => {
                 const next = getEyeKeyValues(e, ex, ey)
                 if (!next) return
-                onEyeLook2D(ctrl.eye === 'L'
+                setEyeLook2D(ctrl.eye === 'L'
                   ? { ...eyeLook2D, leftX: next.x, leftY: next.y }
                   : { ...eyeLook2D, rightX: next.x, rightY: next.y })
               }}

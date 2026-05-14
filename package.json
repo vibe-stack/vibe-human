@@ -18,7 +18,8 @@
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "tailwindcss": "^4.2.4",
-    "three": "^0.184.0"
+    "three": "^0.184.0",
+    "valtio": "^2.3.2"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

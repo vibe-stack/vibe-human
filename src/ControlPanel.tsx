@@ -3,12 +3,19 @@ import {
   useRef,
   useState,
   type CSSProperties,
-  type Dispatch,
   type PointerEvent,
   type ReactNode,
-  type SetStateAction,
 } from 'react'
-import { type BoneDebug } from './HumanModel'
+import { useSnapshot } from 'valtio'
+import {
+  appState,
+  setEyeLook,
+  setFacsValues,
+  setFocusLock,
+  setFov,
+  setShowBones,
+  setWireframe,
+} from './appState'
 import FaceOverlay from './FaceOverlay'
 import {
   createFacsPresetValues,
@@ -17,30 +24,10 @@ import {
   FACS_GROUPS,
   FACS_PRESETS,
   FACS_VALUE_MAX,
-  type EyeLookValues,
   type FacsControl,
   type FacsGroup,
   type FacsSide,
-  type FacsValues,
 } from './facs'
-
-type Props = {
-  facsValues: FacsValues
-  eyeLook2D: EyeLookValues
-  wireframe: boolean
-  showBones: boolean
-  eyeLook: boolean
-  focusLock: boolean
-  boneDebug: BoneDebug | null
-  fov: number
-  onFacsValues: Dispatch<SetStateAction<FacsValues>>
-  onEyeLook2D: (v: EyeLookValues) => void
-  onWireframe: (v: boolean) => void
-  onShowBones: (v: boolean) => void
-  onEyeLook: (v: boolean) => void
-  onFocusLock: (v: boolean) => void
-  onFov: (v: number) => void
-}
 
 const panel: CSSProperties = {
   background: 'rgba(14, 14, 18, 0.5)',
@@ -50,23 +37,8 @@ const panel: CSSProperties = {
   borderRadius: 8,
 }
 
-export default function ControlPanel({
-  facsValues,
-  eyeLook2D,
-  wireframe,
-  showBones,
-  eyeLook,
-  focusLock,
-  boneDebug,
-  fov,
-  onFacsValues,
-  onEyeLook2D,
-  onWireframe,
-  onShowBones,
-  onEyeLook,
-  onFocusLock,
-  onFov,
-}: Props) {
+export default function ControlPanel() {
+  const { facsValues, wireframe, showBones, eyeLook, focusLock, boneDebug, fov } = useSnapshot(appState)
   const [detailGroup, setDetailGroup] = useState<FacsGroup | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
@@ -79,13 +51,13 @@ export default function ControlPanel({
   const panelRef = useRef<HTMLDivElement | null>(null)
 
   const setControl = (id: string, value: number) => {
-    onFacsValues((prev) => ({ ...prev, [id]: value }))
+    setFacsValues((prev) => ({ ...prev, [id]: value }))
   }
 
-  const resetAll = () => onFacsValues(createNeutralFacsValues())
+  const resetAll = () => setFacsValues(createNeutralFacsValues())
 
   const resetGroup = (group: FacsGroup) => {
-    onFacsValues((prev) => {
+    setFacsValues((prev) => {
       const next = { ...prev }
       for (const c of FACS_CONTROLS) {
         if (c.group === group) next[c.id] = 0
@@ -259,7 +231,7 @@ export default function ControlPanel({
 
           {/* Face overlay — fills available height */}
           <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'stretch', justifyContent: 'center', padding: '8px 12px 6px', overflow: 'hidden' }}>
-            <FaceOverlaySized facsValues={facsValues} eyeLook2D={eyeLook2D} onChange={setControl} onEyeLook2D={onEyeLook2D} />
+            <FaceOverlaySized />
           </div>
 
           {/* Preset strip */}
@@ -275,7 +247,7 @@ export default function ControlPanel({
           >
             <Chip onClick={resetAll} bright>RESET</Chip>
             {FACS_PRESETS.map((p) => (
-              <Chip key={p.id} onClick={() => onFacsValues(createFacsPresetValues(p.values))}>
+              <Chip key={p.id} onClick={() => setFacsValues(createFacsPresetValues(p.values))}>
                 {p.label.toUpperCase()}
               </Chip>
             ))}
@@ -317,10 +289,10 @@ export default function ControlPanel({
               }}
             >
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 4 }}>
-                <Toggle active={wireframe} onClick={() => onWireframe(!wireframe)}>WIRE</Toggle>
-                <Toggle active={showBones} onClick={() => onShowBones(!showBones)}>BONES</Toggle>
-                <Toggle active={eyeLook} onClick={() => onEyeLook(!eyeLook)}>EYE</Toggle>
-                <Toggle active={focusLock} onClick={() => onFocusLock(!focusLock)}>LOCK</Toggle>
+                <Toggle active={wireframe} onClick={() => setWireframe(!wireframe)}>WIRE</Toggle>
+                <Toggle active={showBones} onClick={() => setShowBones(!showBones)}>BONES</Toggle>
+                <Toggle active={eyeLook} onClick={() => setEyeLook(!eyeLook)}>EYE</Toggle>
+                <Toggle active={focusLock} onClick={() => setFocusLock(!focusLock)}>LOCK</Toggle>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', fontFamily: 'monospace', minWidth: 42 }}>
@@ -328,7 +300,7 @@ export default function ControlPanel({
                 </span>
                 <input
                   type="range" min={20} max={90} step={1} value={fov}
-                  onChange={(e) => onFov(parseInt(e.target.value))}
+                  onChange={(e) => setFov(parseInt(e.target.value))}
                   className="range-slider"
                   style={{ flex: 1 }}
                   aria-label="Camera field of view"
@@ -429,7 +401,7 @@ export default function ControlPanel({
 }
 
 // ── Sized wrapper — two panels side by side, 920:700 total ratio ─────────────
-function FaceOverlaySized({ facsValues, eyeLook2D, onChange, onEyeLook2D }: { facsValues: FacsValues; eyeLook2D: EyeLookValues; onChange: (id: string, v: number) => void; onEyeLook2D: (v: EyeLookValues) => void }) {
+function FaceOverlaySized() {
   return (
     <div style={{
       width: '100%',
@@ -437,7 +409,7 @@ function FaceOverlaySized({ facsValues, eyeLook2D, onChange, onEyeLook2D }: { fa
       aspectRatio: '920 / 700',
       minHeight: 0,
     }}>
-      <FaceOverlay facsValues={facsValues} eyeLook2D={eyeLook2D} onChange={onChange} onEyeLook2D={onEyeLook2D} />
+      <FaceOverlay />
     </div>
   )
 }

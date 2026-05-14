@@ -1,43 +1,16 @@
-import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { TransformControls, useGLTF } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
+import { useSnapshot } from 'valtio'
 import * as THREE from 'three/webgpu'
-import { createEyeMaterial, createSkinMaterial, type SkinTextures } from './skinMaterial'
+import { appState, setBoneDebug, setIsTransforming } from './appState'
+import { createEyeMaterial, createSkinMaterial } from './skinMaterial'
 import {
   buildModelingMorphs,
   MODELING_CONTROLS,
-  type ModelingMode,
-  type ModelingValues,
 } from './characterModeling'
-import { buildFacsMorphs, type EyeLookValues, type FacsValues } from './facs'
+import { buildFacsMorphs } from './facs'
 import ModelingOverlay from './ModelingOverlay'
-
-type Props = {
-  facsValues: FacsValues
-  modelingValues: ModelingValues
-  modelingMode: ModelingMode
-  modelingSymmetric: boolean
-  selectedModelingHandleId: string | null
-  eyeLook2D: EyeLookValues
-  wireframe: boolean
-  showBones: boolean
-  eyeLook: boolean
-  focusLock: boolean
-  skinTextures: SkinTextures
-  poreScale: number
-  poreNormalStrength: number
-  wrinkleNormalStrength: number
-  flipNormalY: boolean
-  oiliness: number
-  surfaceRoughness: number
-  toneDepth: number
-  subsurfaceStrength: number
-  showModelingOverlay: boolean
-  onModelingValues: Dispatch<SetStateAction<ModelingValues>>
-  onSelectedModelingHandleId: (id: string) => void
-  onBoneDebug: (debug: BoneDebug | null) => void
-  onTransformingChange: (isTransforming: boolean) => void
-}
 
 type BoneRest = {
   position: THREE.Vector3
@@ -237,32 +210,26 @@ function applyMorphTargets(
   }
 }
 
-export default function HumanModel({
-  facsValues,
-  modelingValues,
-  modelingMode,
-  modelingSymmetric,
-  selectedModelingHandleId,
-  eyeLook2D,
-  wireframe,
-  showBones,
-  eyeLook,
-  focusLock,
-  skinTextures,
-  poreScale,
-  poreNormalStrength,
-  wrinkleNormalStrength,
-  flipNormalY,
-  oiliness,
-  surfaceRoughness,
-  toneDepth,
-  subsurfaceStrength,
-  showModelingOverlay,
-  onModelingValues,
-  onSelectedModelingHandleId,
-  onBoneDebug,
-  onTransformingChange,
-}: Props) {
+export default function HumanModel() {
+  const {
+    facsValues,
+    modelingValues,
+    eyeLook2D,
+    wireframe,
+    showBones,
+    eyeLook,
+    focusLock,
+    skinTextures,
+    poreScale,
+    poreNormalStrength,
+    wrinkleNormalStrength,
+    flipNormalY,
+    oiliness,
+    surfaceRoughness,
+    toneDepth,
+    subsurfaceStrength,
+    showModeling: showModelingOverlay,
+  } = useSnapshot(appState)
   const { scene } = useGLTF(MODEL_URL)
 
   const [lookTargetObject, setLookTargetObject] = useState<THREE.Group | null>(null)
@@ -298,12 +265,12 @@ export default function HumanModel({
 
   useEffect(() => {
     if (!showBones) {
-      onBoneDebug(null)
+      setBoneDebug(null)
     }
     if (!showBones && !eyeLook && !focusLock) {
-      onTransformingChange(false)
+      setIsTransforming(false)
     }
-  }, [eyeLook, focusLock, onBoneDebug, onTransformingChange, showBones])
+  }, [eyeLook, focusLock, showBones])
 
   // Collect bones and snapshot rest pose once
   useEffect(() => {
@@ -514,7 +481,7 @@ export default function HumanModel({
       const rest = restRef.current[selectedBone.name]
       if (!rest) return
 
-      onBoneDebug(getBoneDebug(selectedBone, rest))
+      setBoneDebug(getBoneDebug(selectedBone, rest))
     }
   })
 
@@ -618,8 +585,8 @@ export default function HumanModel({
               mode="translate"
               space="world"
               size={0.5}
-              onMouseDown={() => onTransformingChange(true)}
-              onMouseUp={() => onTransformingChange(false)}
+              onMouseDown={() => setIsTransforming(true)}
+              onMouseUp={() => setIsTransforming(false)}
             />
           )}
         </>
@@ -641,7 +608,7 @@ export default function HumanModel({
           mode="translate"
           space="local"
           size={0.35}
-          onMouseDown={() => onTransformingChange(true)}
+          onMouseDown={() => setIsTransforming(true)}
           onObjectChange={() => {
             scene.updateMatrixWorld(true)
             for (const skeleton of skeletonsRef.current) {
@@ -649,7 +616,7 @@ export default function HumanModel({
             }
           }}
           onMouseUp={() => {
-            onTransformingChange(false)
+            setIsTransforming(false)
             const rest = restRef.current[selectedBone.name]
             if (!rest) return
 
@@ -664,16 +631,7 @@ export default function HumanModel({
       )}
 
       {!showBones && showModelingOverlay && (
-        <ModelingOverlay
-          mode={modelingMode}
-          symmetric={modelingSymmetric}
-          values={modelingValues}
-          selectedHandleId={selectedModelingHandleId}
-          bones={modelingBones}
-          onSelectedHandleId={onSelectedModelingHandleId}
-          onValues={onModelingValues}
-          onTransformingChange={onTransformingChange}
-        />
+        <ModelingOverlay bones={modelingBones} />
       )}
     </>
   )

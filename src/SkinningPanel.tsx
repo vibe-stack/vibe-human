@@ -1,4 +1,17 @@
 import { useRef, type CSSProperties } from 'react'
+import { useSnapshot } from 'valtio'
+import {
+  appState,
+  setFlipNormalY,
+  setOiliness,
+  setPoreNormalStrength,
+  setPoreScale,
+  setSkinTextures,
+  setSubsurfaceStrength,
+  setSurfaceRoughness,
+  setToneDepth,
+  setWrinkleNormalStrength,
+} from './appState'
 import {
   DEFAULT_FLIP_NORMAL_Y,
   DEFAULT_OILINESS,
@@ -11,29 +24,7 @@ import {
   SKIN_TEXTURE_LABELS,
   SKIN_TEXTURE_SLOTS,
   type SkinTextureSlot,
-  type SkinTextures,
 } from './skinMaterial'
-
-type Props = {
-  textures: SkinTextures
-  poreScale: number
-  poreNormalStrength: number
-  wrinkleNormalStrength: number
-  flipNormalY: boolean
-  oiliness: number
-  surfaceRoughness: number
-  toneDepth: number
-  subsurfaceStrength: number
-  onTextures: (textures: SkinTextures) => void
-  onPoreScale: (scale: number) => void
-  onPoreNormalStrength: (strength: number) => void
-  onWrinkleNormalStrength: (strength: number) => void
-  onFlipNormalY: (flip: boolean) => void
-  onOiliness: (v: number) => void
-  onSurfaceRoughness: (v: number) => void
-  onToneDepth: (v: number) => void
-  onSubsurfaceStrength: (v: number) => void
-}
 
 const panelBg: CSSProperties = {
   background: 'rgba(14, 14, 18, 0.54)',
@@ -58,32 +49,24 @@ const scrollbarStyle = `
   .skin-scroll::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); }
 `
 
-export default function SkinningPanel({
-  textures,
-  poreScale,
-  poreNormalStrength,
-  wrinkleNormalStrength,
-  flipNormalY,
-  oiliness,
-  surfaceRoughness,
-  toneDepth,
-  subsurfaceStrength,
-  onTextures,
-  onPoreScale,
-  onPoreNormalStrength,
-  onWrinkleNormalStrength,
-  onFlipNormalY,
-  onOiliness,
-  onSurfaceRoughness,
-  onToneDepth,
-  onSubsurfaceStrength,
-}: Props) {
+export default function SkinningPanel() {
+  const {
+    skinTextures: textures,
+    poreScale,
+    poreNormalStrength,
+    wrinkleNormalStrength,
+    flipNormalY,
+    oiliness,
+    surfaceRoughness,
+    toneDepth,
+    subsurfaceStrength,
+  } = useSnapshot(appState)
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
   const handleUpload = (slot: SkinTextureSlot, file: File) => {
     const prev = textures[slot]
     if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev)
-    onTextures({ ...textures, [slot]: URL.createObjectURL(file) })
+    setSkinTextures({ ...textures, [slot]: URL.createObjectURL(file) })
   }
 
   const handleReset = (slot: SkinTextureSlot) => {
@@ -91,7 +74,7 @@ export default function SkinningPanel({
     if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev)
     const next = { ...textures }
     delete next[slot]
-    onTextures(next)
+    setSkinTextures(next)
   }
 
   const resetAll = () => {
@@ -99,15 +82,15 @@ export default function SkinningPanel({
       const prev = textures[slot]
       if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev)
     }
-    onPoreScale(DEFAULT_PORE_SCALE)
-    onPoreNormalStrength(DEFAULT_PORE_NORMAL_STRENGTH)
-    onWrinkleNormalStrength(DEFAULT_WRINKLE_NORMAL_STRENGTH)
-    onFlipNormalY(DEFAULT_FLIP_NORMAL_Y)
-    onOiliness(DEFAULT_OILINESS)
-    onSurfaceRoughness(DEFAULT_SURFACE_ROUGHNESS)
-    onToneDepth(DEFAULT_TONE_DEPTH)
-    onSubsurfaceStrength(DEFAULT_SUBSURFACE_STRENGTH)
-    onTextures({})
+    setPoreScale(DEFAULT_PORE_SCALE)
+    setPoreNormalStrength(DEFAULT_PORE_NORMAL_STRENGTH)
+    setWrinkleNormalStrength(DEFAULT_WRINKLE_NORMAL_STRENGTH)
+    setFlipNormalY(DEFAULT_FLIP_NORMAL_Y)
+    setOiliness(DEFAULT_OILINESS)
+    setSurfaceRoughness(DEFAULT_SURFACE_ROUGHNESS)
+    setToneDepth(DEFAULT_TONE_DEPTH)
+    setSubsurfaceStrength(DEFAULT_SUBSURFACE_STRENGTH)
+    setSkinTextures({})
   }
 
   const customCount =
@@ -242,15 +225,15 @@ export default function SkinningPanel({
         <div className="skin-scroll" style={{ padding: '4px 0', maxHeight: 480, overflowY: 'auto' }}>
 
           {sectionLabel('APPEARANCE')}
-          {sliderRow('OILINESS', oiliness, 0, 1, 0.01, DEFAULT_OILINESS, onOiliness)}
-          {sliderRow('SURFACE ROUGHNESS', surfaceRoughness, 0.1, 1, 0.01, DEFAULT_SURFACE_ROUGHNESS, onSurfaceRoughness)}
-          {sliderRow('TONE DEPTH', toneDepth, 0, 1, 0.01, DEFAULT_TONE_DEPTH, onToneDepth)}
-          {sliderRow('SUBSURFACE', subsurfaceStrength, 0, 1, 0.01, DEFAULT_SUBSURFACE_STRENGTH, onSubsurfaceStrength)}
+          {sliderRow('OILINESS', oiliness, 0, 1, 0.01, DEFAULT_OILINESS, setOiliness)}
+          {sliderRow('SURFACE ROUGHNESS', surfaceRoughness, 0.1, 1, 0.01, DEFAULT_SURFACE_ROUGHNESS, setSurfaceRoughness)}
+          {sliderRow('TONE DEPTH', toneDepth, 0, 1, 0.01, DEFAULT_TONE_DEPTH, setToneDepth)}
+          {sliderRow('SUBSURFACE', subsurfaceStrength, 0, 1, 0.01, DEFAULT_SUBSURFACE_STRENGTH, setSubsurfaceStrength)}
 
           {sectionLabel('DETAIL')}
-          {sliderRow('PORE SCALE', poreScale, 4, 90, 1, DEFAULT_PORE_SCALE, onPoreScale)}
-          {sliderRow('PORE NORMAL', poreNormalStrength, 0, 2, 0.05, DEFAULT_PORE_NORMAL_STRENGTH, onPoreNormalStrength)}
-          {sliderRow('WRINKLE NORMAL', wrinkleNormalStrength, 0, 2, 0.05, DEFAULT_WRINKLE_NORMAL_STRENGTH, onWrinkleNormalStrength)}
+          {sliderRow('PORE SCALE', poreScale, 4, 90, 1, DEFAULT_PORE_SCALE, setPoreScale)}
+          {sliderRow('PORE NORMAL', poreNormalStrength, 0, 2, 0.05, DEFAULT_PORE_NORMAL_STRENGTH, setPoreNormalStrength)}
+          {sliderRow('WRINKLE NORMAL', wrinkleNormalStrength, 0, 2, 0.05, DEFAULT_WRINKLE_NORMAL_STRENGTH, setWrinkleNormalStrength)}
 
           <div style={{
             display: 'flex',
@@ -263,7 +246,7 @@ export default function SkinningPanel({
             <input
               type="checkbox"
               checked={flipNormalY}
-              onChange={(e) => onFlipNormalY(e.target.checked)}
+              onChange={(e) => setFlipNormalY(e.target.checked)}
               style={{ accentColor: '#7dd3fc' }}
             />
           </div>

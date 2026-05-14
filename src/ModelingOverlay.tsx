@@ -1,23 +1,16 @@
 import { Billboard } from '@react-three/drei'
 import type { ThreeEvent } from '@react-three/fiber'
-import { useEffect, useMemo, useRef, type Dispatch, type SetStateAction } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
+import { useSnapshot } from 'valtio'
 import * as THREE from 'three'
+import { appState, setIsTransforming, setModelingValues, setSelectedModelingHandleId } from './appState'
 import {
   getModelingHandles,
   type ModelingHandle,
-  type ModelingMode,
-  type ModelingValues,
 } from './characterModeling'
 
 type Props = {
-  mode: ModelingMode
-  symmetric: boolean
-  values: ModelingValues
-  selectedHandleId: string | null
   bones: Record<string, THREE.Bone>
-  onSelectedHandleId: (id: string) => void
-  onValues: Dispatch<SetStateAction<ModelingValues>>
-  onTransformingChange: (isTransforming: boolean) => void
 }
 
 type DragState = {
@@ -50,16 +43,13 @@ function dragDelta(handle: ModelingHandle, dx: number, dy: number) {
   return -dy * speed
 }
 
-export default function ModelingOverlay({
-  mode,
-  symmetric,
-  values,
-  selectedHandleId,
-  bones,
-  onSelectedHandleId,
-  onValues,
-  onTransformingChange,
-}: Props) {
+export default function ModelingOverlay({ bones }: Props) {
+  const {
+    modelingMode: mode,
+    modelingSymmetric: symmetric,
+    modelingValues: values,
+    selectedModelingHandleId: selectedHandleId,
+  } = useSnapshot(appState)
   const handles = useMemo(() => getModelingHandles(mode, symmetric), [mode, symmetric])
   const dragRef = useRef<DragState | null>(null)
 
@@ -72,7 +62,7 @@ export default function ModelingOverlay({
       const nextValue = clampValue(
         drag.startValue + dragDelta(drag.handle, event.clientX - drag.startX, event.clientY - drag.startY),
       )
-      onValues((prev) => ({ ...prev, [drag.handle.controlId]: nextValue }))
+      setModelingValues((prev) => ({ ...prev, [drag.handle.controlId]: nextValue }))
     }
 
     const onUp = (event: globalThis.PointerEvent) => {
@@ -80,7 +70,7 @@ export default function ModelingOverlay({
       if (!drag || drag.pointerId !== event.pointerId) return
 
       dragRef.current = null
-      onTransformingChange(false)
+      setIsTransforming(false)
     }
 
     window.addEventListener('pointermove', onMove)
@@ -91,7 +81,7 @@ export default function ModelingOverlay({
       window.removeEventListener('pointerup', onUp)
       window.removeEventListener('pointercancel', onUp)
     }
-  }, [onTransformingChange, onValues])
+  }, [])
 
   return (
     <group>
@@ -112,7 +102,7 @@ export default function ModelingOverlay({
             selected={selected}
             onPointerDown={(event) => {
               event.stopPropagation()
-              onSelectedHandleId(handle.id)
+              setSelectedModelingHandleId(handle.id)
               dragRef.current = {
                 pointerId: event.pointerId,
                 handle,
@@ -120,12 +110,12 @@ export default function ModelingOverlay({
                 startY: event.clientY,
                 startValue: value,
               }
-              onTransformingChange(true)
+              setIsTransforming(true)
             }}
             onDoubleClick={(event) => {
               event.stopPropagation()
-              onSelectedHandleId(handle.id)
-              onValues((prev) => {
+              setSelectedModelingHandleId(handle.id)
+              setModelingValues((prev) => {
                 const next = { ...prev }
                 for (const id of handle.controlIds) next[id] = 0
                 return next

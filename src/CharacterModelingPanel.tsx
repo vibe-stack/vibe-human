@@ -1,31 +1,25 @@
 import {
   type CSSProperties,
-  type Dispatch,
   type ReactNode,
-  type SetStateAction,
   useMemo,
   useState,
 } from 'react'
+import { useSnapshot } from 'valtio'
+import {
+  appState,
+  setModelingMode,
+  setModelingSymmetric,
+  setModelingValues,
+  setSelectedModelingHandleId,
+} from './appState'
 import {
   createNeutralModelingValues,
   getModelingControlById,
   getModelingHandleById,
   getModelingHandles,
   MODELING_CONTROLS,
-  type ModelingMode,
   type ModelingValues,
 } from './characterModeling'
-
-type Props = {
-  values: ModelingValues
-  mode: ModelingMode
-  symmetric: boolean
-  selectedHandleId: string | null
-  onValues: Dispatch<SetStateAction<ModelingValues>>
-  onMode: (mode: ModelingMode) => void
-  onSymmetric: (symmetric: boolean) => void
-  onSelectedHandleId: (id: string | null) => void
-}
 
 const panelBg: CSSProperties = {
   background: 'rgba(14, 14, 18, 0.54)',
@@ -43,16 +37,8 @@ const labelStyle: CSSProperties = {
   fontFamily: "'Courier New', monospace",
 }
 
-export default function CharacterModelingPanel({
-  values,
-  mode,
-  symmetric,
-  selectedHandleId,
-  onValues,
-  onMode,
-  onSymmetric,
-  onSelectedHandleId,
-}: Props) {
+export default function CharacterModelingPanel() {
+  const { modelingValues: values, modelingMode: mode, modelingSymmetric: symmetric, selectedModelingHandleId: selectedHandleId } = useSnapshot(appState)
   const [collapsed, setCollapsed] = useState(false)
   const selectedHandle = useMemo(
     () => {
@@ -68,14 +54,14 @@ export default function CharacterModelingPanel({
   const handlesInMode = useMemo(() => getModelingHandles(mode, symmetric), [mode, symmetric])
 
   const setControl = (id: string, value: number) => {
-    onValues((prev) => ({ ...prev, [id]: Math.max(-1, Math.min(1, value)) }))
+    setModelingValues((prev) => ({ ...prev, [id]: Math.max(-1, Math.min(1, value)) }))
   }
 
-  const resetAll = () => onValues(createNeutralModelingValues())
+  const resetAll = () => setModelingValues(createNeutralModelingValues())
 
   const resetSelected = () => {
     if (!selectedHandle) return
-    onValues((prev) => {
+    setModelingValues((prev) => {
       const next = { ...prev }
       for (const id of selectedHandle.controlIds) next[id] = 0
       return next
@@ -152,19 +138,19 @@ export default function CharacterModelingPanel({
 
         <div style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-            <SegmentButton active={mode === 'transform'} onClick={() => onMode('transform')}>
+            <SegmentButton active={mode === 'transform'} onClick={() => setModelingMode('transform')}>
               TRANSFORM
             </SegmentButton>
-            <SegmentButton active={mode === 'sculpt'} onClick={() => onMode('sculpt')}>
+            <SegmentButton active={mode === 'sculpt'} onClick={() => setModelingMode('sculpt')}>
               SCULPT
             </SegmentButton>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-            <SegmentButton active={symmetric} onClick={() => onSymmetric(true)}>
+            <SegmentButton active={symmetric} onClick={() => setModelingSymmetric(true)}>
               SYMMETRIC
             </SegmentButton>
-            <SegmentButton active={!symmetric} onClick={() => onSymmetric(false)}>
+            <SegmentButton active={!symmetric} onClick={() => setModelingSymmetric(false)}>
               SINGLE SIDE
             </SegmentButton>
           </div>
@@ -204,7 +190,7 @@ export default function CharacterModelingPanel({
                 values={values}
                 onChange={setControl}
                 onReset={resetSelected}
-                onClear={() => onSelectedHandleId(null)}
+                onClear={() => setSelectedModelingHandleId(null)}
               />
             ) : (
               <div style={{ minHeight: 88, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 6 }}>
