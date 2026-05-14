@@ -30,6 +30,15 @@ function hashU32(x: number) {
   return ((x >>> 16) ^ x) >>> 0
 }
 
+function hashStringU32(value: string) {
+  let hash = 2166136261
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i)
+    hash = Math.imul(hash, 16777619)
+  }
+  return hash >>> 0
+}
+
 function smoothstep(edge0: number, edge1: number, x: number) {
   const t = THREE.MathUtils.clamp((x - edge0) / (edge1 - edge0), 0, 1)
   return t * t * (3 - 2 * t)
@@ -38,6 +47,10 @@ function smoothstep(edge0: number, edge1: number, x: number) {
 // Triangle area in 3-D
 function triangleArea(a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3) {
   return new THREE.Triangle(a, b, c).getArea()
+}
+
+function triangleCentroid(a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3) {
+  return new THREE.Vector3().add(a).add(b).add(c).multiplyScalar(1 / 3)
 }
 
 // Random point inside triangle via barycentric (Osada et al. uniform sampling)
@@ -67,6 +80,16 @@ function randomPointInTriangle(
 const K_NEAREST = 4
 
 type WeightedGuide = { guide: GuideCurve; weight: number }
+
+type ClumpData = {
+  id: number
+  rootPoint: THREE.Vector3
+}
+
+type ScalpDensityData = {
+  triangleEdgeDistance: Map<number, number>
+  maxDistance: number
+}
 
 function findInfluenceGuides(
   rootPoint: THREE.Vector3,
@@ -134,6 +157,141 @@ function interpolateStrandPoints(
   return points
 }
 
+function guideRootFrame(guide: GuideCurve) {
+  const root = tupleToVector(guide.points[0] ?? [0, 0, 0])
+  const next = tupleToVector(guide.points[1] ?? guide.points[0] ?? [0, 1, 0])
+  const normal = next.sub(root).normalize()
+  if (normal.lengthSq() <= 1e-12) normal.set(0, 1, 0)
+  const helper = Math.abs(normal.y) > 0.92 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0)
+  const tangent = new THREE.Vector3().crossVectors(helper, normal).normalize()
+  const bitangent = new THREE.Vector3().crossVectors(normal, tangent).normalize()
+  return { root, tangent, bitangent }
+}
+
+function resolveClumpData(
+  rootPoint: THREE.Vector3,
+  nearestGuide: GuideCurve | undefined,
+  settings: GroomAsset['settings'],
+): ClumpData | null {
+  if (!nearestGuide || settings.clumpStrength <= 0 || settings.clumpRadius <= 0.0001) return null
+
+  const { root: guideRoot, tangent, bitangent } = guideRootFrame(nearestGuide)
+  const offset = rootPoint.clone().sub(guideRoot)
+  const radius = settings.clumpRadius
+  const x = offset.dot(tangent)
+  const y = offset.dot(bitangent)
+  const cellX = Math.floor(x / radius)
+  const cellY = Math.floor(y / radius)
+  const guideHash = hashStringU32(nearestGuide.id)
+  const id = hashU32(guideHash ^ hashU32((cellX + 8192) * 73856093) ^ hashU32((cellY + 8192) * 19349663))
+  const rng = mulberry32(id)
+  const jitterX = (rng() - 0.5) * radius * 0.42
+  const jitterY = (rng() - 0.5) * radius * 0.42
+  const centerX = (cellX + 0.5) * radius + jitterX
+  const centerY = (cellY + 0.5) * radius + jitterY
+
+  return {
+    id,
+    rootPoint: guideRoot
+      .clone()
+      .addScaledVector(tangent, centerX)
+      .addScaledVector(bitangent, centerY),
+  }
+}
+
+function applyClumpAttraction(
+  points: THREE.Vector3[],
+  clumpPoints: THREE.Vector3[],
+  rootPoint: THREE.Vector3,
+  clumpRoot: THREE.Vector3,
+  strength: number,
+) {
+  if (points.length < 2 || clumpPoints.length !== points.length || strength <= 0) return points
+
+  const rootOffset = rootPoint.clone().sub(clumpRoot)
+  const result: THREE.Vector3[] = []
+  const last = points.length - 1
+  for (let i = 0; i < points.length; i += 1) {
+    const t = i / last
+    const lock = smoothstep(0.08, 1, t) * strength
+    const preservedRootOffset = rootOffset.clone().multiplyScalar(Math.pow(1 - t, 1.55))
+    const target = clumpPoints[i].clone().add(preservedRootOffset)
+    result.push(points[i].clone().lerp(target, lock))
+  }
+
+  result[0].copy(rootPoint)
+  return result
+}
+
+function buildScalpDensityData(geometry: THREE.BufferGeometry, triangleIndices: readonly number[]): ScalpDensityData {
+  const centroids = new Map<number, THREE.Vector3>()
+  const triangleEdges = new Map<number, string[]>()
+  const edgeCounts = new Map<string, number>()
+  const edgeCentroids: THREE.Vector3[] = []
+  const triangleEdgeDistance = new Map<number, number>()
+
+  for (const triangleIndex of triangleIndices) {
+    const surface = getTriangleSurfaceData(geometry, triangleIndex)
+    if (!surface) continue
+    const centroid = triangleCentroid(surface.a, surface.b, surface.c)
+    centroids.set(triangleIndex, centroid)
+    const vertexIds = surface.indices
+    const edgeKeys = [
+      `${Math.min(vertexIds[0], vertexIds[1])}:${Math.max(vertexIds[0], vertexIds[1])}`,
+      `${Math.min(vertexIds[1], vertexIds[2])}:${Math.max(vertexIds[1], vertexIds[2])}`,
+      `${Math.min(vertexIds[2], vertexIds[0])}:${Math.max(vertexIds[2], vertexIds[0])}`,
+    ]
+    triangleEdges.set(triangleIndex, edgeKeys)
+    for (const key of edgeKeys) {
+      edgeCounts.set(key, (edgeCounts.get(key) ?? 0) + 1)
+    }
+  }
+
+  for (const [triangleIndex, edgeKeys] of triangleEdges) {
+    if (edgeKeys.some((key) => (edgeCounts.get(key) ?? 0) === 1)) {
+      const centroid = centroids.get(triangleIndex)
+      if (centroid) edgeCentroids.push(centroid)
+    }
+  }
+
+  if (!edgeCentroids.length) {
+    for (const centroid of centroids.values()) edgeCentroids.push(centroid)
+  }
+
+  let maxDistance = 0
+  for (const [triangleIndex, centroid] of centroids) {
+    let bestDistSq = Infinity
+    for (const edgeCentroid of edgeCentroids) {
+      bestDistSq = Math.min(bestDistSq, centroid.distanceToSquared(edgeCentroid))
+    }
+    const distance = Math.sqrt(bestDistSq)
+    triangleEdgeDistance.set(triangleIndex, distance)
+    maxDistance = Math.max(maxDistance, distance)
+  }
+
+  return { triangleEdgeDistance, maxDistance }
+}
+
+function rootDensityForTriangle(triangleIndex: number, densityData: ScalpDensityData, settings: GroomAsset['settings']) {
+  const distance = densityData.triangleEdgeDistance.get(triangleIndex) ?? 0
+  const fadeDistance = Math.max(settings.clumpRadius * 2.5, 0.006)
+  const edgeRamp = smoothstep(0, fadeDistance, distance)
+  const interiorRamp = densityData.maxDistance <= 1e-6
+    ? 1
+    : smoothstep(0, Math.max(fadeDistance, densityData.maxDistance * 0.75), distance)
+  const density = THREE.MathUtils.clamp(0.18 + edgeRamp * 0.82, 0, 1)
+  return { distance, edgeRamp, interiorRamp, density }
+}
+
+function scalePointsFromRoot(points: THREE.Vector3[], scale: number) {
+  if (points.length < 2 || scale === 1) return points
+  const root = points[0].clone()
+  return points.map((point, index) => {
+    if (index === 0) return point.clone()
+    return point.clone().sub(root).multiplyScalar(scale).add(root)
+  })
+}
+
 // ---------------------------------------------------------------------------
 // Per-strand procedural effects (frizz, curl, noise) — applied after
 // interpolation so the overall shape comes from guides, effects are on top.
@@ -143,6 +301,7 @@ function applyStrandEffects(
   points: THREE.Vector3[],
   settings: GroomAsset['settings'],
   rng: () => number,
+  effectScale = 1,
 ): THREE.Vector3[] {
   if (points.length < 2) return points
 
@@ -167,9 +326,9 @@ function applyStrandEffects(
     const basisN = new THREE.Vector3().crossVectors(tangent, helperAxis).normalize()
     const basisB = new THREE.Vector3().crossVectors(tangent, basisN)
 
-    const noiseAmp = settings.noiseAmplitude * (0.2 + t * 0.8)
+    const noiseAmp = settings.noiseAmplitude * effectScale * (0.2 + t * 0.8)
     const curlAmp = settings.curlStrength * smoothstep(0, 0.3, t)
-    const frizzAmp = settings.frizzStrength * (0.1 + t * 0.9)
+    const frizzAmp = settings.frizzStrength * effectScale * (0.1 + t * 0.9)
 
     const p = points[i].clone()
       .addScaledVector(basisN, Math.sin(t * settings.noiseFrequency * Math.PI * 2 + noisePhase) * noiseAmp)
@@ -210,6 +369,7 @@ export function generateStrandsFromGuides(
   if (!geometry || !(geometry instanceof THREE.BufferGeometry)) return []
 
   const strands: GeneratedStrand[] = []
+  const densityData = buildScalpDensityData(geometry, scalpMask.selectedTriangleIndices)
   // strandDensity is strands/cm² — triangles are in metres, 1 m² = 10000 cm²
   const strandsPerM2 = settings.strandDensity * 10_000
 
@@ -217,8 +377,9 @@ export function generateStrandsFromGuides(
     const surface = getTriangleSurfaceData(geometry, triIndex)
     if (!surface) continue
 
+    const rootDensity = rootDensityForTriangle(triIndex, densityData, settings)
     const area = triangleArea(surface.a, surface.b, surface.c) // m²
-    const expectedStrands = area * strandsPerM2
+    const expectedStrands = area * strandsPerM2 * rootDensity.density
     // Stochastic rounding so low-density settings still cover the surface
     const strandSeed = hashU32(triIndex)
     const rngTriangle = mulberry32(strandSeed)
@@ -240,17 +401,51 @@ export function generateStrandsFromGuides(
       // Guide interpolation
       const influences = findInfluenceGuides(rootPoint, guides)
       const basePoints = interpolateStrandPoints(influences, rootPoint, settings.guideSegments)
+      const clumpData = resolveClumpData(rootPoint, influences[0]?.guide, settings)
+      let shapedPoints = basePoints
+      const clumpId = clumpData?.id ?? hashStringU32(influences[0]?.guide.id ?? '')
+
+      if (clumpData) {
+        const clumpInfluences = findInfluenceGuides(clumpData.rootPoint, guides)
+        const clumpBasePoints = interpolateStrandPoints(clumpInfluences, clumpData.rootPoint, settings.guideSegments)
+        const clumpRng = mulberry32(clumpData.id)
+        const clumpGuidePoints = applyStrandEffects(clumpBasePoints, settings, clumpRng, 0.25)
+        shapedPoints = applyClumpAttraction(
+          basePoints,
+          clumpGuidePoints,
+          rootPoint,
+          clumpData.rootPoint,
+          settings.clumpStrength,
+        )
+      }
 
       // Procedural effects
-      const finalPoints = applyStrandEffects(basePoints, settings, rng)
+      const finalPoints = applyStrandEffects(
+        shapedPoints,
+        settings,
+        rng,
+        1 - settings.clumpStrength * 0.45,
+      )
+      const lengthScale = THREE.MathUtils.clamp(
+        0.45 + rootDensity.edgeRamp * 0.55 - rng() * settings.cutRandomness * 0.18,
+        0.25,
+        1,
+      )
+      const flyawayMask = THREE.MathUtils.clamp((1 - rootDensity.edgeRamp) * 0.55 + rng() * 0.45, 0, 1)
+      const finalScaledPoints = scalePointsFromRoot(finalPoints, lengthScale)
 
       strands.push({
         id: `tri${triIndex}-s${si}`,
         guideId: influences[0]?.guide.id ?? '',
-        points: finalPoints.map(vectorToTuple),
+        points: finalScaledPoints.map(vectorToTuple),
         widthRoot: asset.material.strandWidthRoot,
         widthTip: asset.material.strandWidthTip,
         random: strandSeedLocal / 0xffffffff,
+        rootDensity: rootDensity.density,
+        edgeDistance: rootDensity.distance,
+        lengthScale,
+        flyawayMask,
+        clumpId,
       })
     }
 

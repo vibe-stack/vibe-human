@@ -257,6 +257,8 @@ export type HairMaterialOptions = {
   widthScale?: number
   opacityScale?: number
   cardPattern?: number
+  densityShadowScale?: number
+  flyawayOpacityBoost?: number
 }
 
 type GroomUniforms = {
@@ -266,6 +268,8 @@ type GroomUniforms = {
   opacity:          ReturnType<typeof uniform>
   opacityScale:     ReturnType<typeof uniform>
   cardPattern:      ReturnType<typeof uniform>
+  densityShadowScale: ReturnType<typeof uniform>
+  flyawayOpacityBoost: ReturnType<typeof uniform>
   melanin:          ReturnType<typeof uniform>
   melaninRedness:   ReturnType<typeof uniform>
   melaninRandomize: ReturnType<typeof uniform>
@@ -297,6 +301,8 @@ export function createHairStrandMaterial(settings: HairMaterialSettings, options
     opacity:          uniform(settings.opacity),
     opacityScale:     uniform(options.opacityScale ?? 1),
     cardPattern:      uniform(options.cardPattern ?? 0),
+    densityShadowScale: uniform(options.densityShadowScale ?? 1),
+    flyawayOpacityBoost: uniform(options.flyawayOpacityBoost ?? 0),
     melanin:          uniform(settings.melanin),
     melaninRedness:   uniform(settings.melaninRedness),
     melaninRandomize: uniform(settings.melaninRandomize),
@@ -328,6 +334,9 @@ export function createHairStrandMaterial(settings: HairMaterialSettings, options
     const tParam = float(sideT.y).toVar()
     const tangentLocal = attribute('tangent', 'vec3') as any
     const seed = float(attribute('strandSeed', 'float') as any).toVar()
+    const rootDensity = float(attribute('rootDensity', 'float') as any).toVar()
+    const flyawayMask = float(attribute('flyawayMask', 'float') as any).toVar()
+    const lengthScale = float(attribute('lengthScale', 'float') as any).toVar()
 
     // View + clip-space transforms.
     const centerView = modelViewMatrix.mul(vec4(positionGeometry, 1.0))
@@ -391,6 +400,9 @@ export function createHairStrandMaterial(settings: HairMaterialSettings, options
     varyingProperty('float', 'vHairSide').assign(side)
     varyingProperty('float', 'vHairCoverage').assign(coverageScale)
     varyingProperty('float', 'vHairSeed').assign(seed)
+    varyingProperty('float', 'vRootDensity').assign(rootDensity)
+    varyingProperty('float', 'vFlyawayMask').assign(flyawayMask)
+    varyingProperty('float', 'vLengthScale').assign(lengthScale)
 
     return finalClip
   })()
@@ -402,6 +414,9 @@ export function createHairStrandMaterial(settings: HairMaterialSettings, options
   const worldPos = varyingProperty('vec3', 'vHairWorldPos') as any
   const coverage = varyingProperty('float', 'vHairCoverage') as any
   const seedF = varyingProperty('float', 'vHairSeed') as any
+  const rootDensityF = varyingProperty('float', 'vRootDensity') as any
+  const flyawayMaskF = varyingProperty('float', 'vFlyawayMask') as any
+  const lengthScaleF = varyingProperty('float', 'vLengthScale') as any
 
   // Melanin variation per strand: seed in [0,1] → offset in [-1, 1].
   const melaninJitter = seedF.mul(2.0).sub(1.0).mul(u.melaninRandomize)
@@ -439,7 +454,8 @@ export function createHairStrandMaterial(settings: HairMaterialSettings, options
   const strandColor = vec3(baseAbsorption).mul(vec3(u.tintColor))
   // The follicle/skin colour to blend toward at the root, dimmed slightly so
   // we don't over-bright the absolute base.
-  const follicleColor = vec3(u.rootFollicle).mul(float(1.0).sub(u.rootDarken).mul(0.5).add(0.4))
+  const densityRootDarken = saturate(rootDensityF.mul(float(1.0).sub(flyawayMaskF.mul(0.45))))
+  const follicleColor = vec3(u.rootFollicle).mul(float(1.0).sub(u.rootDarken.mul(densityRootDarken)).mul(0.5).add(0.34))
   // Blend: 0 at the root (full follicle), 1 by rootDarkenLength (full strand).
   const baseColor = mix(follicleColor, strandColor, rootRampSmooth)
 
@@ -449,9 +465,11 @@ export function createHairStrandMaterial(settings: HairMaterialSettings, options
   // many neighbours above them), tips poke out into the open.  We use a
   // smooth ramp from 1.0 at the root to 0.15 at the tip.  Per-strand seed
   // jitters this so the volume doesn't read as a uniform gradient.
+  const densityOcclusion = rootDensityF.mul(float(1.0).sub(flyawayMaskF.mul(0.65))).mul(u.densityShadowScale)
   const selfShadow = saturate(
-    float(1.0).sub(tParamF).mul(0.85).add(float(0.15))
-      .add(seedF.sub(0.5).mul(0.12))
+    float(1.0).sub(tParamF).mul(0.72).add(float(0.1))
+      .add(densityOcclusion.mul(float(1.0).sub(rootRampSmooth)).mul(0.75))
+      .add(seedF.sub(0.5).mul(0.1))
   )
 
   // Analytic ribbon-edge falloff and tip fade.
@@ -461,7 +479,11 @@ export function createHairStrandMaterial(settings: HairMaterialSettings, options
   const cardFiber = sin(sideF.mul(42.0).add(tParamF.mul(7.0)).add(seedF.mul(19.0))).mul(0.5).add(0.5)
   const cardFiberMask = mix(float(1.0), saturate(cardFiber.mul(1.25).add(0.08)), u.cardPattern)
   // Per-strand opacity jitter for flyaways — some strands are fainter.
-  const flyawayAlpha = float(1.0).sub(u.flyaway.mul(seedF).mul(0.4))
+  const flyawayAlpha = float(1.0)
+    .sub(u.flyaway.mul(seedF).mul(0.32))
+    .sub(flyawayMaskF.mul(0.34))
+    .add(flyawayMaskF.mul(u.flyawayOpacityBoost))
+  const lengthAlpha = mix(float(0.72), float(1.0), lengthScaleF)
   // Root alpha fade: smooth ramp 0 → 1 over the first `rootDarkenLength * 0.6`
   // of the strand.  The bottom of the strand is genuinely transparent, so
   // the painted scalp underneath shows through where the strand emerges —
@@ -469,7 +491,7 @@ export function createHairStrandMaterial(settings: HairMaterialSettings, options
   // hard strand on top of skin and expect it to read as a follicle.
   const rootAlphaRamp = saturate(tParamF.div(max(u.rootDarkenLength.mul(0.6), float(1e-3))))
   const rootAlpha = rootAlphaRamp.mul(rootAlphaRamp).mul(float(3.0).sub(rootAlphaRamp.mul(2.0)))
-  const coverageAlpha = u.opacity.mul(u.opacityScale).mul(edgeAA).mul(tipFade).mul(coverage).mul(flyawayAlpha).mul(rootAlpha).mul(cardFiberMask)
+  const coverageAlpha = u.opacity.mul(u.opacityScale).mul(edgeAA).mul(tipFade).mul(coverage).mul(flyawayAlpha).mul(lengthAlpha).mul(rootAlpha).mul(cardFiberMask)
 
   // Stochastic alpha dither.  Instead of a hard alphaTest cutoff (which gives
   // jagged silhouettes), we compare the coverage against a per-fragment hash
@@ -535,6 +557,8 @@ export function updateHairStrandMaterialUniforms(
   u.opacity.value          = settings.opacity
   if (options?.opacityScale !== undefined) u.opacityScale.value = options.opacityScale
   if (options?.cardPattern !== undefined) u.cardPattern.value = options.cardPattern
+  if (options?.densityShadowScale !== undefined) u.densityShadowScale.value = options.densityShadowScale
+  if (options?.flyawayOpacityBoost !== undefined) u.flyawayOpacityBoost.value = options.flyawayOpacityBoost
   u.melanin.value          = settings.melanin
   u.melaninRedness.value   = settings.melaninRedness
   u.melaninRandomize.value = settings.melaninRandomize

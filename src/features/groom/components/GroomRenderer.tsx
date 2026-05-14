@@ -10,12 +10,16 @@ const CARD_MATERIAL_OPTIONS: HairMaterialOptions = {
   widthScale: 10,
   opacityScale: 0.78,
   cardPattern: 1,
+  densityShadowScale: 1.35,
+  flyawayOpacityBoost: 0,
 }
 
 const DETAIL_MATERIAL_OPTIONS: HairMaterialOptions = {
   widthScale: 1,
   opacityScale: 0.92,
   cardPattern: 0,
+  densityShadowScale: 0.9,
+  flyawayOpacityBoost: 0.14,
 }
 
 // ---------------------------------------------------------------------------
@@ -23,12 +27,12 @@ const DETAIL_MATERIAL_OPTIONS: HairMaterialOptions = {
 // For each strand segment we emit two triangles (a quad) that the vertex
 // shader will expand into a camera-facing ribbon.  Each vertex stores:
 //   position – the centre-line point (shader expands it sideways)
-//   color    – interpolated root→tip color
 //   uv.x     – side: -1 (left) or +1 (right)
 //   uv.y     – t along the strand (0 root → 1 tip)
+//   rootDensity / flyawayMask / lengthScale – groom attributes for shading
 // ---------------------------------------------------------------------------
 function buildRibbonGeometry(
-  lines: ReadonlyArray<{ points: ReadonlyArray<readonly [number, number, number]>; random: number }>,
+  lines: ReadonlyArray<GeneratedStrand>,
 ) {
   // Pre-size the typed arrays.  Each strand contributes (pts*2) vertices and
   // (pts-1)*6 indices.
@@ -44,6 +48,9 @@ function buildRibbonGeometry(
   const tangents = new Float32Array(vertCount * 3)
   const uvs = new Float32Array(vertCount * 2)
   const seeds = new Float32Array(vertCount)
+  const rootDensities = new Float32Array(vertCount)
+  const flyawayMasks = new Float32Array(vertCount)
+  const lengthScales = new Float32Array(vertCount)
   const indices = new Uint32Array(idxCount)
 
   let vWrite = 0
@@ -55,6 +62,9 @@ function buildRibbonGeometry(
     if (pts.length < 2) continue
     const last = pts.length - 1
     const seed = line.random
+    const rootDensity = line.rootDensity
+    const flyawayMask = line.flyawayMask
+    const lengthScale = line.lengthScale
 
     for (let i = 0; i < pts.length; i += 1) {
       const t = i / last
@@ -78,6 +88,12 @@ function buildRibbonGeometry(
       uvs[(vWrite / 3) * 2 + 2] =  1; uvs[(vWrite / 3) * 2 + 3] = t
       seeds[vWrite / 3]     = seed
       seeds[vWrite / 3 + 1] = seed
+      rootDensities[vWrite / 3]     = rootDensity
+      rootDensities[vWrite / 3 + 1] = rootDensity
+      flyawayMasks[vWrite / 3]     = flyawayMask
+      flyawayMasks[vWrite / 3 + 1] = flyawayMask
+      lengthScales[vWrite / 3]     = lengthScale
+      lengthScales[vWrite / 3 + 1] = lengthScale
       vWrite += 6
 
       if (i > 0) {
@@ -98,6 +114,9 @@ function buildRibbonGeometry(
   geo.setAttribute('tangent', new THREE.BufferAttribute(tangents, 3))
   geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2))
   geo.setAttribute('strandSeed', new THREE.BufferAttribute(seeds, 1))
+  geo.setAttribute('rootDensity', new THREE.BufferAttribute(rootDensities, 1))
+  geo.setAttribute('flyawayMask', new THREE.BufferAttribute(flyawayMasks, 1))
+  geo.setAttribute('lengthScale', new THREE.BufferAttribute(lengthScales, 1))
   geo.setIndex(new THREE.BufferAttribute(indices, 1))
   return geo
 }
@@ -137,11 +156,19 @@ function selectVolumeCards(strands: readonly GeneratedStrand[], guideCount: numb
     420,
     Math.max(48, guideCount * 4, Math.round(Math.sqrt(strands.length) * 2.5)),
   )
-  const step = Math.max(1, Math.floor(strands.length / targetCount))
+  const candidates = strands
+    .filter((strand) => strand.rootDensity > 0.42 && strand.flyawayMask < 0.72)
+    .sort((a, b) => {
+      const scoreA = a.rootDensity * 2 + a.lengthScale - a.flyawayMask
+      const scoreB = b.rootDensity * 2 + b.lengthScale - b.flyawayMask
+      return scoreB - scoreA
+    })
+  const source = candidates.length >= 12 ? candidates : [...strands]
+  const step = Math.max(1, Math.floor(source.length / targetCount))
   const cards: GeneratedStrand[] = []
 
-  for (let index = 0; index < strands.length && cards.length < targetCount; index += step) {
-    cards.push(strands[index])
+  for (let index = 0; index < source.length && cards.length < targetCount; index += step) {
+    cards.push(source[index])
   }
 
   return cards
@@ -152,7 +179,12 @@ function selectDetailStrands(strands: readonly GeneratedStrand[]) {
 
   const stride = strands.length > 35_000 ? 6 : strands.length > 16_000 ? 4 : 3
   const flyawayThreshold = 0.86
-  return strands.filter((strand, index) => index % stride === 0 || strand.random > flyawayThreshold)
+  return strands.filter((strand, index) => (
+    index % stride === 0 ||
+    strand.random > flyawayThreshold ||
+    strand.flyawayMask > 0.68 ||
+    strand.rootDensity < 0.38
+  ))
 }
 
 export default function GroomRenderer() {
@@ -190,15 +222,13 @@ export default function GroomRenderer() {
     if (!showGeneratedStrands || !generatedStrands.length) return null
     const cards = selectVolumeCards(generatedStrands as GeneratedStrand[], activeGroomAsset.guides.length)
     if (!cards.length) return null
-    return buildRibbonGeometry(cards.map((s) => ({ points: s.points, random: s.random })))
+    return buildRibbonGeometry(cards)
   }, [activeGroomAsset.guides.length, generatedStrands, showGeneratedStrands])
 
   const strandGeometry = useMemo(() => {
     if (!showGeneratedStrands || !generatedStrands.length) return null
     const strands = selectDetailStrands(generatedStrands as GeneratedStrand[])
-    return buildRibbonGeometry(
-      strands.map((s) => ({ points: s.points, random: s.random })),
-    )
+    return buildRibbonGeometry(strands)
   }, [generatedStrands, showGeneratedStrands])
 
   const guideGeometry = useMemo(() => {

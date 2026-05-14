@@ -105,6 +105,11 @@ export type GeneratedStrand = {
   widthRoot: number
   widthTip: number
   random: number
+  rootDensity: number
+  edgeDistance: number
+  lengthScale: number
+  flyawayMask: number
+  clumpId: number
 }
 
 export type GroomTool =
