@@ -29,7 +29,7 @@ const DETAIL_MATERIAL_OPTIONS: HairMaterialOptions = {
 //   position – the centre-line point (shader expands it sideways)
 //   uv.x     – side: -1 (left) or +1 (right)
 //   uv.y     – t along the strand (0 root → 1 tip)
-//   rootDensity / flyawayMask / lengthScale – groom attributes for shading
+//   rootDensity / rootOcclusion / flyawayMask / lengthScale – groom attributes for shading
 // ---------------------------------------------------------------------------
 function buildRibbonGeometry(
   lines: ReadonlyArray<GeneratedStrand>,
@@ -49,6 +49,7 @@ function buildRibbonGeometry(
   const uvs = new Float32Array(vertCount * 2)
   const seeds = new Float32Array(vertCount)
   const rootDensities = new Float32Array(vertCount)
+  const rootOcclusions = new Float32Array(vertCount)
   const flyawayMasks = new Float32Array(vertCount)
   const lengthScales = new Float32Array(vertCount)
   const indices = new Uint32Array(idxCount)
@@ -63,6 +64,7 @@ function buildRibbonGeometry(
     const last = pts.length - 1
     const seed = line.random
     const rootDensity = line.rootDensity
+    const rootOcclusion = line.rootOcclusion ?? rootDensity
     const flyawayMask = line.flyawayMask
     const lengthScale = line.lengthScale
 
@@ -90,6 +92,8 @@ function buildRibbonGeometry(
       seeds[vWrite / 3 + 1] = seed
       rootDensities[vWrite / 3]     = rootDensity
       rootDensities[vWrite / 3 + 1] = rootDensity
+      rootOcclusions[vWrite / 3]     = rootOcclusion
+      rootOcclusions[vWrite / 3 + 1] = rootOcclusion
       flyawayMasks[vWrite / 3]     = flyawayMask
       flyawayMasks[vWrite / 3 + 1] = flyawayMask
       lengthScales[vWrite / 3]     = lengthScale
@@ -115,6 +119,7 @@ function buildRibbonGeometry(
   geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2))
   geo.setAttribute('strandSeed', new THREE.BufferAttribute(seeds, 1))
   geo.setAttribute('rootDensity', new THREE.BufferAttribute(rootDensities, 1))
+  geo.setAttribute('rootOcclusion', new THREE.BufferAttribute(rootOcclusions, 1))
   geo.setAttribute('flyawayMask', new THREE.BufferAttribute(flyawayMasks, 1))
   geo.setAttribute('lengthScale', new THREE.BufferAttribute(lengthScales, 1))
   geo.setIndex(new THREE.BufferAttribute(indices, 1))
@@ -157,10 +162,12 @@ function selectVolumeCards(strands: readonly GeneratedStrand[], guideCount: numb
     Math.max(96, guideCount * 8, Math.round(Math.sqrt(strands.length) * 5)),
   )
   const candidates = strands
-    .filter((strand) => strand.rootDensity > 0.42 && strand.flyawayMask < 0.72)
+    .filter((strand) => Math.max(strand.rootDensity, strand.rootOcclusion ?? 0) > 0.42 && strand.flyawayMask < 0.72)
     .sort((a, b) => {
-      const scoreA = a.rootDensity * 2 + a.lengthScale - a.flyawayMask
-      const scoreB = b.rootDensity * 2 + b.lengthScale - b.flyawayMask
+      const densityA = Math.max(a.rootDensity, a.rootOcclusion ?? 0)
+      const densityB = Math.max(b.rootDensity, b.rootOcclusion ?? 0)
+      const scoreA = densityA * 2.25 + a.lengthScale - a.flyawayMask
+      const scoreB = densityB * 2.25 + b.lengthScale - b.flyawayMask
       return scoreB - scoreA
     })
   const source = candidates.length >= 12 ? candidates : [...strands]

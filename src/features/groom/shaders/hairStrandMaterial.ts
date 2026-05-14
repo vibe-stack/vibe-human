@@ -335,6 +335,7 @@ export function createHairStrandMaterial(settings: HairMaterialSettings, options
     const tangentLocal = attribute('tangent', 'vec3') as any
     const seed = float(attribute('strandSeed', 'float') as any).toVar()
     const rootDensity = float(attribute('rootDensity', 'float') as any).toVar()
+    const rootOcclusion = float(attribute('rootOcclusion', 'float') as any).toVar()
     const flyawayMask = float(attribute('flyawayMask', 'float') as any).toVar()
     const lengthScale = float(attribute('lengthScale', 'float') as any).toVar()
 
@@ -401,6 +402,7 @@ export function createHairStrandMaterial(settings: HairMaterialSettings, options
     varyingProperty('float', 'vHairCoverage').assign(coverageScale)
     varyingProperty('float', 'vHairSeed').assign(seed)
     varyingProperty('float', 'vRootDensity').assign(rootDensity)
+    varyingProperty('float', 'vRootOcclusion').assign(rootOcclusion)
     varyingProperty('float', 'vFlyawayMask').assign(flyawayMask)
     varyingProperty('float', 'vLengthScale').assign(lengthScale)
 
@@ -415,6 +417,7 @@ export function createHairStrandMaterial(settings: HairMaterialSettings, options
   const coverage = varyingProperty('float', 'vHairCoverage') as any
   const seedF = varyingProperty('float', 'vHairSeed') as any
   const rootDensityF = varyingProperty('float', 'vRootDensity') as any
+  const rootOcclusionF = varyingProperty('float', 'vRootOcclusion') as any
   const flyawayMaskF = varyingProperty('float', 'vFlyawayMask') as any
   const lengthScaleF = varyingProperty('float', 'vLengthScale') as any
 
@@ -454,10 +457,13 @@ export function createHairStrandMaterial(settings: HairMaterialSettings, options
   const strandColor = vec3(baseAbsorption).mul(vec3(u.tintColor))
   // The follicle/skin colour to blend toward at the root, dimmed slightly so
   // we don't over-bright the absolute base.
-  const densityRootDarken = saturate(rootDensityF.mul(float(1.0).sub(flyawayMaskF.mul(0.45))))
+  const localDensity = max(rootDensityF, rootOcclusionF)
+  const densityRootDarken = saturate(localDensity.mul(float(1.0).sub(flyawayMaskF.mul(0.45))))
   const follicleColor = vec3(u.rootFollicle).mul(float(1.0).sub(u.rootDarken.mul(densityRootDarken)).mul(0.5).add(0.34))
   // Blend: 0 at the root (full follicle), 1 by rootDarkenLength (full strand).
-  const baseColor = mix(follicleColor, strandColor, rootRampSmooth)
+  const baseColorRaw = mix(follicleColor, strandColor, rootRampSmooth)
+  const rootCrowdDarken = float(1.0).sub(rootOcclusionF.mul(float(1.0).sub(rootRampSmooth)).mul(0.22))
+  const baseColor = baseColorRaw.mul(rootCrowdDarken)
 
   const viewDir = normalize(vec3(cameraPosition).sub(worldPos))
 
@@ -465,7 +471,7 @@ export function createHairStrandMaterial(settings: HairMaterialSettings, options
   // many neighbours above them), tips poke out into the open.  We use a
   // smooth ramp from 1.0 at the root to 0.15 at the tip.  Per-strand seed
   // jitters this so the volume doesn't read as a uniform gradient.
-  const densityOcclusion = rootDensityF.mul(float(1.0).sub(flyawayMaskF.mul(0.65))).mul(u.densityShadowScale)
+  const densityOcclusion = localDensity.mul(float(1.0).sub(flyawayMaskF.mul(0.65))).mul(u.densityShadowScale)
   const selfShadow = saturate(
     float(1.0).sub(tParamF).mul(0.72).add(float(0.1))
       .add(densityOcclusion.mul(float(1.0).sub(rootRampSmooth)).mul(0.75))
@@ -491,7 +497,7 @@ export function createHairStrandMaterial(settings: HairMaterialSettings, options
   // hard strand on top of skin and expect it to read as a follicle.
   const rootAlphaRamp = saturate(tParamF.div(max(u.rootDarkenLength.mul(0.6), float(1e-3))))
   const rootAlpha = rootAlphaRamp.mul(rootAlphaRamp).mul(float(3.0).sub(rootAlphaRamp.mul(2.0)))
-  const cardRootFill = u.cardPattern.mul(rootDensityF).mul(0.55)
+  const cardRootFill = u.cardPattern.mul(localDensity).mul(0.62)
   const effectiveRootAlpha = max(rootAlpha, cardRootFill)
   const coverageAlpha = u.opacity.mul(u.opacityScale).mul(edgeAA).mul(tipFade).mul(coverage).mul(flyawayAlpha).mul(lengthAlpha).mul(effectiveRootAlpha).mul(cardFiberMask)
 

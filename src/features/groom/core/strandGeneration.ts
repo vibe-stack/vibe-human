@@ -292,6 +292,81 @@ function scalePointsFromRoot(points: THREE.Vector3[], scale: number) {
   })
 }
 
+function applyRootOcclusion(strands: GeneratedStrand[], settings: GroomAsset['settings']) {
+  if (strands.length === 0) return
+
+  const strandsPerM2 = settings.strandDensity * 10_000
+  const expectedSpacing = Math.sqrt(1 / Math.max(strandsPerM2, 1))
+  const radius = Math.max(
+    expectedSpacing * 1.65,
+    settings.guideRadius * 2.5,
+    settings.clumpRadius * 1.35,
+    0.004,
+  )
+  const radiusSq = radius * radius
+  const invRadius = 1 / radius
+  const buckets = new Map<string, number[]>()
+  const roots = new Float32Array(strands.length * 3)
+  const bucketKey = (x: number, y: number, z: number) => `${x}:${y}:${z}`
+
+  for (let i = 0; i < strands.length; i += 1) {
+    const root = strands[i].points[0]
+    roots[i * 3] = root[0]
+    roots[i * 3 + 1] = root[1]
+    roots[i * 3 + 2] = root[2]
+
+    const bx = Math.floor(root[0] * invRadius)
+    const by = Math.floor(root[1] * invRadius)
+    const bz = Math.floor(root[2] * invRadius)
+    const key = bucketKey(bx, by, bz)
+    const bucket = buckets.get(key)
+    if (bucket) bucket.push(i)
+    else buckets.set(key, [i])
+  }
+
+  // A linear radial kernel has roughly one third the full disk/sphere count.
+  // Normalize against the density setting so sparse grooms do not become
+  // over-dark just because a single neighbour happens to be close.
+  const expectedWeightedNeighbours = Math.max(1.35, Math.PI * radiusSq * strandsPerM2 * 0.34)
+
+  for (let i = 0; i < strands.length; i += 1) {
+    const px = roots[i * 3]
+    const py = roots[i * 3 + 1]
+    const pz = roots[i * 3 + 2]
+    const bx = Math.floor(px * invRadius)
+    const by = Math.floor(py * invRadius)
+    const bz = Math.floor(pz * invRadius)
+    let localWeight = 0
+
+    for (let dz = -1; dz <= 1; dz += 1) {
+      for (let dy = -1; dy <= 1; dy += 1) {
+        for (let dx = -1; dx <= 1; dx += 1) {
+          const bucket = buckets.get(bucketKey(bx + dx, by + dy, bz + dz))
+          if (!bucket) continue
+
+          for (const other of bucket) {
+            if (other === i) continue
+            const ox = roots[other * 3]
+            const oy = roots[other * 3 + 1]
+            const oz = roots[other * 3 + 2]
+            const distSq = (px - ox) ** 2 + (py - oy) ** 2 + (pz - oz) ** 2
+            if (distSq >= radiusSq) continue
+            localWeight += 1 - Math.sqrt(distSq) * invRadius
+          }
+        }
+      }
+    }
+
+    const neighbourOcclusion = THREE.MathUtils.clamp(localWeight / expectedWeightedNeighbours, 0, 1)
+    const smoothed = neighbourOcclusion * neighbourOcclusion * (3 - 2 * neighbourOcclusion)
+    strands[i].rootOcclusion = THREE.MathUtils.clamp(
+      smoothed * 0.78 + strands[i].rootDensity * 0.22,
+      0,
+      1,
+    )
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Per-strand procedural effects (frizz, curl, noise) — applied after
 // interpolation so the overall shape comes from guides, effects are on top.
@@ -442,6 +517,7 @@ export function generateStrandsFromGuides(
         widthTip: asset.material.strandWidthTip,
         random: strandSeedLocal / 0xffffffff,
         rootDensity: rootDensity.density,
+        rootOcclusion: 0,
         edgeDistance: rootDensity.distance,
         lengthScale,
         flyawayMask,
@@ -452,5 +528,6 @@ export function generateStrandsFromGuides(
     if (strands.length >= MAX_STRAND_COUNT) break
   }
 
+  applyRootOcclusion(strands, settings)
   return strands
 }

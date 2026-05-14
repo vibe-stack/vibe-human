@@ -106,6 +106,7 @@ export type GeneratedStrand = {
   widthTip: number
   random: number
   rootDensity: number
+  rootOcclusion: number
   edgeDistance: number
   lengthScale: number
   flyawayMask: number
