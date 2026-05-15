@@ -22,6 +22,8 @@ import type {
   GeneratedStrand,
   GroomAsset,
   GroomModifierSettings,
+  ScalpMapChannel,
+  ScalpPaintChannel,
   GroomTool,
   HairMaterialSettings,
   RegisteredGroomMesh,
@@ -33,6 +35,7 @@ type GroomState = {
   activeGroomTool: GroomTool
   brushSize: number
   brushStrength: number
+  activeScalpPaintChannel: ScalpPaintChannel
   showGuides: boolean
   showGeneratedStrands: boolean
   showScalpMask: boolean
@@ -170,6 +173,7 @@ export const groomStore = proxy<GroomState>({
   activeGroomTool: 'none',
   brushSize: 0.045,
   brushStrength: 0.7,
+  activeScalpPaintChannel: 'mask',
   showGuides: true,
   showGeneratedStrands: true,
   showScalpMask: true,
@@ -210,6 +214,8 @@ export function registerGroomMeshes(meshes: THREE.Mesh[]) {
   if (groomStore.activeGroomAsset.targetMeshId && !registeredMeshes.has(groomStore.activeGroomAsset.targetMeshId)) {
     groomStore.activeGroomAsset.targetMeshId = null
     groomStore.activeGroomAsset.scalpMask.selectedTriangleIndices = []
+    groomStore.activeGroomAsset.scalpMask.maps = {}
+    groomStore.activeGroomAsset.scalpMask.flowMap = {}
     setGuides([])
   }
 }
@@ -226,6 +232,10 @@ export function setBrushStrength(value: number) {
   groomStore.brushStrength = Math.min(1, Math.max(0.05, value))
 }
 
+export function setActiveScalpPaintChannel(channel: ScalpPaintChannel) {
+  groomStore.activeScalpPaintChannel = channel
+}
+
 export function setSceneSelectionMeshId(meshId: string | null) {
   groomStore.sceneSelectionMeshId = meshId
 }
@@ -235,6 +245,8 @@ export function useSelectedMeshAsGroomTarget() {
 
   groomStore.activeGroomAsset.targetMeshId = groomStore.sceneSelectionMeshId
   groomStore.activeGroomAsset.scalpMask.selectedTriangleIndices = []
+  groomStore.activeGroomAsset.scalpMask.maps = {}
+  groomStore.activeGroomAsset.scalpMask.flowMap = {}
   groomStore.selectedGuideId = null
   setGuides([])
   scheduleScalpAttrSync()
@@ -242,8 +254,16 @@ export function useSelectedMeshAsGroomTarget() {
 
 export function clearScalpMask() {
   groomStore.activeGroomAsset.scalpMask.selectedTriangleIndices = []
+  groomStore.activeGroomAsset.scalpMask.maps = {}
+  groomStore.activeGroomAsset.scalpMask.flowMap = {}
   groomStore.generatedStrands = []
   scheduleScalpAttrSync()
+}
+
+export function clearScalpPaintMaps() {
+  groomStore.activeGroomAsset.scalpMask.maps = {}
+  groomStore.activeGroomAsset.scalpMask.flowMap = {}
+  regenerateGeneratedStrandsInternal()
 }
 
 // Working set kept in sync with the proxy so we don't pay O(N log N) on
@@ -276,6 +296,76 @@ export function updateScalpMaskTriangles(triangleIndices: number[], mode: 'add' 
   scalpMaskSetVersion = next
   groomStore.activeGroomAsset.scalpMask.selectedTriangleIndices = next
   scheduleScalpAttrSync()
+}
+
+export function updateScalpMapTriangles(
+  triangleIndices: number[],
+  channel: ScalpMapChannel,
+  mode: 'add' | 'remove',
+) {
+  const selected = ensureScalpMaskSet()
+  const maps = groomStore.activeGroomAsset.scalpMask.maps ?? {}
+  const nextChannel = { ...(maps[channel] ?? {}) }
+  const delta = groomStore.brushStrength * 0.18 * (mode === 'add' ? 1 : -1)
+  let changed = false
+
+  for (const triangleIndex of triangleIndices) {
+    if (!selected.has(triangleIndex)) continue
+    const nextValue = Math.min(1, Math.max(-1, (nextChannel[triangleIndex] ?? 0) + delta))
+    if (Math.abs(nextValue) < 0.015) {
+      if (nextChannel[triangleIndex] !== undefined) {
+        delete nextChannel[triangleIndex]
+        changed = true
+      }
+      continue
+    }
+    if (nextChannel[triangleIndex] !== nextValue) {
+      nextChannel[triangleIndex] = nextValue
+      changed = true
+    }
+  }
+
+  if (!changed) return
+  groomStore.activeGroomAsset.scalpMask.maps = {
+    ...maps,
+    [channel]: nextChannel,
+  }
+  if (!dragInProgress) regenerateGeneratedStrandsInternal()
+}
+
+export function updateScalpFlowTriangles(
+  triangleIndices: number[],
+  flowLocal: THREE.Vector3,
+  mode: 'add' | 'remove',
+) {
+  const selected = ensureScalpMaskSet()
+  const current = { ...(groomStore.activeGroomAsset.scalpMask.flowMap ?? {}) }
+  let changed = false
+
+  if (mode === 'remove') {
+    for (const triangleIndex of triangleIndices) {
+      if (current[triangleIndex] !== undefined) {
+        delete current[triangleIndex]
+        changed = true
+      }
+    }
+  } else if (flowLocal.lengthSq() > 1e-10) {
+    const nextDirection = flowLocal.clone().normalize()
+    const blend = groomStore.brushStrength
+    for (const triangleIndex of triangleIndices) {
+      if (!selected.has(triangleIndex)) continue
+      const previous = current[triangleIndex]
+      const direction = previous
+        ? new THREE.Vector3(previous[0], previous[1], previous[2]).lerp(nextDirection, blend).normalize()
+        : nextDirection
+      current[triangleIndex] = [direction.x, direction.y, direction.z]
+      changed = true
+    }
+  }
+
+  if (!changed) return
+  groomStore.activeGroomAsset.scalpMask.flowMap = current
+  if (!dragInProgress) regenerateGeneratedStrandsInternal()
 }
 
 export function addGuideAtSurfacePoint(mesh: THREE.Mesh, triangleIndex: number, pointLocal: THREE.Vector3) {
@@ -394,6 +484,11 @@ export function regenerateGeneratedStrands() {
 export function replaceActiveGroomAsset(asset: GroomAsset) {
   groomStore.activeGroomAsset = {
     ...asset,
+    scalpMask: {
+      ...asset.scalpMask,
+      maps: asset.scalpMask.maps ?? {},
+      flowMap: asset.scalpMask.flowMap ?? {},
+    },
     settings: clampGroomSettings(asset.settings),
   }
   groomStore.selectedGuideId = asset.guides[0]?.id ?? null

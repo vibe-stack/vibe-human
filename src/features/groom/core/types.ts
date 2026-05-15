@@ -33,6 +33,20 @@ export type GroomModifierSettings = {
   cutRandomness: number
 }
 
+export type ScalpMapChannel =
+  | 'density'
+  | 'length'
+  | 'flyaway'
+  | 'clumpStrength'
+  | 'clumpRadius'
+  | 'hairlineSoftness'
+  | 'parting'
+
+export type ScalpPaintChannel = 'mask' | 'flow' | ScalpMapChannel
+
+export type ScalpScalarMaps = Partial<Record<ScalpMapChannel, Record<number, number>>>
+export type ScalpFlowMap = Record<number, Vec3Tuple>
+
 /**
  * Production-grade hair material settings, modelled after MetaHuman / XGen /
  * Karis (UE) / Disney Chiang.
@@ -91,6 +105,8 @@ export type GroomAsset = {
   scalpMask: {
     selectedTriangleIndices: number[]
     selectedVertexIndices?: number[]
+    maps?: ScalpScalarMaps
+    flowMap?: ScalpFlowMap
   }
   guides: GuideCurve[]
   settings: GroomModifierSettings
@@ -107,6 +123,14 @@ export type GeneratedStrand = {
   random: number
   rootDensity: number
   rootOcclusion: number
+  mapDensity: number
+  mapLength: number
+  mapFlyaway: number
+  mapClumpStrength: number
+  mapClumpRadius: number
+  mapHairlineSoftness: number
+  mapParting: number
+  rootFlow: Vec3Tuple | null
   edgeDistance: number
   lengthScale: number
   flyawayMask: number

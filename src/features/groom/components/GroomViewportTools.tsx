@@ -15,10 +15,12 @@ import {
   getRegisteredGroomMesh,
   groomStore,
   setSceneSelectionMeshId,
+  updateScalpFlowTriangles,
+  updateScalpMapTriangles,
   updateGuideTools,
   updateScalpMaskTriangles,
 } from '../store/groomStore'
-import type { GroomTool } from '../core/types'
+import type { GroomAsset, GroomTool, ScalpMapChannel, ScalpPaintChannel } from '../core/types'
 
 type BrushHit = {
   worldPos: THREE.Vector3
@@ -42,6 +44,7 @@ type DragState = {
   lastClientY: number
   sourceMesh: THREE.Mesh
   tool: GroomTool
+  scalpPaintChannel: ScalpPaintChannel
 }
 
 const BRUSH_TOOLS = new Set<GroomTool>(['paint-scalp', 'erase-scalp', 'add-guide', 'comb', 'smooth', 'cut', 'delete-guide'])
@@ -49,29 +52,58 @@ const MASK_TOOLS = new Set<GroomTool>(['paint-scalp', 'erase-scalp'])
 const GUIDE_EDIT_TOOLS = new Set<GroomTool>(['comb', 'smooth', 'cut', 'delete-guide'])
 
 // -----------------------------------------------------------------------------
-// Scalp-mask visualization geometry
+// Scalp paint visualization geometry
 // -----------------------------------------------------------------------------
 
-function buildScalpMaskGeometry(mesh: THREE.Mesh, triangleIndices: ReadonlyArray<number>) {
-  const geometry = mesh.geometry
-  if (!(geometry instanceof THREE.BufferGeometry) || !triangleIndices.length) return null
+function scalarMapChannel(channel: ScalpPaintChannel): ScalpMapChannel | null {
+  return channel === 'mask' || channel === 'flow' ? null : channel
+}
 
-  const positions = new Float32Array(triangleIndices.length * 18)
-  const normals = new Float32Array(triangleIndices.length * 18)
+function overlayColorForValue(value: number, out: THREE.Color) {
+  const strength = THREE.MathUtils.clamp(Math.abs(value), 0.18, 1)
+  const positive = new THREE.Color('#f472b6')
+  const negative = new THREE.Color('#38bdf8')
+  const base = value >= 0 ? positive : negative
+  out.set('#111827').lerp(base, strength)
+  return out
+}
+
+function buildScalpOverlayGeometry(mesh: THREE.Mesh, asset: GroomAsset, channel: ScalpPaintChannel) {
+  const geometry = mesh.geometry
+  if (!(geometry instanceof THREE.BufferGeometry)) return null
+
+  const scalarChannel = scalarMapChannel(channel)
+  const triangleEntries = scalarChannel
+    ? Object.entries(asset.scalpMask.maps?.[scalarChannel] ?? {})
+        .map(([key, value]) => [Number(key), value] as const)
+        .filter(([triangleIndex, value]) => Number.isInteger(triangleIndex) && Math.abs(value) > 0.015)
+    : asset.scalpMask.selectedTriangleIndices.map((triangleIndex) => [triangleIndex, 1] as const)
+
+  if (!triangleEntries.length) return null
+
+  const positions = new Float32Array(triangleEntries.length * 18)
+  const normals = new Float32Array(triangleEntries.length * 18)
+  const colors = new Float32Array(triangleEntries.length * 18)
+  const color = new THREE.Color()
   let cursor = 0
-  for (const triangleIndex of triangleIndices) {
+  for (const [triangleIndex, value] of triangleEntries) {
     const surface = getTriangleSurfaceData(geometry, triangleIndex)
     if (!surface) continue
     const { a, b, c, normal } = surface
+    if (scalarChannel) overlayColorForValue(value, color)
+    else color.set('#22c55e')
     // Write CCW + CW windings so it's visible from either side without DoubleSide.
     const verts = [a, b, c, a, c, b]
     for (const v of verts) {
-      positions[cursor]     = v.x
-      positions[cursor + 1] = v.y
-      positions[cursor + 2] = v.z
+      positions[cursor]     = v.x + normal.x * 0.0008
+      positions[cursor + 1] = v.y + normal.y * 0.0008
+      positions[cursor + 2] = v.z + normal.z * 0.0008
       normals[cursor]       = normal.x
       normals[cursor + 1]   = normal.y
       normals[cursor + 2]   = normal.z
+      colors[cursor]        = color.r
+      colors[cursor + 1]    = color.g
+      colors[cursor + 2]    = color.b
       cursor += 3
     }
   }
@@ -79,6 +111,56 @@ function buildScalpMaskGeometry(mesh: THREE.Mesh, triangleIndices: ReadonlyArray
   const result = new THREE.BufferGeometry()
   result.setAttribute('position', new THREE.Float32BufferAttribute(positions.subarray(0, cursor), 3))
   result.setAttribute('normal', new THREE.Float32BufferAttribute(normals.subarray(0, cursor), 3))
+  result.setAttribute('color', new THREE.Float32BufferAttribute(colors.subarray(0, cursor), 3))
+  return result
+}
+
+function buildScalpFlowGeometry(mesh: THREE.Mesh, asset: GroomAsset) {
+  const geometry = mesh.geometry
+  if (!(geometry instanceof THREE.BufferGeometry)) return null
+  const entries = Object.entries(asset.scalpMask.flowMap ?? {})
+    .map(([key, flow]) => [Number(key), flow] as const)
+    .filter(([triangleIndex, flow]) => Number.isInteger(triangleIndex) && Array.isArray(flow))
+  if (!entries.length) return null
+
+  const maxVectors = 1800
+  const step = Math.max(1, Math.ceil(entries.length / maxVectors))
+  const positions: number[] = []
+  const colors: number[] = []
+  const start = new THREE.Vector3()
+  const end = new THREE.Vector3()
+  const dir = new THREE.Vector3()
+  const side = new THREE.Vector3()
+
+  for (let i = 0; i < entries.length; i += step) {
+    const [triangleIndex, flow] = entries[i]
+    const surface = getTriangleSurfaceData(geometry, triangleIndex)
+    if (!surface) continue
+
+    dir.set(flow[0], flow[1], flow[2])
+    dir.addScaledVector(surface.normal, -dir.dot(surface.normal))
+    if (dir.lengthSq() <= 1e-10) continue
+    dir.normalize()
+
+    const span = Math.sqrt(new THREE.Triangle(surface.a, surface.b, surface.c).getArea()) * 1.45
+    const length = THREE.MathUtils.clamp(span, 0.006, 0.03)
+    start.copy(surface.centroid).addScaledVector(surface.normal, 0.002)
+    end.copy(start).addScaledVector(dir, length)
+    side.crossVectors(surface.normal, dir).normalize()
+
+    const headA = end.clone().addScaledVector(dir, -length * 0.28).addScaledVector(side, length * 0.13)
+    const headB = end.clone().addScaledVector(dir, -length * 0.28).addScaledVector(side, -length * 0.13)
+    positions.push(
+      start.x, start.y, start.z, end.x, end.y, end.z,
+      headA.x, headA.y, headA.z, end.x, end.y, end.z,
+      headB.x, headB.y, headB.z, end.x, end.y, end.z,
+    )
+    for (let c = 0; c < 6; c += 1) colors.push(0.56, 0.82, 1)
+  }
+
+  const result = new THREE.BufferGeometry()
+  result.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  result.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
   return result
 }
 
@@ -148,6 +230,11 @@ function BrushCursor({
 
 function FollowerGroup({ source, children }: { source: THREE.Mesh; children: React.ReactNode }) {
   const ref = useRef<THREE.Group>(null)
+  useLayoutEffect(() => {
+    if (!ref.current) return
+    source.updateWorldMatrix(true, false)
+    ref.current.matrix.copy(source.matrixWorld)
+  }, [source])
   useFrame(() => {
     if (!ref.current) return
     ref.current.matrix.copy(source.matrixWorld)
@@ -336,7 +423,7 @@ function pointerDeltaInCameraPlane(
 // -----------------------------------------------------------------------------
 
 export default function GroomViewportTools() {
-  const { activeGroomAsset, activeGroomTool, brushSize, brushStrength, showScalpMask } = useSnapshot(groomStore)
+  const { activeGroomAsset, activeGroomTool, brushSize, brushStrength, activeScalpPaintChannel, showScalpMask } = useSnapshot(groomStore)
   const targetMesh = getRegisteredGroomMesh(activeGroomAsset.targetMeshId)
   const { gl, camera } = useThree()
 
@@ -346,13 +433,13 @@ export default function GroomViewportTools() {
 
   // Stable refs for values used inside DOM event handlers so we don't have
   // to re-install listeners on every change.
-  const stateRef = useRef({ targetMesh, activeGroomTool, brushSize, brushStrength, isBrushTool })
+  const stateRef = useRef({ targetMesh, activeGroomTool, brushSize, brushStrength, activeScalpPaintChannel, isBrushTool })
   const cameraRef = useRef(camera)
 
   useLayoutEffect(() => {
-    stateRef.current = { targetMesh, activeGroomTool, brushSize, brushStrength, isBrushTool }
+    stateRef.current = { targetMesh, activeGroomTool, brushSize, brushStrength, activeScalpPaintChannel, isBrushTool }
     cameraRef.current = camera
-  }, [targetMesh, activeGroomTool, brushSize, brushStrength, isBrushTool, camera])
+  }, [targetMesh, activeGroomTool, brushSize, brushStrength, activeScalpPaintChannel, isBrushTool, camera])
 
   // ---------------------------------------------------------------------------
   // Scalp-mask visualization (rebuilt only when the set actually changes)
@@ -360,9 +447,10 @@ export default function GroomViewportTools() {
 
   const maskMaterial = useMemo(() => {
     const mat = new THREE.MeshBasicMaterial({
-      color: '#22c55e',
+      color: '#ffffff',
+      vertexColors: true,
       transparent: true,
-      opacity: 0.35,
+      opacity: 0.48,
       depthWrite: false,
       depthTest: true,
       side: THREE.DoubleSide,
@@ -373,36 +461,57 @@ export default function GroomViewportTools() {
     mat.polygonOffsetUnits = -2
     return mat
   }, [])
+  const flowMaterial = useMemo(
+    () => new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9, depthWrite: false, depthTest: true, toneMapped: false }),
+    [],
+  )
 
   // The scalp-mask geometry can grow to thousands of triangles during a paint
   // drag.  Rebuilding it from scratch on every pointermove is what stutters
   // the brush, so we coalesce rebuilds to one per animation frame and keep a
   // single buffer geometry that we resize in place.
   const scalpMaskGeometry = useMemo(() => new THREE.BufferGeometry(), [])
+  const scalpFlowGeometry = useMemo(() => new THREE.BufferGeometry(), [])
   const maskGeometryDirty = useRef(0)
-  const lastMaskTriangleIds = useRef<readonly number[] | null>(null)
 
   useEffect(() => {
     if (!targetMesh || !showScalpMask) {
       scalpMaskGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(0), 3))
-      lastMaskTriangleIds.current = null
+      scalpMaskGeometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(0), 3))
+      scalpFlowGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(0), 3))
+      scalpFlowGeometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(0), 3))
       return
     }
 
     const rebuild = () => {
-      const ids = groomStore.activeGroomAsset.scalpMask.selectedTriangleIndices
-      if (ids === lastMaskTriangleIds.current) return
-      lastMaskTriangleIds.current = ids
-      const built = buildScalpMaskGeometry(targetMesh, ids)
+      const asset = groomStore.activeGroomAsset as GroomAsset
+      const built = buildScalpOverlayGeometry(targetMesh, asset, groomStore.activeScalpPaintChannel)
       const pos = built?.getAttribute('position')
       const nor = built?.getAttribute('normal')
-      if (pos && nor) {
+      const col = built?.getAttribute('color')
+      if (pos && nor && col) {
         scalpMaskGeometry.setAttribute('position', pos)
         scalpMaskGeometry.setAttribute('normal', nor)
+        scalpMaskGeometry.setAttribute('color', col)
       } else {
         scalpMaskGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(0), 3))
+        scalpMaskGeometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(0), 3))
       }
       built?.dispose()
+
+      const flowBuilt = groomStore.activeScalpPaintChannel === 'flow'
+        ? buildScalpFlowGeometry(targetMesh, asset)
+        : null
+      const flowPos = flowBuilt?.getAttribute('position')
+      const flowCol = flowBuilt?.getAttribute('color')
+      if (flowPos && flowCol) {
+        scalpFlowGeometry.setAttribute('position', flowPos)
+        scalpFlowGeometry.setAttribute('color', flowCol)
+      } else {
+        scalpFlowGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(0), 3))
+        scalpFlowGeometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(0), 3))
+      }
+      flowBuilt?.dispose()
     }
 
     rebuild()
@@ -420,22 +529,20 @@ export default function GroomViewportTools() {
     }
     raf = requestAnimationFrame(loop)
     return () => cancelAnimationFrame(raf)
-  }, [targetMesh, showScalpMask, scalpMaskGeometry])
+  }, [targetMesh, showScalpMask, activeScalpPaintChannel, scalpMaskGeometry, scalpFlowGeometry])
 
-  // Listen to the proxy directly (sidesteps the useSnapshot full-render
-  // pathway) and flag the mask geometry dirty whenever the triangle set
-  // changes — Valtio's subscribe is fine-grained enough that this only fires
-  // when the mask actually changes.
+  // Listen to the root proxy so imported/replaced assets and channel map
+  // mutations also rebuild.  The actual geometry work is still rAF-coalesced.
   useEffect(() => {
-    let lastIds = groomStore.activeGroomAsset.scalpMask.selectedTriangleIndices
-    return subscribe(groomStore.activeGroomAsset.scalpMask, () => {
-      const ids = groomStore.activeGroomAsset.scalpMask.selectedTriangleIndices
-      if (ids !== lastIds) { lastIds = ids; maskGeometryDirty.current = 1 }
+    return subscribe(groomStore, () => {
+      maskGeometryDirty.current = 1
     })
   }, [])
 
   useEffect(() => () => maskMaterial.dispose(), [maskMaterial])
+  useEffect(() => () => flowMaterial.dispose(), [flowMaterial])
   useEffect(() => () => scalpMaskGeometry.dispose(), [scalpMaskGeometry])
+  useEffect(() => () => scalpFlowGeometry.dispose(), [scalpFlowGeometry])
 
   // ---------------------------------------------------------------------------
   // DOM-level pointer handling — bypasses R3F entirely for continuous drag
@@ -491,7 +598,7 @@ export default function GroomViewportTools() {
 
     const onPointerDown = (event: PointerEvent) => {
       if (event.button !== 0) return
-      const { isBrushTool: brushy, activeGroomTool: tool, targetMesh: mesh, brushSize: bs, brushStrength: bst } = stateRef.current
+      const { isBrushTool: brushy, activeGroomTool: tool, activeScalpPaintChannel: scalpPaintChannel, targetMesh: mesh, brushSize: bs, brushStrength: bst } = stateRef.current
       if (!brushy || !mesh) return
 
       const hit = resolveHit(event)
@@ -518,13 +625,21 @@ export default function GroomViewportTools() {
           lastClientY: event.clientY,
           sourceMesh: hit.sourceMesh,
           tool,
+          scalpPaintChannel,
         }
         beginGroomDrag()
         const affected = collectTrianglesInBrush(
           hit.sourceMesh, localPoint,
           bs * THREE.MathUtils.lerp(0.45, 1.1, bst),
         )
-        updateScalpMaskTriangles(affected.length ? affected : [idx], tool === 'paint-scalp' ? 'add' : 'remove')
+        const triangles = affected.length ? affected : [idx]
+        if (scalpPaintChannel === 'mask') {
+          updateScalpMaskTriangles(triangles, tool === 'paint-scalp' ? 'add' : 'remove')
+        } else if (scalpPaintChannel !== 'flow') {
+          updateScalpMapTriangles(triangles, scalpPaintChannel, tool === 'paint-scalp' ? 'add' : 'remove')
+        } else {
+          updateScalpFlowTriangles(triangles, new THREE.Vector3(), tool === 'paint-scalp' ? 'add' : 'remove')
+        }
         return
       }
 
@@ -544,6 +659,7 @@ export default function GroomViewportTools() {
           lastClientY: event.clientY,
           sourceMesh: hit.sourceMesh,
           tool,
+          scalpPaintChannel,
         }
         updateGuideTools('smooth', localPoint)
         return
@@ -558,6 +674,7 @@ export default function GroomViewportTools() {
           lastClientY: event.clientY,
           sourceMesh: hit.sourceMesh,
           tool,
+          scalpPaintChannel,
         }
         updateGuideTools('cut', localPoint)
         return
@@ -576,6 +693,7 @@ export default function GroomViewportTools() {
           lastClientY: event.clientY,
           sourceMesh: hit.sourceMesh,
           tool,
+          scalpPaintChannel,
         }
         beginGroomDrag()
       }
@@ -599,7 +717,18 @@ export default function GroomViewportTools() {
           bs * THREE.MathUtils.lerp(0.45, 1.1, bst),
         )
         if (affected.length) {
-          updateScalpMaskTriangles(affected, drag.tool === 'paint-scalp' ? 'add' : 'remove')
+          if (drag.scalpPaintChannel === 'mask') {
+            updateScalpMaskTriangles(affected, drag.tool === 'paint-scalp' ? 'add' : 'remove')
+          } else if (drag.scalpPaintChannel === 'flow') {
+            updateScalpFlowTriangles(
+              affected,
+              localPoint.clone().sub(drag.lastPointLocal),
+              drag.tool === 'paint-scalp' ? 'add' : 'remove',
+            )
+          } else {
+            updateScalpMapTriangles(affected, drag.scalpPaintChannel, drag.tool === 'paint-scalp' ? 'add' : 'remove')
+          }
+          drag.lastPointLocal.copy(localPoint)
         }
         return
       }
@@ -675,6 +804,9 @@ export default function GroomViewportTools() {
           <mesh geometry={scalpMaskGeometry} renderOrder={59}>
             <primitive object={maskMaterial} attach="material" />
           </mesh>
+          <lineSegments geometry={scalpFlowGeometry} renderOrder={60}>
+            <primitive object={flowMaterial} attach="material" />
+          </lineSegments>
         </FollowerGroup>
       )}
 

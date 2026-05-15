@@ -120,7 +120,7 @@ export function createEmptyGroomAsset(name = 'Hair Groom'): GroomAsset {
     id: createGroomEntityId('groom'),
     name,
     targetMeshId: null,
-    scalpMask: { selectedTriangleIndices: [] },
+    scalpMask: { selectedTriangleIndices: [], maps: {}, flowMap: {} },
     guides: [],
     settings: createDefaultGroomSettings(),
     material: createDefaultHairMaterialSettings(),

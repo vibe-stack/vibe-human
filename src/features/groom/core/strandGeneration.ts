@@ -91,6 +91,17 @@ type ScalpDensityData = {
   maxDistance: number
 }
 
+type TriangleMapValues = {
+  density: number
+  length: number
+  flyaway: number
+  clumpStrength: number
+  clumpRadius: number
+  hairlineSoftness: number
+  parting: number
+  flow: THREE.Vector3 | null
+}
+
 function findInfluenceGuides(
   rootPoint: THREE.Vector3,
   guides: GuideCurve[],
@@ -283,6 +294,22 @@ function rootDensityForTriangle(triangleIndex: number, densityData: ScalpDensity
   return { distance, edgeRamp, interiorRamp, density }
 }
 
+function readTriangleMapValues(asset: GroomAsset, triangleIndex: number): TriangleMapValues {
+  const maps = asset.scalpMask.maps
+  return {
+    density: maps?.density?.[triangleIndex] ?? 0,
+    length: maps?.length?.[triangleIndex] ?? 0,
+    flyaway: maps?.flyaway?.[triangleIndex] ?? 0,
+    clumpStrength: maps?.clumpStrength?.[triangleIndex] ?? 0,
+    clumpRadius: maps?.clumpRadius?.[triangleIndex] ?? 0,
+    hairlineSoftness: maps?.hairlineSoftness?.[triangleIndex] ?? 0,
+    parting: maps?.parting?.[triangleIndex] ?? 0,
+    flow: asset.scalpMask.flowMap?.[triangleIndex]
+      ? tupleToVector(asset.scalpMask.flowMap[triangleIndex]).normalize()
+      : null,
+  }
+}
+
 function scalePointsFromRoot(points: THREE.Vector3[], scale: number) {
   if (points.length < 2 || scale === 1) return points
   const root = points[0].clone()
@@ -290,6 +317,55 @@ function scalePointsFromRoot(points: THREE.Vector3[], scale: number) {
     if (index === 0) return point.clone()
     return point.clone().sub(root).multiplyScalar(scale).add(root)
   })
+}
+
+function applyRootFlow(
+  points: THREE.Vector3[],
+  flowDirection: THREE.Vector3 | null,
+  surfaceNormal: THREE.Vector3,
+  parting: number,
+  seed: number,
+  clumpRadius: number,
+) {
+  if (points.length < 2) return points
+  const root = points[0].clone()
+  const result: THREE.Vector3[] = []
+  const flow = flowDirection?.clone()
+    .addScaledVector(surfaceNormal, -(flowDirection?.dot(surfaceNormal) ?? 0))
+    .normalize() ?? null
+  const side = flow
+    ? new THREE.Vector3().crossVectors(surfaceNormal, flow).normalize()
+    : null
+  const partSign = seed > 0.5 ? 1 : -1
+  const partStrength = Math.max(0, parting)
+  const last = points.length - 1
+
+  for (let i = 0; i < points.length; i += 1) {
+    if (i === 0) {
+      result.push(root.clone())
+      continue
+    }
+
+    const t = i / last
+    const current = points[i].clone()
+    const offset = current.clone().sub(root)
+    const length = offset.length()
+
+    if (flow && length > 1e-6) {
+      const target = root.clone().addScaledVector(flow, length)
+      const flowWeight = 0.7 * (1 - smoothstep(0.35, 1, t)) + 0.18
+      current.lerp(target, flowWeight)
+    }
+
+    if (side && partStrength > 0) {
+      const partLift = smoothstep(0.04, 0.35, t) * (1 - t * 0.35)
+      current.addScaledVector(side, partSign * partStrength * Math.max(clumpRadius, 0.004) * 1.4 * partLift)
+    }
+
+    result.push(current)
+  }
+
+  return result
 }
 
 function applyRootOcclusion(strands: GeneratedStrand[], settings: GroomAsset['settings']) {
@@ -453,8 +529,18 @@ export function generateStrandsFromGuides(
     if (!surface) continue
 
     const rootDensity = rootDensityForTriangle(triIndex, densityData, settings)
+    const mapValues = readTriangleMapValues(asset, triIndex)
+    const edgeMask = 1 - rootDensity.edgeRamp
+    const densityMultiplier = THREE.MathUtils.clamp(
+      1 + mapValues.density - mapValues.hairlineSoftness * edgeMask * 0.75 - Math.max(0, mapValues.parting) * 0.9,
+      0.05,
+      2.25,
+    )
+    const clumpRadius = THREE.MathUtils.clamp(settings.clumpRadius * (1 + mapValues.clumpRadius * 0.9), 0, 0.045)
+    const clumpStrength = THREE.MathUtils.clamp(settings.clumpStrength * (1 + mapValues.clumpStrength * 0.9), 0, 1)
+    const localSettings = { ...settings, clumpRadius, clumpStrength }
     const area = triangleArea(surface.a, surface.b, surface.c) // m²
-    const expectedStrands = area * strandsPerM2
+    const expectedStrands = area * strandsPerM2 * densityMultiplier
     // Stochastic rounding so low-density settings still cover the surface
     const strandSeed = hashU32(triIndex)
     const rngTriangle = mulberry32(strandSeed)
@@ -476,7 +562,7 @@ export function generateStrandsFromGuides(
       // Guide interpolation
       const influences = findInfluenceGuides(rootPoint, guides)
       const basePoints = interpolateStrandPoints(influences, rootPoint, settings.guideSegments)
-      const clumpData = resolveClumpData(rootPoint, influences[0]?.guide, settings)
+      const clumpData = resolveClumpData(rootPoint, influences[0]?.guide, localSettings)
       let shapedPoints = basePoints
       const clumpId = clumpData?.id ?? hashStringU32(influences[0]?.guide.id ?? '')
 
@@ -484,29 +570,46 @@ export function generateStrandsFromGuides(
         const clumpInfluences = findInfluenceGuides(clumpData.rootPoint, guides)
         const clumpBasePoints = interpolateStrandPoints(clumpInfluences, clumpData.rootPoint, settings.guideSegments)
         const clumpRng = mulberry32(clumpData.id)
-        const clumpGuidePoints = applyStrandEffects(clumpBasePoints, settings, clumpRng, 0.25)
+        const clumpGuidePoints = applyStrandEffects(clumpBasePoints, localSettings, clumpRng, 0.25)
         shapedPoints = applyClumpAttraction(
           basePoints,
           clumpGuidePoints,
           rootPoint,
           clumpData.rootPoint,
-          settings.clumpStrength,
+          clumpStrength,
         )
       }
+      shapedPoints = applyRootFlow(
+        shapedPoints,
+        mapValues.flow,
+        surface.normal,
+        mapValues.parting,
+        rng(),
+        clumpRadius,
+      )
 
       // Procedural effects
       const finalPoints = applyStrandEffects(
         shapedPoints,
-        settings,
+        localSettings,
         rng,
-        1 - settings.clumpStrength * 0.45,
+        1 - clumpStrength * 0.45,
+      )
+      const lengthMultiplier = THREE.MathUtils.clamp(
+        1 + mapValues.length * 0.65 - mapValues.hairlineSoftness * edgeMask * 0.45 - Math.max(0, mapValues.parting) * 0.5,
+        0.18,
+        1.65,
       )
       const lengthScale = THREE.MathUtils.clamp(
-        0.72 + rootDensity.edgeRamp * 0.28 - rng() * settings.cutRandomness * 0.12,
+        (0.72 + rootDensity.edgeRamp * 0.28 - rng() * settings.cutRandomness * 0.12) * lengthMultiplier,
         0.48,
+        1.35,
+      )
+      const flyawayMask = THREE.MathUtils.clamp(
+        (1 - rootDensity.edgeRamp) * 0.35 + rng() * 0.32 + mapValues.flyaway * 0.55 + mapValues.hairlineSoftness * edgeMask * 0.25 + Math.max(0, mapValues.parting) * 0.2,
+        0,
         1,
       )
-      const flyawayMask = THREE.MathUtils.clamp((1 - rootDensity.edgeRamp) * 0.35 + rng() * 0.32, 0, 1)
       const finalScaledPoints = scalePointsFromRoot(finalPoints, lengthScale)
 
       strands.push({
@@ -516,8 +619,16 @@ export function generateStrandsFromGuides(
         widthRoot: asset.material.strandWidthRoot,
         widthTip: asset.material.strandWidthTip,
         random: strandSeedLocal / 0xffffffff,
-        rootDensity: rootDensity.density,
+        rootDensity: THREE.MathUtils.clamp(rootDensity.density * densityMultiplier, 0, 1),
         rootOcclusion: 0,
+        mapDensity: mapValues.density,
+        mapLength: mapValues.length,
+        mapFlyaway: mapValues.flyaway,
+        mapClumpStrength: mapValues.clumpStrength,
+        mapClumpRadius: mapValues.clumpRadius,
+        mapHairlineSoftness: mapValues.hairlineSoftness,
+        mapParting: mapValues.parting,
+        rootFlow: mapValues.flow ? vectorToTuple(mapValues.flow) : null,
         edgeDistance: rootDensity.distance,
         lengthScale,
         flyawayMask,

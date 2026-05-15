@@ -31,11 +31,13 @@ import {
 } from 'lucide-react'
 import { exportGroomAsset, importGroomAsset } from '../core/groomSerialization'
 import {
+  clearScalpPaintMaps,
   clearScalpMask,
   generateGuidesFromActiveScalp,
   groomStore,
   regenerateGeneratedStrands,
   replaceActiveGroomAsset,
+  setActiveScalpPaintChannel,
   setActiveGroomTool,
   setBrushSize,
   setBrushStrength,
@@ -46,7 +48,7 @@ import {
   setShowScalpMask,
   useSelectedMeshAsGroomTarget,
 } from '../store/groomStore'
-import type { GroomTool } from '../core/types'
+import type { GroomTool, ScalpPaintChannel } from '../core/types'
 
 // ---------------------------------------------------------------------------
 // Shared styles
@@ -229,6 +231,18 @@ const BRUSH_TOOL_DEFS: BrushToolDef[] = [
   { tool: 'delete-guide', icon: <Trash2 size={13} />,    label: 'Delete Guide' },
 ]
 
+const SCALP_PAINT_CHANNELS: { channel: ScalpPaintChannel; label: string }[] = [
+  { channel: 'mask', label: 'Mask' },
+  { channel: 'density', label: 'Density' },
+  { channel: 'length', label: 'Length' },
+  { channel: 'flyaway', label: 'Flyaway' },
+  { channel: 'clumpStrength', label: 'Clump Str' },
+  { channel: 'clumpRadius', label: 'Clump Size' },
+  { channel: 'hairlineSoftness', label: 'Hairline' },
+  { channel: 'flow', label: 'Flow' },
+  { channel: 'parting', label: 'Parting' },
+]
+
 export function BrushToolbar() {
   const { activeGroomTool, brushSize, brushStrength } = useSnapshot(groomStore)
   const [lastTool, setLastTool] = useState<GroomTool>('comb')
@@ -374,6 +388,7 @@ export default function GroomPanel() {
     showGeneratedStrands,
     showGuides,
     showScalpMask,
+    activeScalpPaintChannel,
     availableMeshes,
     sceneSelectionMeshId,
   } = useSnapshot(groomStore)
@@ -461,12 +476,48 @@ export default function GroomPanel() {
           <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>
             {activeGroomAsset.scalpMask.selectedTriangleIndices.length} selected triangles
           </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
+            {SCALP_PAINT_CHANNELS.map(({ channel, label }) => {
+              const active = activeScalpPaintChannel === channel
+              const count = channel === 'mask'
+                ? activeGroomAsset.scalpMask.selectedTriangleIndices.length
+                : channel === 'flow'
+                  ? Object.keys(activeGroomAsset.scalpMask.flowMap ?? {}).length
+                  : Object.keys(activeGroomAsset.scalpMask.maps?.[channel] ?? {}).length
+              return (
+                <button
+                  key={channel}
+                  onClick={() => setActiveScalpPaintChannel(channel)}
+                  style={{
+                    ...btn,
+                    padding: '5px 6px',
+                    color: active ? pink : 'rgba(255,255,255,0.48)',
+                    borderColor: active ? 'rgba(244,114,182,0.36)' : 'rgba(255,255,255,0.09)',
+                    background: active ? 'rgba(244,114,182,0.12)' : 'rgba(255,255,255,0.04)',
+                  }}
+                >
+                  <span style={{ display: 'flex', justifyContent: 'space-between', gap: 4 }}>
+                    <span>{label}</span>
+                    <span style={{ color: 'rgba(255,255,255,0.26)' }}>{count}</span>
+                  </span>
+                </button>
+              )
+            })}
+          </div>
           <button
             onClick={clearScalpMask}
             style={{ ...btn, color: 'rgba(248,113,113,0.7)', borderColor: 'rgba(248,113,113,0.2)' }}
           >
             <span style={{ display: 'flex', alignItems: 'center', gap: 5, justifyContent: 'center' }}>
               <X size={10} /> CLEAR SCALP
+            </span>
+          </button>
+          <button
+            onClick={clearScalpPaintMaps}
+            style={{ ...btn, color: 'rgba(248,113,113,0.62)', borderColor: 'rgba(248,113,113,0.16)' }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: 5, justifyContent: 'center' }}>
+              <X size={10} /> CLEAR MAPS
             </span>
           </button>
         </Section>
