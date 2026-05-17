@@ -52,6 +52,7 @@ type AppState = {
   showSkinning: boolean
   showHair: boolean
   showTest: boolean
+  showClothing: boolean
   poseTestEnabled: boolean
   poseTestStatus: string
   poseTestModelUrl: string
@@ -100,6 +101,7 @@ export const appState = proxy<AppState>({
   showSkinning: false,
   showHair: false,
   showTest: false,
+  showClothing: false,
   poseTestEnabled: false,
   poseTestStatus: 'Idle',
   poseTestModelUrl: DEFAULT_POSE_TEST_MODEL_URL,
@@ -262,13 +264,14 @@ export function setPoseTestWorldLandmarks(value: PoseTestLandmark[] | null) {
   appState.poseTestFrameTime = value ? performance.now() : 0
 }
 
-function activatePanel(key: 'showExpressions' | 'showModeling' | 'showSkinning' | 'showHair' | 'showTest') {
+function activatePanel(key: 'showExpressions' | 'showModeling' | 'showSkinning' | 'showHair' | 'showTest' | 'showClothing') {
   const next = !appState[key]
   appState.showExpressions = false
   appState.showModeling = false
   appState.showSkinning = false
   appState.showHair = false
   appState.showTest = false
+  appState.showClothing = false
   appState[key] = next
 }
 
@@ -290,4 +293,8 @@ export function toggleShowHair() {
 
 export function toggleShowTest() {
   activatePanel('showTest')
+}
+
+export function toggleShowClothing() {
+  activatePanel('showClothing')
 }

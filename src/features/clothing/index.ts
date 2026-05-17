@@ -1,0 +1,5 @@
+export { default as ClothingWorkspace } from './ClothingWorkspace'
+export { default as ClothingInspector } from './components/ClothingInspector'
+export { clothingStore } from './state/clothingStore'
+export * from './state/clothingActions'
+export type * from './state/clothingTypes'
