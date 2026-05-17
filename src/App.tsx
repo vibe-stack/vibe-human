@@ -109,7 +109,7 @@ export default function App() {
         {/* <fog attach="fog" args={['#080810', 2, 6]} /> */}
 
         {/* Key light – front-left, warm, main illumination */}
-        <spotLight position={[-0.6, 0.8, 1.0]} target-position={[0, 0, 0]} intensity={3.0} color="#fff5e8" angle={0.45} penumbra={0.4} distance={5} decay={2} castShadow />
+        <spotLight position={[-0.6, 0.8, 9.0]} target-position={[0, 0, 0]} intensity={16.0} color="#fff5e8" angle={0.45} penumbra={0.4} distance={12} decay={1} castShadow />
         {/* Fill light – front-right, cool, soft — opposite side from key, still in front */}
         <spotLight position={[0.8, 0.2, 0.9]} target-position={[0, 0, 0]} intensity={2.0} color="#ccd8ff" angle={0.5} penumbra={0.6} distance={5} decay={2} />
         {/* Rim lights – directional from behind, parallel rays only hit back-facing normals (silhouette), never the nose */}
@@ -125,7 +125,7 @@ export default function App() {
           enabled={!isTransforming}
           mouseButtons={{ LEFT: 1, MIDDLE: 0, RIGHT: 2 }}
           minDistance={0.2}
-          maxDistance={5}
+          maxDistance={25}
           minPolarAngle={Math.PI * 0.2}
           maxPolarAngle={Math.PI * 0.9}
           target={[0, 0, 0]}

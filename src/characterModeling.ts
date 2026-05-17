@@ -5,8 +5,10 @@ export type ModelingControl = {
   section: string
   negativeLabel: string
   positiveLabel: string
-  negativeTarget: string
+  negativeTarget: string | null
   positiveTarget: string
+  min: number
+  max: number
 }
 
 export type ModelingValues = Record<string, number>
@@ -30,7 +32,15 @@ function makeControl(
   morphBase: string,
   negLabel: string,
   posLabel: string,
-  overrides?: { label?: string; tab?: string; section?: string },
+  overrides?: {
+    label?: string
+    tab?: string
+    section?: string
+    negativeTarget?: string | null
+    positiveTarget?: string
+    min?: number
+    max?: number
+  },
 ): ModelingControl {
   // morphBase: e.g. "id.skull.browRidge.depth"
   // derives tab, section, label from the dot-separated path
@@ -43,6 +53,9 @@ function makeControl(
   const tab = overrides?.tab ?? capitalize(category)
   const section = overrides?.section ?? (subsections.length > 0 ? camelToLabel(subsections[subsections.length - 1]) : capitalize(category))
   const label = overrides?.label ?? camelToLabel(property)
+  const negativeTarget = overrides?.negativeTarget === undefined
+    ? `${morphBase}.neg`
+    : overrides.negativeTarget
 
   return {
     id: morphBase,
@@ -51,8 +64,10 @@ function makeControl(
     section,
     negativeLabel: negLabel,
     positiveLabel: posLabel,
-    negativeTarget: `${morphBase}.neg`,
-    positiveTarget: `${morphBase}.pos`,
+    negativeTarget,
+    positiveTarget: overrides?.positiveTarget ?? `${morphBase}.pos`,
+    min: overrides?.min ?? (negativeTarget ? -1 : 0),
+    max: overrides?.max ?? 1,
   }
 }
 
@@ -70,6 +85,11 @@ export const MODELING_CONTROLS: ModelingControl[] = [
   makeControl('id.head.height', 'Short',  'Tall'),
   makeControl('id.head.depth',  'Flat',   'Deep'),
   makeControl('id.head.scale',  'Small',  'Large'),
+
+  // ── BODY > Global ──
+  makeControl('id.body.global.mass',   'Lean', 'Heavy', { tab: 'Body', section: 'Global', label: 'Mass' }),
+  makeControl('id.body.global.muscle', 'Soft', 'Muscular', { tab: 'Body', section: 'Global', label: 'Muscle' }),
+  makeControl('id.body.global.fat',    'Base', 'Fat', { tab: 'Body', section: 'Global', label: 'Fat', negativeTarget: null }),
 
   // ── SKULL > Braincase ──
   makeControl('id.skull.braincase.scale',      'Small',   'Large'),
@@ -212,12 +232,17 @@ export function createNeutralModelingValues(): ModelingValues {
   return Object.fromEntries(MODELING_CONTROLS.map((c) => [c.id, 0]))
 }
 
+export function clampModelingValue(controlId: string, value: number) {
+  const control = getModelingControlById(controlId)
+  return Math.max(control?.min ?? -1, Math.min(control?.max ?? 1, value))
+}
+
 export function buildModelingMorphs(values: ModelingValues): Record<string, number> {
   const morphs: Record<string, number> = {}
 
   for (const control of MODELING_CONTROLS) {
-    const value = Math.max(-1, Math.min(1, values[control.id] ?? 0))
-    if (!BAD_TARGETS.has(control.negativeTarget)) {
+    const value = clampModelingValue(control.id, values[control.id] ?? 0)
+    if (control.negativeTarget && !BAD_TARGETS.has(control.negativeTarget)) {
       morphs[control.negativeTarget] = value < 0 ? Math.abs(value) : 0
     }
     if (!BAD_TARGETS.has(control.positiveTarget)) {

@@ -5,6 +5,7 @@ import { useSnapshot } from 'valtio'
 import * as THREE from 'three'
 import { appState, setIsTransforming, setModelingValues, setSelectedModelingHandleId } from './appState'
 import {
+  clampModelingValue,
   getModelingHandles,
   type ModelingHandle,
 } from './characterModeling'
@@ -27,10 +28,6 @@ const ACTIVE_COLOR = '#7dd3fc'
 const fallbackVector = new THREE.Vector3()
 const noseRootVector = new THREE.Vector3()
 const noseTipVector = new THREE.Vector3()
-
-function clampValue(value: number) {
-  return THREE.MathUtils.clamp(value, -1, 1)
-}
 
 function dragDelta(handle: ModelingHandle, dx: number, dy: number) {
   const speed = handle.mode === 'transform' ? 0.0065 : 0.008
@@ -59,7 +56,8 @@ export default function ModelingOverlay({ bones }: Props) {
       if (!drag || drag.pointerId !== event.pointerId) return
 
       event.preventDefault()
-      const nextValue = clampValue(
+      const nextValue = clampModelingValue(
+        drag.handle.controlId,
         drag.startValue + dragDelta(drag.handle, event.clientX - drag.startX, event.clientY - drag.startY),
       )
       setModelingValues((prev) => ({ ...prev, [drag.handle.controlId]: nextValue }))

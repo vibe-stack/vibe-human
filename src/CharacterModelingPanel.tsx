@@ -13,6 +13,7 @@ import {
   setSelectedModelingHandleId,
 } from './appState'
 import {
+  clampModelingValue,
   createNeutralModelingValues,
   getModelingControlById,
   getModelingHandleById,
@@ -52,9 +53,13 @@ export default function CharacterModelingPanel() {
     .map((id) => getModelingControlById(id))
     .filter((control): control is NonNullable<ReturnType<typeof getModelingControlById>> => control !== null) ?? []
   const handlesInMode = useMemo(() => getModelingHandles(mode, symmetric), [mode, symmetric])
+  const bodyControls = useMemo(
+    () => MODELING_CONTROLS.filter((control) => control.tab === 'Body'),
+    [],
+  )
 
   const setControl = (id: string, value: number) => {
-    setModelingValues((prev) => ({ ...prev, [id]: Math.max(-1, Math.min(1, value)) }))
+    setModelingValues((prev) => ({ ...prev, [id]: clampModelingValue(id, value) }))
   }
 
   const resetAll = () => setModelingValues(createNeutralModelingValues())
@@ -64,6 +69,14 @@ export default function CharacterModelingPanel() {
     setModelingValues((prev) => {
       const next = { ...prev }
       for (const id of selectedHandle.controlIds) next[id] = 0
+      return next
+    })
+  }
+
+  const resetBody = () => {
+    setModelingValues((prev) => {
+      const next = { ...prev }
+      for (const control of bodyControls) next[control.id] = 0
       return next
     })
   }
@@ -136,7 +149,17 @@ export default function CharacterModelingPanel() {
           </div>
         </div>
 
-        <div style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div
+          className="facs-scroll"
+          style={{
+            padding: 10,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 10,
+            maxHeight: 'calc(100vh - 52px)',
+            overflowY: 'auto',
+          }}
+        >
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
             <SegmentButton active={mode === 'transform'} onClick={() => setModelingMode('transform')}>
               TRANSFORM
@@ -202,6 +225,15 @@ export default function CharacterModelingPanel() {
             )}
           </div>
 
+          {bodyControls.length > 0 && (
+            <BodyGlobalSliders
+              controls={bodyControls}
+              values={values}
+              onChange={setControl}
+              onReset={resetBody}
+            />
+          )}
+
           {!symmetric && (
             <div style={{ fontSize: 10, lineHeight: 1.45, color: 'rgba(255,255,255,0.42)' }}>
               Current identity morphs are authored as symmetric keys, so single-side mode changes the selected
@@ -209,6 +241,53 @@ export default function CharacterModelingPanel() {
             </div>
           )}
         </div>
+      </div>
+    </div>
+  )
+}
+
+function BodyGlobalSliders({
+  controls,
+  values,
+  onChange,
+  onReset,
+}: {
+  controls: NonNullable<ReturnType<typeof getModelingControlById>>[]
+  values: ModelingValues
+  onChange: (id: string, value: number) => void
+  onReset: () => void
+}) {
+  const active = controls.some((control) => Math.abs(values[control.id] ?? 0) > 0.001)
+
+  return (
+    <div style={{
+      borderRadius: 6,
+      padding: 10,
+      background: active ? 'rgba(125,211,252,0.055)' : 'rgba(255,255,255,0.025)',
+      border: active ? '1px solid rgba(125,211,252,0.16)' : '1px solid rgba(255,255,255,0.05)',
+    }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'center', marginBottom: 9 }}>
+        <div>
+          <div style={{ ...labelStyle, color: active ? 'rgba(125,211,252,0.86)' : 'rgba(255,255,255,0.45)' }}>
+            BODY GLOBAL
+          </div>
+          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.46)', marginTop: 3 }}>
+            {controls.length} sliders
+          </div>
+        </div>
+        <button onClick={onReset} style={smallButtonStyle}>RESET</button>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+        {controls.map((control) => (
+          <AreaSlider
+            key={control.id}
+            control={control}
+            primary={false}
+            value={values[control.id] ?? 0}
+            onChange={(value) => onChange(control.id, value)}
+          />
+        ))}
       </div>
     </div>
   )
@@ -290,6 +369,7 @@ function AreaSlider({
   onChange: (value: number) => void
 }) {
   const active = Math.abs(value) > 0.001
+  const positiveOnly = control.min >= 0
 
   return (
     <div style={{
@@ -313,8 +393,8 @@ function AreaSlider({
       </div>
       <input
         type="range"
-        min={-1}
-        max={1}
+        min={control.min}
+        max={control.max}
         step={0.01}
         value={value}
         onChange={(event) => onChange(parseFloat(event.target.value))}
@@ -323,7 +403,7 @@ function AreaSlider({
       />
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontSize: 8, color: 'rgba(255,255,255,0.31)', fontFamily: 'monospace' }}>
         <span>{control.negativeLabel.toUpperCase()}</span>
-        <span>BASE</span>
+        <span>{positiveOnly ? '' : 'BASE'}</span>
         <span>{control.positiveLabel.toUpperCase()}</span>
       </div>
     </div>

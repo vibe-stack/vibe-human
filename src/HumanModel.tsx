@@ -4,7 +4,7 @@ import { useFrame } from '@react-three/fiber'
 import { useSnapshot } from 'valtio'
 import * as THREE from 'three/webgpu'
 import { appState, setBoneDebug, setIsTransforming } from './appState'
-import { createEyeMaterial, createSkinMaterial } from './skinMaterial'
+import { createBodySkinMaterial, createEyeMaterial, createSkinMaterial } from './skinMaterial'
 import GroomRenderer from './features/groom/components/GroomRenderer'
 import GroomViewportTools from './features/groom/components/GroomViewportTools'
 import { registerGroomMeshes, registerSkinMaterialForGroom, unregisterSkinMaterialForGroom } from './features/groom/store/groomStore'
@@ -42,8 +42,13 @@ export type BoneDebug = {
   deltaRotation: [number, number, number]
 }
 
-const MODEL_URL = `${import.meta.env.BASE_URL}human5.glb?v=identity-modeling-2026-05-10-1`
-const SKIN_MESH_NAMES = new Set(['Head', 'Plane.002'])
+const MODEL_URL = `${import.meta.env.BASE_URL}human5.glb?v=full-body-2026-05-17-1`
+const LEGACY_HEAD_MESH_NAMES = new Set(['Head'])
+const HEAD_SKIN_MATERIAL_ALIASES = ['mhead', 'tslheadskin', 'tslskin']
+const BODY_SKIN_MATERIAL_ALIASES = ['mbody', 'tslbodyskin']
+const HEAD_GEOMETRY_MIN_Y = 2.65
+const BODY_GEOMETRY_MAX_Y = 3.0
+const BODY_GEOMETRY_MIN_HEIGHT = 1.5
 const HEAD_LOOK_YAW = 1.05
 const HEAD_LOOK_PITCH = 0.58
 const NECK_LOOK_YAW = 0.18
@@ -65,9 +70,82 @@ function getBoneByName(bones: Record<string, THREE.Bone>, name: string) {
   )
 }
 
-function isSkinMesh(object: THREE.Object3D) {
+function isMesh(object: THREE.Object3D): object is THREE.Mesh {
   const mesh = object as THREE.Mesh
-  return Boolean(mesh.isMesh && SKIN_MESH_NAMES.has(object.name))
+  return Boolean(mesh.isMesh)
+}
+
+function materialNames(mesh: THREE.Mesh) {
+  const material = mesh.material
+  const materials = Array.isArray(material) ? material : material ? [material] : []
+  return materials.map((mat) => mat.name).filter(Boolean)
+}
+
+function normalizeMaterialName(name: string) {
+  return name
+    .replace(/\.\d+$/, '')
+    .replace(/[^a-zA-Z0-9]/g, '')
+    .toLowerCase()
+}
+
+function materialNameMatches(name: string, aliases: string[]) {
+  const normalized = normalizeMaterialName(name)
+  return aliases.some((alias) => normalized === alias || normalized.includes(alias))
+}
+
+function hasNamedMaterial(object: THREE.Object3D, aliases: string[]) {
+  return isMesh(object) && materialNames(object).some((name) => materialNameMatches(name, aliases))
+}
+
+function geometryYBounds(mesh: THREE.Mesh) {
+  const geometry = mesh.geometry
+  if (!geometry) return null
+  if (!geometry.boundingBox) geometry.computeBoundingBox()
+  const box = geometry.boundingBox
+  return box ? { min: box.min.y, max: box.max.y, height: box.max.y - box.min.y } : null
+}
+
+function isHeadGeometry(mesh: THREE.Mesh) {
+  const bounds = geometryYBounds(mesh)
+  return Boolean(bounds && bounds.min >= HEAD_GEOMETRY_MIN_Y)
+}
+
+function isBodyGeometry(mesh: THREE.Mesh) {
+  const bounds = geometryYBounds(mesh)
+  return Boolean(
+    bounds &&
+    bounds.min < HEAD_GEOMETRY_MIN_Y &&
+    bounds.max <= BODY_GEOMETRY_MAX_Y &&
+    bounds.height >= BODY_GEOMETRY_MIN_HEIGHT
+  )
+}
+
+function isSkinCandidateMesh(object: THREE.Object3D) {
+  if (!isMesh(object) || isEyeMesh(object)) return false
+  const mesh = object as THREE.SkinnedMesh
+  const bounds = geometryYBounds(object)
+  return Boolean(
+    mesh.isSkinnedMesh ||
+    bounds?.height && bounds.height > 0.4
+  )
+}
+
+function isHeadSkinMesh(object: THREE.Object3D) {
+  if (!isMesh(object) || isBodyGeometry(object)) return false
+  return Boolean(
+    isHeadGeometry(object) ||
+    LEGACY_HEAD_MESH_NAMES.has(object.name) ||
+    hasNamedMaterial(object, HEAD_SKIN_MATERIAL_ALIASES)
+  )
+}
+
+function isBodySkinMesh(object: THREE.Object3D) {
+  if (!isMesh(object)) return false
+  return Boolean(
+    isBodyGeometry(object) ||
+    hasNamedMaterial(object, BODY_SKIN_MATERIAL_ALIASES) ||
+    /body/i.test(object.name)
+  )
 }
 
 function isEyeMesh(object: THREE.Object3D) {
@@ -75,7 +153,70 @@ function isEyeMesh(object: THREE.Object3D) {
   return Boolean(mesh.isMesh && EYE_MESH_NAMES.has(object.name))
 }
 
+function replaceNamedMaterialSlots(
+  mesh: THREE.Mesh,
+  aliases: string[],
+  replacement: THREE.Material,
+) {
+  const material = mesh.material
+  if (Array.isArray(material)) {
+    let replaced = false
+    mesh.material = material.map((mat) => {
+      if (!materialNameMatches(mat.name, aliases)) return mat
+      replaced = true
+      return replacement
+    })
+    return replaced
+  }
 
+  if (material && materialNameMatches(material.name, aliases)) {
+    mesh.material = replacement
+    return true
+  }
+
+  return false
+}
+
+function applyHeadSkinMaterial(object: THREE.Object3D, material: THREE.Material) {
+  if (!isMesh(object)) return false
+  if (isBodyGeometry(object)) return false
+  if (replaceNamedMaterialSlots(object, HEAD_SKIN_MATERIAL_ALIASES, material)) return true
+  if (isHeadGeometry(object)) {
+    object.material = material
+    return true
+  }
+  if (!object.material && LEGACY_HEAD_MESH_NAMES.has(object.name)) {
+    object.material = material
+    return true
+  }
+  if (LEGACY_HEAD_MESH_NAMES.has(object.name)) {
+    object.material = material
+    return true
+  }
+  return false
+}
+
+function applyBodySkinMaterial(object: THREE.Object3D, material: THREE.Material) {
+  if (!isMesh(object)) return false
+  if (replaceNamedMaterialSlots(object, BODY_SKIN_MATERIAL_ALIASES, material)) return true
+  if (isBodyGeometry(object)) {
+    object.material = material
+    return true
+  }
+  if (isSkinCandidateMesh(object) && !isHeadGeometry(object)) {
+    object.material = material
+    return true
+  }
+  if (!object.material && /body/i.test(object.name)) {
+    object.material = material
+    return true
+  }
+  if (/body/i.test(object.name)) {
+    object.material = material
+    return true
+  }
+  return false
+}
 
 const FACE_BONE_PATTERN = /^DEF-(brow|cheek|chin|eye|forehead|jaw|lid|lip|nose|teeth)/
 
@@ -296,7 +437,7 @@ export default function HumanModel() {
         morphMeshes.push(morphMesh as MorphTargetMesh)
       }
 
-      if (isSkinMesh(obj)) {
+      if (isHeadSkinMesh(obj)) {
         groomMeshes.push(obj as THREE.Mesh)
       }
 
@@ -321,7 +462,7 @@ export default function HumanModel() {
     const requiredTargets = MODELING_CONTROLS.flatMap((control) => [
       control.negativeTarget,
       control.positiveTarget,
-    ])
+    ]).filter((target): target is string => target !== null)
     requiredTargets.filter((target) => !availableTargets.has(target))
 
     const nextDebugBones = Object.values(bones)
@@ -486,12 +627,13 @@ export default function HumanModel() {
     }
   })
 
-  // Apply TSL skin material, overriding whatever the GLB baked in
+  // Apply TSL skin materials, overriding the placeholder GLB materials.
   useEffect(() => {
     let cancelled = false
-    let mat: THREE.MeshPhysicalNodeMaterial | null = null
+    let headMat: THREE.Material | null = null
+    let bodyMat: THREE.Material | null = null
 
-    createSkinMaterial(skinTextures, {
+    const settings = {
       poreScale,
       poreNormalStrength,
       wrinkleNormalStrength,
@@ -500,31 +642,55 @@ export default function HumanModel() {
       surfaceRoughness,
       toneDepth,
       subsurfaceStrength,
-    })
-      .then((created) => {
+    }
+
+    createSkinMaterial(skinTextures, settings, { name: 'TSL_HeadSkin' })
+      .then((createdHeadMat) => {
         if (cancelled) {
-          created.dispose()
+          createdHeadMat.dispose()
           return
         }
-        mat = created
+        headMat = createdHeadMat
+        let matched = 0
         scene.traverse((obj) => {
-          if (!isSkinMesh(obj)) return
-          const mesh = obj as THREE.Mesh
-          mesh.material = mat as unknown as THREE.Material
+          if (applyHeadSkinMaterial(obj, headMat as unknown as THREE.Material)) matched += 1
         })
-        // Let the groom system push follicle tint updates into this material.
-        registerSkinMaterialForGroom(mat as unknown as THREE.Material)
+        if (matched === 0) {
+          console.warn('No mesh/material slot matched the head skin material names M_Head/TSL_HeadSkin.')
+        }
+        // Let the groom system push follicle tint updates into the head material.
+        registerSkinMaterialForGroom(headMat as unknown as THREE.Material)
       })
       .catch((error: unknown) => {
-        console.error('Failed to create skin material:', error)
+        console.error('Failed to create head skin material:', error)
+      })
+
+    createBodySkinMaterial(settings)
+      .then((createdBodyMat) => {
+        if (cancelled) {
+          createdBodyMat.dispose()
+          return
+        }
+        bodyMat = createdBodyMat
+        let matched = 0
+        scene.traverse((obj) => {
+          if (applyBodySkinMaterial(obj, bodyMat as unknown as THREE.Material)) matched += 1
+        })
+        if (matched === 0) {
+          console.warn('No mesh/material slot matched the body skin material names M_Body/TSL_BodySkin.')
+        }
+      })
+      .catch((error: unknown) => {
+        console.error('Failed to create body skin material:', error)
       })
 
     return () => {
       cancelled = true
-      if (mat) {
-        unregisterSkinMaterialForGroom(mat as unknown as THREE.Material)
-        mat.dispose()
+      if (headMat) {
+        unregisterSkinMaterialForGroom(headMat as unknown as THREE.Material)
+        headMat.dispose()
       }
+      bodyMat?.dispose()
     }
   }, [flipNormalY, oiliness, poreNormalStrength, poreScale, scene, skinTextures, subsurfaceStrength, surfaceRoughness, toneDepth, wrinkleNormalStrength])
 
@@ -558,7 +724,7 @@ export default function HumanModel() {
   useEffect(() => {
     scene.traverse((obj) => {
       const mesh = obj as THREE.Mesh
-      if (isSkinMesh(obj) && mesh.material) {
+      if ((isHeadSkinMesh(obj) || isBodySkinMesh(obj)) && mesh.material) {
         const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
         mats.forEach((m) => {
           ;(m as THREE.MeshStandardMaterial).wireframe = wireframe
