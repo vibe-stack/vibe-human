@@ -4,7 +4,8 @@ import { ClothSolver } from '../solver/ClothSolver'
 import { buildGrid } from '../topology/buildGrid'
 import { buildVisualMesh } from '../topology/buildVisualMesh'
 import { sampleSimAtUv } from '../topology/sampleSimAtUv'
-import { defaultBodyColliders } from '../body/bodyColliders'
+import { getBodyCollisionMeshes, subscribeBodyMesh } from '../body/bodyMeshRegistry'
+import type { Collider } from '../solver/types'
 import type { ClothSimQuality, PatternPiece, PatternPlacement } from '../../state/clothingTypes'
 
 const FIXED_DT = 1 / 60
@@ -79,7 +80,7 @@ export function useClothSolver(args: {
       invMass,
       distances: grid.distances,
       bends: grid.bends,
-      colliders: defaultBodyColliders(),
+      colliders: buildMeshColliders(),
       params: {
         gravity: -9.81,
         damping: 0.04,
@@ -106,39 +107,43 @@ export function useClothSolver(args: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [instance])
 
-  // Placement deltas: if the user moves/rotates the gizmo while sim is
-  // running, translate/rotate all particles to follow. This is the
-  // "no-bake" model — particles are always in world space, the placement
-  // is just the spawn frame. After spawn, deltas update the world coords.
+  // Placement deltas: always (running or not) translate/rotate every
+  // particle to follow the gizmo. Particles live in world space; the
+  // placement is just "where the cloth is right now". After applying,
+  // refresh the visual mesh so the user sees it move immediately even
+  // before pressing play.
   useEffect(() => {
     const inst = instanceRef.current
     if (!inst) return
     const prev = lastPlacementRef.current
     if (placementEquals(prev, placement)) return
 
-    if (running) {
-      // Apply delta to live sim. Compute as: apply prev⁻¹ then new.
-      // Simpler & numerically stable: translate by Δpos, rotate by ΔrotY
-      // around the new pivot (cloth centroid).
-      const dx = placement.position.x - prev.position.x
-      const dy = placement.position.y - prev.position.y
-      const dz = placement.position.z - prev.position.z
-      if (dx || dy || dz) inst.solver.translateAll(dx, dy, dz)
+    const dx = placement.position.x - prev.position.x
+    const dy = placement.position.y - prev.position.y
+    const dz = placement.position.z - prev.position.z
 
-      // Rotation delta — easier to delta around Y since gizmo typically
-      // rotates Y-axis; compose all 3 as Euler-delta quaternion.
-      const dq = eulerDeltaQuat(prev.rotation, placement.rotation)
-      if (dq) {
-        const pivot = currentCentroid(inst)
-        inst.solver.rotateAll(pivot.x, pivot.y, pivot.z, dq.x, dq.y, dq.z, dq.w)
-      }
+    const dq = eulerDeltaQuat(prev.rotation, placement.rotation)
+    if (dq) {
+      // Rotate around the *previous* placement position so the cloth pivots
+      // about the gizmo's anchor, not its drifted centroid.
+      inst.solver.rotateAll(prev.position.x, prev.position.y, prev.position.z, dq.x, dq.y, dq.z, dq.w)
     }
-    // If not running, we re-build positions from placement on next sim run
-    // by re-spawning. But we want the gizmo to *show* the move immediately —
-    // that's handled by the visual mesh being inside a <group> at the
-    // placement (see ClothPiece.tsx).
+    if (dx || dy || dz) inst.solver.translateAll(dx, dy, dz)
+
     lastPlacementRef.current = placement
-  }, [placement, running])
+    syncVisualFromSolver(inst)
+  }, [placement])
+
+  // Keep the solver's collider list in sync as the registry changes
+  // (character loaded / replaced).
+  useEffect(() => {
+    const update = () => {
+      const inst = instanceRef.current
+      if (!inst) return
+      inst.solver.setColliders(buildMeshColliders())
+    }
+    return subscribeBodyMesh(update)
+  }, [])
 
   // Frame loop.
   const accumRef = useRef(0)
@@ -162,6 +167,16 @@ export function useClothSolver(args: {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function buildMeshColliders(): Collider[] {
+  return getBodyCollisionMeshes().map((mesh) => ({
+    kind: 'mesh',
+    mesh,
+    friction: 0.6,
+    // Tiny offset so cloth sits a hair above the skin instead of z-fighting.
+    skin: 0.004,
+  }))
+}
 
 function buildTopologyKey(piece: PatternPiece, quality: ClothSimQuality, resetKey: number) {
   // Cheap hash: count + reset key + quality + edge count + hole count
@@ -205,18 +220,6 @@ function placementEquals(a: PatternPlacement, b: PatternPlacement) {
     && a.rotation.x === b.rotation.x && a.rotation.y === b.rotation.y && a.rotation.z === b.rotation.z
 }
 
-function currentCentroid(inst: ClothInstance) {
-  const pos = inst.solver.state.positions
-  let sx = 0, sy = 0, sz = 0, n = 0
-  for (let i = 0; i < inst.solver.state.particleCount; i += 1) {
-    if (inst.solver.state.invMass[i] === 0) continue
-    const o = i * 3
-    sx += pos[o]; sy += pos[o + 1]; sz += pos[o + 2]
-    n += 1
-  }
-  if (n === 0) return { x: 0, y: 0, z: 0 }
-  return { x: sx / n, y: sy / n, z: sz / n }
-}
 
 function quatFromEuler(x: number, y: number, z: number) {
   // ZYX Euler -> quaternion (matches THREE default order 'XYZ' applied as RxRyRz)

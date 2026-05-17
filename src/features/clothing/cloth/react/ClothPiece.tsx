@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three/webgpu'
 import { TransformControls } from '@react-three/drei'
 import { setIsTransforming } from '../../../../appState'
@@ -24,10 +24,27 @@ type Props = {
   showWireframe: boolean
 }
 
-/** A single cloth piece: solver + mesh + gizmo. Small on purpose. */
+/**
+ * A single cloth piece.
+ *
+ * Architecture:
+ *   - Solver positions are ALWAYS world-space; the visual mesh always
+ *     receives world-space samples; both meshes live in identity-transform
+ *     groups.
+ *   - The TransformControls gizmo grabs an invisible "handle" Object3D
+ *     parented at the cloth centroid. We translate/rotate solver particles
+ *     to follow the handle. This way the gizmo never affects the visual
+ *     mesh through a parent transform — only via the solver.
+ *   - The handle and the cloth visual are SIBLINGS, never re-parented, so
+ *     nothing remounts when selection changes. No snap.
+ */
 export default function ClothPiece(props: Props) {
-  const { piece, placement, selected, simRunning, simResetKey, simQuality, transformMode, showWireframe } = props
-  const groupRef = useRef<THREE.Group>(null)
+  const {
+    piece, placement, selected, simRunning, simResetKey, simQuality, transformMode, showWireframe,
+  } = props
+
+  const handleRef = useRef<THREE.Object3D>(null)
+  const [handleNode, setHandleNode] = useState<THREE.Object3D | null>(null)
 
   const instance = useClothSolver({
     piece, quality: simQuality, resetKey: simResetKey, running: simRunning, placement,
@@ -35,33 +52,29 @@ export default function ClothPiece(props: Props) {
 
   const handlers = useClothDrag(instance, () => { clothingStore.simRunning = true })
 
-  // Visual mesh is rendered in world space (sampleSimAtUv writes world
-  // positions every frame from the solver, which itself stores world
-  // positions). Therefore the group transform is identity during sim —
-  // it only carries the gizmo position before sim runs.
+  // Sync the invisible handle's transform to the placement whenever it
+  // changes from the outside (e.g. reset). The solver's own placement-delta
+  // hook is what propagates changes into particle positions.
   useEffect(() => {
-    const g = groupRef.current
-    if (!g) return
-    if (simRunning) {
-      g.position.set(0, 0, 0)
-      g.rotation.set(0, 0, 0)
-    } else {
-      g.position.set(placement.position.x, placement.position.y, placement.position.z)
-      g.rotation.set(placement.rotation.x, placement.rotation.y, placement.rotation.z)
-    }
-  }, [simRunning, placement])
+    const h = handleRef.current
+    if (!h) return
+    h.position.set(placement.position.x, placement.position.y, placement.position.z)
+    h.rotation.set(placement.rotation.x, placement.rotation.y, placement.rotation.z)
+    h.updateMatrixWorld(true)
+  }, [placement])
 
-  function syncPlacementFromGroup() {
-    const g = groupRef.current
-    if (!g) return
+  function syncPlacementFromHandle() {
+    const h = handleRef.current
+    if (!h) return
     setPatternPlacement(piece.id, {
-      position: { x: g.position.x, y: g.position.y, z: g.position.z },
-      rotation: { x: g.rotation.x, y: g.rotation.y, z: g.rotation.z },
+      position: { x: h.position.x, y: h.position.y, z: h.position.z },
+      rotation: { x: h.rotation.x, y: h.rotation.y, z: h.rotation.z },
     })
   }
 
-  const mesh = (
-    <group ref={groupRef}>
+  return (
+    <>
+      {/* Cloth visual — identity transform; sampled from solver in world space. */}
       <mesh
         geometry={instance.visual.geometry}
         frustumCulled={false}
@@ -82,21 +95,22 @@ export default function ClothPiece(props: Props) {
           <meshBasicMaterial color="#ffffff" wireframe transparent opacity={0.22} depthWrite={false} />
         </mesh>
       )}
-    </group>
+      {/* Invisible gizmo handle, parented in world. */}
+      <object3D
+        ref={(o) => { handleRef.current = o; setHandleNode(o) }}
+        position={[placement.position.x, placement.position.y, placement.position.z]}
+        rotation={[placement.rotation.x, placement.rotation.y, placement.rotation.z]}
+      />
+      {selected && !simRunning && handleNode && (
+        <TransformControls
+          object={handleNode}
+          mode={transformMode}
+          size={0.7}
+          onMouseDown={() => setIsTransforming(true)}
+          onMouseUp={() => { syncPlacementFromHandle(); setIsTransforming(false) }}
+          onObjectChange={syncPlacementFromHandle}
+        />
+      )}
+    </>
   )
-
-  if (selected && !simRunning) {
-    return (
-      <TransformControls
-        mode={transformMode}
-        size={0.7}
-        onMouseDown={() => setIsTransforming(true)}
-        onMouseUp={() => { syncPlacementFromGroup(); setIsTransforming(false) }}
-        onObjectChange={syncPlacementFromGroup}
-      >
-        {mesh}
-      </TransformControls>
-    )
-  }
-  return mesh
 }

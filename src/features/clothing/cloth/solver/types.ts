@@ -37,7 +37,27 @@ export type CapsuleCollider = {
   r: number
   friction: number
 }
-export type Collider = SphereCollider | CapsuleCollider
+/**
+ * Mesh collider — defers to MeshBVH at solve time. The owner is responsible
+ * for keeping `mesh`'s geometry+BVH and `mesh.matrixWorld` fresh (typically
+ * by calling MeshBVH.refit() once per frame after skinning updates).
+ *
+ * `skin` is a small offset added to every contact normal — gives the cloth
+ * some breathing room so it doesn't z-fight the body surface.
+ */
+export type MeshCollider = {
+  kind: 'mesh'
+  // Carrying a THREE.Mesh inside the solver state is OK — we never touch it
+  // from the hot loops, only via projectColliders which IS allowed to do
+  // heavyweight ops. Typed loosely to avoid a hard three import here.
+  mesh: {
+    geometry: { boundsTree?: unknown }
+    matrixWorld: { elements: ArrayLike<number> }
+  }
+  friction: number
+  skin: number
+}
+export type Collider = SphereCollider | CapsuleCollider | MeshCollider
 
 export type ClothSolverParams = {
   gravity: number             // m/s², negative is down

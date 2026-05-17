@@ -1,10 +1,18 @@
+import { useEffect, useRef, useState } from 'react'
+import { useFrame } from '@react-three/fiber'
 import { useSnapshot } from 'valtio'
 import { clothingStore } from '../../state/clothingStore'
 import type { PatternPiece, PatternPlacement } from '../../state/clothingTypes'
-import { HEAD, SHOULDER, TORSO } from '../body/bodyColliders'
+import { getBodyCollisionMeshes, refitBodyMeshes, subscribeBodyMesh } from '../body/bodyMeshRegistry'
 import ClothPiece from './ClothPiece'
 
 const CLOTH_DEFAULT_Y = 0.72
+// Refit the body BVH every Nth frame while sim is running. Refit is O(verts +
+// nodes); typical character meshes can be 10k+ verts and several meshes,
+// which can easily blow the frame budget if done every tick. Every-other-
+// frame is a fine quality/perf tradeoff for cloth that moves much slower
+// than the underlying character animation.
+const REFIT_EVERY_N_FRAMES = 30
 
 function defaultPlacement(index: number, count: number): PatternPlacement {
   return {
@@ -13,13 +21,20 @@ function defaultPlacement(index: number, count: number): PatternPlacement {
   }
 }
 
-/**
- * Renders all cloth pieces + optional body collider debug viz. Tiny shell —
- * one ClothPiece per pattern.
- */
+/** Renders all cloth pieces + optional collision-surface debug viz. */
 export default function ClothScene() {
   const { garment, placements, previewOptions, simRunning, simResetKey, simQuality, transformMode } = useSnapshot(clothingStore)
   const pieces = Object.values(garment.patterns) as PatternPiece[]
+
+  // Single global BVH refit loop — runs ONCE per frame regardless of how
+  // many cloth pieces are mounted.
+  const tickRef = useRef(0)
+  useFrame(() => {
+    tickRef.current = (tickRef.current + 1) % REFIT_EVERY_N_FRAMES
+    if (tickRef.current !== 0) return
+    if (!simRunning) return
+    refitBodyMeshes()
+  })
 
   return (
     <group>
@@ -39,26 +54,24 @@ export default function ClothScene() {
           />
         )
       })}
-      {previewOptions.showTriangulation && <BodyDebug />}
+      {previewOptions.showTriangulation && <BodyCollisionDebug />}
     </group>
   )
 }
 
-function BodyDebug() {
+/** Wireframe of the live (refit) collision meshes. Helps verify the BVH
+ *  actually matches the posed character. */
+function BodyCollisionDebug() {
+  const [, force] = useState(0)
+  useEffect(() => subscribeBodyMesh(() => force((n) => n + 1)), [])
+  const meshes = getBodyCollisionMeshes()
   return (
     <group>
-      <mesh position={[HEAD.x, HEAD.y, HEAD.z]}>
-        <sphereGeometry args={[HEAD.r, 24, 12]} />
-        <meshBasicMaterial color="#8be9ff" wireframe transparent opacity={0.22} depthWrite={false} />
-      </mesh>
-      <mesh position={[(SHOULDER.ax + SHOULDER.bx) / 2, (SHOULDER.ay + SHOULDER.by) / 2, (SHOULDER.az + SHOULDER.bz) / 2]} rotation={[0, 0, Math.PI / 2]}>
-        <capsuleGeometry args={[SHOULDER.r, Math.abs(SHOULDER.bx - SHOULDER.ax), 4, 12]} />
-        <meshBasicMaterial color="#8be9ff" wireframe transparent opacity={0.18} depthWrite={false} />
-      </mesh>
-      <mesh position={[(TORSO.ax + TORSO.bx) / 2, (TORSO.ay + TORSO.by) / 2, (TORSO.az + TORSO.bz) / 2]}>
-        <capsuleGeometry args={[TORSO.r, Math.abs(TORSO.by - TORSO.ay), 4, 12]} />
-        <meshBasicMaterial color="#8be9ff" wireframe transparent opacity={0.16} depthWrite={false} />
-      </mesh>
+      {meshes.map((m) => (
+        <primitive key={m.uuid} object={m}>
+          <meshBasicMaterial color="#8be9ff" wireframe transparent opacity={0.25} depthWrite={false} />
+        </primitive>
+      ))}
     </group>
   )
 }

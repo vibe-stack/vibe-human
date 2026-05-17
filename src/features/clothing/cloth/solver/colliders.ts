@@ -1,4 +1,20 @@
-import type { CapsuleCollider, ClothSolverState, Collider, SphereCollider } from './types'
+import * as THREE from 'three/webgpu'
+import type { MeshBVH } from 'three-mesh-bvh'
+import type { CapsuleCollider, ClothSolverState, Collider, MeshCollider, SphereCollider } from './types'
+
+// Pre-allocated scratch — reused across every particle / every frame.
+const _localPoint = new THREE.Vector3()
+const _worldHit = new THREE.Vector3()
+const _hit = { point: new THREE.Vector3(), distance: 0, faceIndex: 0 }
+const _faceNormal = new THREE.Vector3()
+const _worldNormal = new THREE.Vector3()
+const _localMat = new THREE.Matrix4()
+const _worldMat = new THREE.Matrix4()
+const _normalMat = new THREE.Matrix3()
+const _tri = new THREE.Triangle()
+const _vA = new THREE.Vector3()
+const _vB = new THREE.Vector3()
+const _vC = new THREE.Vector3()
 
 /** Project every particle out of every collider. Pure SDF push — much
  *  cheaper and more reliable than rapier ball-vs-ball at this scale. */
@@ -13,9 +29,10 @@ export function projectColliders(state: ClothSolverState) {
 
     for (let k = 0; k < colliders.length; k += 1) {
       const c = colliders[k]
-      const r = c.kind === 'sphere'
-        ? pushOutOfSphere(c, px, py, pz)
-        : pushOutOfCapsule(c, px, py, pz)
+      let r: PushResult = null
+      if (c.kind === 'sphere') r = pushOutOfSphere(c, px, py, pz)
+      else if (c.kind === 'capsule') r = pushOutOfCapsule(c, px, py, pz)
+      else if (c.kind === 'mesh') r = pushOutOfMesh(c, px, py, pz)
       if (r) {
         px = r.x; py = r.y; pz = r.z
         // Friction: damp the tangential motion since last frame.
@@ -84,6 +101,89 @@ function pushOutOfCapsule(c: CapsuleCollider, px: number, py: number, pz: number
 }
 
 function clamp01(v: number) { return v < 0 ? 0 : v > 1 ? 1 : v }
+
+/**
+ * Push a point out of a triangle mesh using a MeshBVH. We query for the
+ * closest point on the mesh surface in mesh-local space, then decide which
+ * side of the surface we're on by checking the dot product with the face
+ * normal. If we're inside (or within `skin`), snap to the surface + skin
+ * along the outward normal.
+ *
+ * Performance: O(log N) per query thanks to BVH. We reuse scratch vectors
+ * across calls so the hot loop allocates nothing.
+ */
+function pushOutOfMesh(c: MeshCollider, px: number, py: number, pz: number): PushResult {
+  const geom = c.mesh.geometry as unknown as THREE.BufferGeometry & { boundsTree?: MeshBVH }
+  const bvh = geom.boundsTree
+  if (!bvh) return null
+
+  _worldMat.fromArray(c.mesh.matrixWorld.elements as ArrayLike<number>)
+  _localMat.copy(_worldMat).invert()
+  _localPoint.set(px, py, pz).applyMatrix4(_localMat)
+
+  const hit = bvh.closestPointToPoint(_localPoint, _hit)
+  if (!hit) return null
+
+  if (!getTriangleNormal(geom, hit.faceIndex ?? 0, _faceNormal)) return null
+
+  // Transform hit point + face normal to world.
+  _worldHit.copy(hit.point).applyMatrix4(_worldMat)
+  _normalMat.getNormalMatrix(_worldMat)
+  _worldNormal.copy(_faceNormal).applyMatrix3(_normalMat).normalize()
+
+  const dx = px - _worldHit.x
+  const dy = py - _worldHit.y
+  const dz = pz - _worldHit.z
+  const dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
+  // Build a "surface→particle" direction in world space — this is the
+  // axis we'd push along even if we can't trust the face normal.
+  const sgn = dx * _worldNormal.x + dy * _worldNormal.y + dz * _worldNormal.z
+
+  // If the particle is clearly far from the surface AND on the outward
+  // side of the face normal, it's free — skip.
+  if (sgn > c.skin && dist > c.skin) return null
+
+  // Decide outward direction. If sgn is positive, the face normal already
+  // points toward the particle — use it. Otherwise the particle is on the
+  // back side of this face (likely inside the mesh) and we push along the
+  // direction *from surface to particle* if we have one, else along the
+  // negated normal as a last resort.
+  let nx: number, ny: number, nz: number
+  if (sgn > 0) {
+    nx = _worldNormal.x; ny = _worldNormal.y; nz = _worldNormal.z
+  } else if (dist > 1e-6) {
+    const inv = 1 / dist
+    nx = dx * inv; ny = dy * inv; nz = dz * inv
+  } else {
+    nx = -_worldNormal.x; ny = -_worldNormal.y; nz = -_worldNormal.z
+  }
+
+  return {
+    x: _worldHit.x + nx * c.skin,
+    y: _worldHit.y + ny * c.skin,
+    z: _worldHit.z + nz * c.skin,
+    nx, ny, nz,
+  }
+}
+
+function getTriangleNormal(
+  geom: THREE.BufferGeometry,
+  faceIndex: number,
+  out: THREE.Vector3,
+): boolean {
+  const posAttr = geom.getAttribute('position') as THREE.BufferAttribute | undefined
+  if (!posAttr) return false
+  const index = geom.getIndex()
+  const a = index ? index.getX(faceIndex * 3 + 0) : faceIndex * 3 + 0
+  const b = index ? index.getX(faceIndex * 3 + 1) : faceIndex * 3 + 1
+  const c = index ? index.getX(faceIndex * 3 + 2) : faceIndex * 3 + 2
+  _vA.fromBufferAttribute(posAttr, a)
+  _vB.fromBufferAttribute(posAttr, b)
+  _vC.fromBufferAttribute(posAttr, c)
+  _tri.set(_vA, _vB, _vC)
+  _tri.getNormal(out)
+  return true
+}
 
 // ---------------------------------------------------------------------------
 // Helpers for placing pre-canned colliders in world space.
