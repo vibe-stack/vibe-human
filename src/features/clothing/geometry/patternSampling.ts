@@ -67,6 +67,14 @@ export function samplePatternOutline(piece: PatternPiece, samplesPerEdge = SAMPL
   return result
 }
 
+export function sampleEdgeLoop(piece: PatternPiece, edges: PatternEdge[], samplesPerEdge = SAMPLES_PER_EDGE): Vec2[] {
+  const result: Vec2[] = []
+  for (const edge of edges) {
+    result.push(...sampleEdge(piece, edge, samplesPerEdge))
+  }
+  return result
+}
+
 // ---------------------------------------------------------------------------
 // Evaluate a single point on an edge at t ∈ [0,1]
 // ---------------------------------------------------------------------------

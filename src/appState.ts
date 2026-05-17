@@ -16,6 +16,8 @@ import type { BoneDebug } from './HumanModel'
 
 type Updater<T> = T | ((previous: T) => T)
 
+export type CharacterRenderMode = 'solid' | 'full'
+
 export type PoseTestLandmark = {
   x: number
   y: number
@@ -53,6 +55,7 @@ type AppState = {
   showHair: boolean
   showTest: boolean
   showClothing: boolean
+  characterRenderMode: CharacterRenderMode
   poseTestEnabled: boolean
   poseTestStatus: string
   poseTestModelUrl: string
@@ -102,6 +105,7 @@ export const appState = proxy<AppState>({
   showHair: false,
   showTest: false,
   showClothing: false,
+  characterRenderMode: 'solid',
   poseTestEnabled: false,
   poseTestStatus: 'Idle',
   poseTestModelUrl: DEFAULT_POSE_TEST_MODEL_URL,
@@ -221,6 +225,10 @@ export function setShowHair(value: boolean) {
 
 export function setShowTest(value: boolean) {
   appState.showTest = value
+}
+
+export function setCharacterRenderMode(mode: CharacterRenderMode) {
+  appState.characterRenderMode = mode
 }
 
 export function setPoseTestEnabled(value: boolean) {

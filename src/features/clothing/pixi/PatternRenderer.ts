@@ -1,6 +1,6 @@
 import * as PIXI from 'pixi.js'
-import type { GarmentDocument, PatternPiece } from '../state/clothingTypes'
-import { samplePatternOutline, sampleEdge } from '../geometry/patternSampling'
+import type { GarmentDocument, PatternEdge, PatternPiece } from '../state/clothingTypes'
+import { samplePatternOutline, sampleEdge, sampleEdgeLoop } from '../geometry/patternSampling'
 import { sampleSeam } from '../geometry/seamUtils'
 import { COLORS, drawPolyline, drawCircle } from './pixiUtils'
 
@@ -77,6 +77,18 @@ export class PatternRenderer {
     }
     this.fillGfx.closePath()
     this.fillGfx.fill()
+
+    for (const holeEdges of piece.holes ?? []) {
+      const hole = sampleEdgeLoop(piece, holeEdges, 12)
+      if (hole.length < 3) continue
+      this.fillGfx.setFillStyle({ color: COLORS.background, alpha: 0.96 })
+      this.fillGfx.moveTo(hole[0].x, hole[0].y)
+      for (let i = 1; i < hole.length; i++) {
+        this.fillGfx.lineTo(hole[i].x, hole[i].y)
+      }
+      this.fillGfx.closePath()
+      this.fillGfx.fill()
+    }
   }
 
   private renderPieceOutline(
@@ -87,16 +99,33 @@ export class PatternRenderer {
     showHandles: boolean,
   ) {
     for (const edge of piece.edges) {
-      const isEdgeSelected = edge.id === selectedEdgeId
+      this.renderEdge(piece, edge, selected, edge.id === selectedEdgeId, showHandles)
+    }
+
+    for (const holeEdges of piece.holes ?? []) {
+      for (const edge of holeEdges) {
+        this.renderEdge(piece, edge, selected, edge.id === selectedEdgeId, showHandles, 0xff6688)
+      }
+    }
+  }
+
+  private renderEdge(
+    piece: PatternPiece,
+    edge: PatternEdge,
+    selected: boolean,
+    isEdgeSelected: boolean,
+    showHandles: boolean,
+    fallbackColor = 0x4466cc,
+  ) {
       const color = isEdgeSelected
         ? COLORS.patternStrokeSelected
         : selected
           ? COLORS.patternStroke
-          : 0x4466cc
+          : fallbackColor
       const width = isEdgeSelected ? 2.5 : selected ? 1.8 : 1.2
 
       const pts = sampleEdge(piece, edge, 12)
-      if (pts.length === 0) continue
+      if (pts.length === 0) return
 
       // Add the endpoint
       const toPt = piece.points[edge.to]
@@ -129,7 +158,6 @@ export class PatternRenderer {
           this.pointGfx.fill()
         }
       }
-    }
   }
 
   private renderPoints(

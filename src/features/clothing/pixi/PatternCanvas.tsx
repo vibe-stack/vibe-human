@@ -3,7 +3,12 @@ import * as PIXI from 'pixi.js'
 import { useSnapshot } from 'valtio'
 import { clothingStore } from '../state/clothingStore'
 import {
+  convertEdgeToCurve,
+  createRectanglePattern,
+  createSeam,
+  makeHoleFromPattern,
   movePoint,
+  moveHandle,
   selectPattern,
   selectPoint,
   selectEdge,
@@ -70,8 +75,11 @@ export default function PatternCanvas() {
       let panStart  = { x: 0, y: 0 }
       let panOrigin = { x: 0, y: 0 }
 
-      // Drag state for point moving
-      let dragging: { patternId: string; pointId: string } | null = null
+      let dragging:
+        | { type: 'point'; patternId: string; pointId: string }
+        | { type: 'handle'; patternId: string; pointId: string; handleKind: 'in' | 'out' }
+        | null = null
+      let pendingSeam: { patternId: string; edgeId: string } | null = null
 
       const canvas = app.canvas as HTMLCanvasElement
 
@@ -102,11 +110,43 @@ export default function PatternCanvas() {
         const tool = clothingStore.activeClothingTool
         const isPanTool = tool === 'pan' || e.button === 1
 
+        if (e.button === 2) {
+          const pick = pickAt(clothingStore.garment, world, clothingStore.viewport2D.zoom)
+          if (pick?.type === 'pattern') {
+            const targetId = findContainingPatternId(pick.patternId, world)
+            if (targetId) makeHoleFromPattern(targetId, pick.patternId)
+          }
+          return
+        }
+
         if (isPanTool) {
           isPanning  = true
           panStart   = screen
           panOrigin  = { x: clothingStore.viewport2D.panX, y: clothingStore.viewport2D.panY }
           canvas.setPointerCapture(e.pointerId)
+          return
+        }
+
+        if (tool === 'draw') {
+          const id = createRectanglePattern(world, 160, 120)
+          selectPattern(id)
+          return
+        }
+
+        if (tool === 'seam') {
+          const pick = pickAt(clothingStore.garment, world, clothingStore.viewport2D.zoom)
+          if (pick?.type === 'edge') {
+            if (!pendingSeam) {
+              pendingSeam = { patternId: pick.patternId, edgeId: pick.edgeId }
+              selectPattern(pick.patternId)
+              selectEdge(pick.edgeId)
+            } else {
+              createSeam(pendingSeam.patternId, pendingSeam.edgeId, pick.patternId, pick.edgeId)
+              pendingSeam = null
+              selectPattern(pick.patternId)
+              selectEdge(pick.edgeId)
+            }
+          }
           return
         }
 
@@ -123,12 +163,22 @@ export default function PatternCanvas() {
             selectPattern(pick.patternId)
             selectPoint(pick.pointId)
             if (tool === 'edit-points') {
-              dragging = { patternId: pick.patternId, pointId: pick.pointId }
+              dragging = { type: 'point', patternId: pick.patternId, pointId: pick.pointId }
+              canvas.setPointerCapture(e.pointerId)
+            }
+          } else if (pick.type === 'handle') {
+            selectPattern(pick.patternId)
+            selectPoint(pick.pointId)
+            if (tool === 'edit-points') {
+              dragging = { type: 'handle', patternId: pick.patternId, pointId: pick.pointId, handleKind: pick.handleKind }
               canvas.setPointerCapture(e.pointerId)
             }
           } else if (pick.type === 'edge') {
             selectPattern(pick.patternId)
             selectEdge(pick.edgeId)
+            if (tool === 'edit-points' && e.detail >= 2) {
+              convertEdgeToCurve(pick.patternId, pick.edgeId)
+            }
           } else if (pick.type === 'pattern') {
             selectPattern(pick.patternId)
           }
@@ -149,7 +199,11 @@ export default function PatternCanvas() {
         }
 
         if (dragging) {
-          movePoint(dragging.patternId, dragging.pointId, worldPt.x, worldPt.y)
+          if (dragging.type === 'point') {
+            movePoint(dragging.patternId, dragging.pointId, worldPt.x, worldPt.y)
+          } else {
+            moveHandle(dragging.patternId, dragging.pointId, dragging.handleKind, worldPt.x, worldPt.y)
+          }
           return
         }
 
@@ -179,13 +233,16 @@ export default function PatternCanvas() {
         const { garment, viewport2D, previewOptions } = clothingStore
 
         // Apply camera transform
-        world.x     =  -viewport2D.panX * viewport2D.zoom + app.renderer.width  / 2
-        world.y     =  -viewport2D.panY * viewport2D.zoom + app.renderer.height / 2
+        const viewWidth = canvas.clientWidth || app.renderer.width / window.devicePixelRatio
+        const viewHeight = canvas.clientHeight || app.renderer.height / window.devicePixelRatio
+
+        world.x     =  -viewport2D.panX * viewport2D.zoom + viewWidth  / 2
+        world.y     =  -viewport2D.panY * viewport2D.zoom + viewHeight / 2
         world.scale.set(viewport2D.zoom)
 
         // Grid: convert screen bounds to world
-        const wW = app.renderer.width  / viewport2D.zoom
-        const wH = app.renderer.height / viewport2D.zoom
+        const wW = viewWidth  / viewport2D.zoom
+        const wH = viewHeight / viewport2D.zoom
         const wL = viewport2D.panX - wW / 2
         const wT = viewport2D.panY - wH / 2
         drawGrid(gridGfx, wL, wT, wL + wW, wT + wH, 50)
@@ -194,7 +251,7 @@ export default function PatternCanvas() {
           garment,
           viewport2D.hoveredEntityId,
           previewOptions.showSeams,
-          clothingStore.activeClothingTool === 'edit-points',
+          true,
         )
       })
     })
@@ -211,12 +268,29 @@ export default function PatternCanvas() {
     function screenToWorld(screen: { x: number; y: number }) {
       if (!pixiRef.current) return { x: 0, y: 0 }
       const { viewport2D } = clothingStore
-      const cx = pixiRef.current.app.renderer.width  / 2
-      const cy = pixiRef.current.app.renderer.height / 2
+      const canvas = pixiRef.current.app.canvas as HTMLCanvasElement
+      const cx = (canvas.clientWidth || pixiRef.current.app.renderer.width / window.devicePixelRatio) / 2
+      const cy = (canvas.clientHeight || pixiRef.current.app.renderer.height / window.devicePixelRatio) / 2
       return {
         x: (screen.x - cx) / viewport2D.zoom + viewport2D.panX,
         y: (screen.y - cy) / viewport2D.zoom + viewport2D.panY,
       }
+    }
+
+    function findContainingPatternId(excludedPatternId: string, point: { x: number; y: number }) {
+      for (const piece of Object.values(clothingStore.garment.patterns)) {
+        if (piece.id === excludedPatternId || !piece.closed) continue
+        const pick = pickAt(
+          {
+            ...clothingStore.garment,
+            patterns: { [piece.id]: piece },
+          },
+          point,
+          clothingStore.viewport2D.zoom,
+        )
+        if (pick?.type === 'pattern') return piece.id
+      }
+      return null
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

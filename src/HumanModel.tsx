@@ -3,7 +3,7 @@ import { TransformControls, useGLTF } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import { useSnapshot } from 'valtio'
 import * as THREE from 'three/webgpu'
-import { appState, setBoneDebug, setIsTransforming, type PoseTestLandmark } from './appState'
+import { appState, setBoneDebug, setIsTransforming, type CharacterRenderMode, type PoseTestLandmark } from './appState'
 import { createBodySkinMaterial, createEyeMaterial, createSkinMaterial } from './skinMaterial'
 import GroomRenderer from './features/groom/components/GroomRenderer'
 import GroomViewportTools from './features/groom/components/GroomViewportTools'
@@ -34,6 +34,8 @@ type MorphTargetMesh = THREE.Mesh & {
   morphTargetDictionary: Record<string, number>
   morphTargetInfluences: number[]
 }
+
+type MeshMaterialValue = THREE.Material | THREE.Material[]
 
 type PoseSegmentSpec = {
   bone: string
@@ -96,6 +98,12 @@ const POSE_SEGMENTS: PoseSegmentSpec[] = [
   { bone: 'DEF-thigh.R.001', child: 'DEF-foot.R', from: 26, to: 28 },
   { bone: 'DEF-foot.R', child: 'DEF-toe.R', from: 28, to: 32 },
 ]
+
+const SOLID_CHARACTER_MATERIAL = new THREE.MeshStandardMaterial({
+  color: 0xffffff,
+  roughness: 0.72,
+  metalness: 0,
+})
 
 function normalizeBoneName(name: string) {
   return name.replace(/^DEF-/, '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase()
@@ -189,6 +197,34 @@ function isBodySkinMesh(object: THREE.Object3D) {
 function isEyeMesh(object: THREE.Object3D) {
   const mesh = object as THREE.Mesh
   return Boolean(mesh.isMesh && EYE_MESH_NAMES.has(object.name))
+}
+
+function isRenderableCharacterMesh(object: THREE.Object3D): object is THREE.Mesh {
+  return Boolean((object as THREE.Mesh).isMesh)
+}
+
+function applySolidCharacterMaterials(
+  scene: THREE.Object3D,
+  fullMaterials: WeakMap<THREE.Mesh, MeshMaterialValue>,
+) {
+  scene.traverse((obj) => {
+    if (!isRenderableCharacterMesh(obj)) return
+    if (obj.material !== SOLID_CHARACTER_MATERIAL) {
+      fullMaterials.set(obj, obj.material as MeshMaterialValue)
+    }
+    obj.material = SOLID_CHARACTER_MATERIAL
+  })
+}
+
+function restoreFullCharacterMaterials(
+  scene: THREE.Object3D,
+  fullMaterials: WeakMap<THREE.Mesh, MeshMaterialValue>,
+) {
+  scene.traverse((obj) => {
+    if (!isRenderableCharacterMesh(obj)) return
+    const material = fullMaterials.get(obj)
+    if (material) obj.material = material
+  })
 }
 
 function replaceNamedMaterialSlots(
@@ -603,6 +639,7 @@ export default function HumanModel() {
     subsurfaceStrength,
     showHair,
     showModeling: showModelingOverlay,
+    characterRenderMode,
     poseTestEnabled,
     poseTestMirror,
     poseTestRigStrength,
@@ -625,6 +662,8 @@ export default function HumanModel() {
   const [modelingBones, setModelingBones] = useState<Record<string, THREE.Bone>>({})
   const [selectedBone, setSelectedBone] = useState<THREE.Bone | null>(null)
 
+  const characterRenderModeRef = useRef<CharacterRenderMode>(characterRenderMode)
+  const fullMaterialsRef = useRef(new WeakMap<THREE.Mesh, MeshMaterialValue>())
   const facsValuesRef = useRef(facsValues)
   const modelingValuesRef = useRef(modelingValues)
   const eyeLook2DRef = useRef(eyeLook2D)
@@ -640,6 +679,15 @@ export default function HumanModel() {
   const poseHipCalibrationRef = useRef<THREE.Vector3 | null>(null)
 
   // Sync refs so useFrame sees latest values without re-triggering effects
+  useEffect(() => {
+    characterRenderModeRef.current = characterRenderMode
+    if (characterRenderMode === 'solid') {
+      applySolidCharacterMaterials(scene, fullMaterialsRef.current)
+    } else {
+      restoreFullCharacterMaterials(scene, fullMaterialsRef.current)
+    }
+  }, [characterRenderMode, scene])
+
   useEffect(() => {
     facsValuesRef.current = facsValues
     tRef.current = 0 // restart lerp
@@ -973,6 +1021,9 @@ export default function HumanModel() {
         }
         // Let the groom system push follicle tint updates into the head material.
         registerSkinMaterialForGroom(headMat as unknown as THREE.Material)
+        if (characterRenderModeRef.current === 'solid') {
+          applySolidCharacterMaterials(scene, fullMaterialsRef.current)
+        }
       })
       .catch((error: unknown) => {
         console.error('Failed to create head skin material:', error)
@@ -991,6 +1042,9 @@ export default function HumanModel() {
         })
         if (matched === 0) {
           console.warn('No mesh/material slot matched the body skin material names M_Body/TSL_BodySkin.')
+        }
+        if (characterRenderModeRef.current === 'solid') {
+          applySolidCharacterMaterials(scene, fullMaterialsRef.current)
         }
       })
       .catch((error: unknown) => {
@@ -1023,6 +1077,9 @@ export default function HumanModel() {
           const mesh = obj as THREE.Mesh
           mesh.material = mat as unknown as THREE.Material
         })
+        if (characterRenderModeRef.current === 'solid') {
+          applySolidCharacterMaterials(scene, fullMaterialsRef.current)
+        }
       })
       .catch((error: unknown) => {
         console.error('Failed to create eye material:', error)

@@ -1,6 +1,14 @@
 import { useSnapshot } from 'valtio'
 import { clothingStore } from '../state/clothingStore'
-import { resetSim, toggleSimRunning } from '../state/clothingActions'
+import { resetSim, setSimQuality, toggleSimRunning } from '../state/clothingActions'
+import type { ClothSimQuality } from '../state/clothingTypes'
+
+const QUALITY_OPTIONS: Array<{ id: ClothSimQuality; label: string }> = [
+  { id: 'low', label: 'Low' },
+  { id: 'medium', label: 'Medium' },
+  { id: 'high', label: 'High' },
+  { id: 'ultra', label: 'Ultra' },
+]
 
 // ---------------------------------------------------------------------------
 // ClothingInspector — lives in the right sidebar when Clothing is active.
@@ -9,7 +17,7 @@ import { resetSim, toggleSimRunning } from '../state/clothingActions'
 
 export default function ClothingInspector() {
   const snap = useSnapshot(clothingStore)
-  const { garment, previewOptions, activeClothingTool, simRunning } = snap
+  const { garment, previewOptions, activeClothingTool, simRunning, simQuality } = snap
 
   const selectedPattern = garment.selectedPatternId
     ? garment.patterns[garment.selectedPatternId]
@@ -59,7 +67,13 @@ export default function ClothingInspector() {
         <Section label="RAPIER CLOTH">
           <Row label="Status" value={simRunning ? 'RUNNING' : 'PAUSED'} />
           <Row label="Mode" value="PARTICLE SPRINGS" />
+          <Row label="Quality" value={simQuality.toUpperCase()} />
           <Row label="Particle Dist" value={`${selectedPattern.particleDistance} u`} />
+          <SegmentedControl
+            value={simQuality}
+            options={QUALITY_OPTIONS}
+            onChange={setSimQuality}
+          />
           <ButtonRow>
             <SmallButton label={simRunning ? 'PAUSE' : 'RUN'} onClick={toggleSimRunning} />
             <SmallButton label="RESET" onClick={resetSim} />
@@ -159,6 +173,54 @@ function SmallButton({ label, onClick }: { label: string; onClick: () => void })
     >
       {label}
     </button>
+  )
+}
+
+function SegmentedControl<T extends string>({
+  value,
+  options,
+  onChange,
+}: {
+  value: T
+  options: Array<{ id: T; label: string }>
+  onChange: (value: T) => void
+}) {
+  return (
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))`,
+      gap: 2,
+      marginTop: 4,
+      padding: 2,
+      borderRadius: 5,
+      background: 'rgba(255,255,255,0.05)',
+      border: '1px solid rgba(255,255,255,0.08)',
+    }}>
+      {options.map((option) => {
+        const active = option.id === value
+        return (
+          <button
+            key={option.id}
+            onClick={() => onChange(option.id)}
+            style={{
+              minWidth: 0,
+              padding: '4px 3px',
+              borderRadius: 3,
+              border: 'none',
+              background: active ? 'rgba(68,136,255,0.32)' : 'transparent',
+              color: active ? '#9ec2ff' : 'rgba(255,255,255,0.45)',
+              fontSize: 8,
+              fontFamily: "'Courier New', monospace",
+              fontWeight: 700,
+              letterSpacing: '0.04em',
+              cursor: 'pointer',
+            }}
+          >
+            {option.label.toUpperCase()}
+          </button>
+        )
+      })}
+    </div>
   )
 }
 

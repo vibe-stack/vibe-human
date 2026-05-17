@@ -6,10 +6,10 @@ import type { Vec2 } from '../state/clothingTypes'
 // ---------------------------------------------------------------------------
 
 export const COLORS = {
-  grid:          0x2a2a3a,
-  gridMajor:     0x3a3a50,
-  patternFill:   0x2255aa,
-  patternFillAlpha: 0.18,
+  grid:          0x343448,
+  gridMajor:     0x54546f,
+  patternFill:   0x2f6dff,
+  patternFillAlpha: 0.28,
   patternStroke: 0x5588ff,
   patternStrokeSelected: 0xffc044,
   point:         0xffffff,
@@ -19,7 +19,7 @@ export const COLORS = {
   handle:        0x88aaff,
   seam:          0xff4466,
   seamAlpha:     0.8,
-  background:    0x0d0d18,
+  background:    0x141421,
 }
 
 // ---------------------------------------------------------------------------

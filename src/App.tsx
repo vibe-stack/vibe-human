@@ -23,7 +23,7 @@ import ClothingPatternEditor2D from './features/clothing/components/ClothingPatt
 import { ClothingInspector } from './features/clothing/index'
 import { loadDemoGarment } from './features/clothing/state/clothingActions'
 import { createDemoGarment } from './features/clothing/demo/createDemoGarment'
-import { appState, toggleShowExpressions, toggleShowHair, toggleShowModeling, toggleShowSkinning, toggleShowTest, toggleShowClothing } from './appState'
+import { appState, setCharacterRenderMode, toggleShowExpressions, toggleShowHair, toggleShowModeling, toggleShowSkinning, toggleShowTest, toggleShowClothing, type CharacterRenderMode } from './appState'
 
 function FovUpdater() {
   const { camera, invalidate } = useThree()
@@ -40,12 +40,88 @@ function FovUpdater() {
   return null
 }
 
+function CanvasResizeUpdater({ watch }: { watch: boolean }) {
+  const { camera, gl, invalidate } = useThree()
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      const canvas = gl.domElement
+      const parent = canvas.parentElement
+      if (!parent) return
+
+      const rect = parent.getBoundingClientRect()
+      if (rect.width <= 0 || rect.height <= 0) return
+
+      gl.setSize(rect.width, rect.height, false)
+      if (camera instanceof THREE.PerspectiveCamera) {
+        camera.aspect = rect.width / rect.height
+        camera.updateProjectionMatrix()
+      }
+      invalidate()
+    })
+
+    return () => cancelAnimationFrame(frame)
+  }, [camera, gl, invalidate, watch])
+
+  return null
+}
+
 /** Loads the demo garment once when clothing mode is first activated. */
 function ClothingBootstrapper() {
   useEffect(() => {
     loadDemoGarment(createDemoGarment())
   }, [])
   return null
+}
+
+const CHARACTER_RENDER_MODES: Array<{ id: CharacterRenderMode; label: string }> = [
+  { id: 'solid', label: 'Character Solid' },
+  { id: 'full', label: 'Character Full' },
+]
+
+function CharacterRenderModeTabs() {
+  const { characterRenderMode } = useSnapshot(appState)
+
+  return (
+    <div style={{
+      position: 'absolute',
+      left: 12,
+      bottom: 12,
+      zIndex: 12,
+      display: 'flex',
+      gap: 2,
+      padding: 3,
+      background: 'rgba(8,8,16,0.72)',
+      border: '1px solid rgba(255,255,255,0.1)',
+      borderRadius: 7,
+      backdropFilter: 'blur(12px)',
+      WebkitBackdropFilter: 'blur(12px)',
+    }}>
+      {CHARACTER_RENDER_MODES.map((mode) => {
+        const active = characterRenderMode === mode.id
+        return (
+          <button
+            key={mode.id}
+            onClick={() => setCharacterRenderMode(mode.id)}
+            style={{
+              padding: '5px 9px',
+              border: 'none',
+              borderRadius: 5,
+              background: active ? 'rgba(255,255,255,0.14)' : 'transparent',
+              color: active ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.42)',
+              fontFamily: "'Courier New', monospace",
+              fontSize: 9,
+              fontWeight: 700,
+              letterSpacing: '0.08em',
+              cursor: 'pointer',
+            }}
+          >
+            {mode.label.toUpperCase()}
+          </button>
+        )
+      })}
+    </div>
+  )
 }
 
 export default function App() {
@@ -131,6 +207,7 @@ export default function App() {
               style={{ width: '100%', height: '100%' }}
             >
               <FovUpdater />
+              <CanvasResizeUpdater watch={showClothing} />
               <color attach="background" args={['#565656']} />
 
               {/* Key light – front-left, warm, main illumination */}
@@ -149,13 +226,12 @@ export default function App() {
               {showClothing && (
                 <Suspense fallback={null}>
                   <GarmentPreviewMesh />
-                  <ClothingBootstrapper />
                 </Suspense>
               )}
 
               <OrbitControls
                 enabled={!isTransforming}
-                mouseButtons={{ LEFT: 1, MIDDLE: 0, RIGHT: 2 }}
+                mouseButtons={{  MIDDLE: 0, RIGHT: 2 }}
                 minDistance={0.2}
                 maxDistance={25}
                 minPolarAngle={Math.PI * 0.2}
@@ -163,6 +239,8 @@ export default function App() {
                 target={[0, 0, 0]}
               />
             </Canvas>
+            {showClothing && <ClothingBootstrapper />}
+            <CharacterRenderModeTabs />
             {showHair && <BrushToolbar />}
           </div>
 
@@ -205,7 +283,7 @@ export default function App() {
 
         {/* Sidebar panel */}
         <Panel
-          defaultSize="30%"
+          defaultSize="15%"
           minSize="15%"
           maxSize="55%"
           style={{ overflow: 'hidden' }}

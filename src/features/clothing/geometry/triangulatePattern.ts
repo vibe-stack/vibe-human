@@ -2,7 +2,7 @@
 // It is already installed as a transitive dep.  Import and use it below.
 import earcut from 'earcut'
 import type { PatternPiece, Vec2 } from '../state/clothingTypes'
-import { samplePatternOutline } from './patternSampling'
+import { sampleEdgeLoop, samplePatternOutline } from './patternSampling'
 
 export type TriangulationResult = {
   vertices: Vec2[]
@@ -25,7 +25,19 @@ export function triangulatePattern(piece: PatternPiece): TriangulationResult {
   for (const pt of outline) {
     flat.push(pt.x, pt.y)
   }
+  const holes: number[] = []
+  const vertices = [...outline]
 
-  const rawIndices = earcut(flat, undefined, 2)
-  return { vertices: outline, indices: Array.from(rawIndices) }
+  for (const holeEdges of piece.holes ?? []) {
+    const hole = sampleEdgeLoop(piece, holeEdges, 12)
+    if (hole.length < 3) continue
+    holes.push(vertices.length)
+    vertices.push(...hole)
+    for (const pt of hole) {
+      flat.push(pt.x, pt.y)
+    }
+  }
+
+  const rawIndices = earcut(flat, holes.length ? holes : undefined, 2)
+  return { vertices, indices: Array.from(rawIndices) }
 }

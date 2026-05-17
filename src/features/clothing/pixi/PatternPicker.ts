@@ -107,6 +107,25 @@ function pointInPattern(pt: Vec2, piece: PatternPiece): boolean {
   }
   if (verts.length < 3) return false
 
+  let inside = pointInVerts(pt, verts)
+  if (!inside) return false
+
+  for (const holeEdges of piece.holes ?? []) {
+    const holeVerts: Vec2[] = []
+    for (const edge of holeEdges) {
+      const from = piece.points[edge.from]
+      if (from) holeVerts.push({ x: from.x, y: from.y })
+    }
+    if (holeVerts.length >= 3 && pointInVerts(pt, holeVerts)) {
+      inside = false
+      break
+    }
+  }
+
+  return inside
+}
+
+function pointInVerts(pt: Vec2, verts: Vec2[]) {
   let inside = false
   const n = verts.length
   for (let i = 0, j = n - 1; i < n; j = i++) {

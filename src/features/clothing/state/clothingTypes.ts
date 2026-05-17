@@ -32,6 +32,7 @@ export type PatternPiece = {
   name: string
   points: Record<string, PatternPoint>
   edges: PatternEdge[]
+  holes?: PatternEdge[][]
   closed: boolean
   fabricId?: string
   /** Target triangle size for simulation grid (mm-scale in pattern space). */
@@ -72,3 +73,5 @@ export type GarmentDocument = {
 // ---------------------------------------------------------------------------
 
 export type ClothingTool = 'select' | 'draw' | 'edit-points' | 'seam' | 'pan'
+
+export type ClothSimQuality = 'low' | 'medium' | 'high' | 'ultra'
