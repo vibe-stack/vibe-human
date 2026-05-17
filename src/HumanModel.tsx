@@ -3,7 +3,7 @@ import { TransformControls, useGLTF } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import { useSnapshot } from 'valtio'
 import * as THREE from 'three/webgpu'
-import { appState, setBoneDebug, setIsTransforming } from './appState'
+import { appState, setBoneDebug, setIsTransforming, type PoseTestLandmark } from './appState'
 import { createBodySkinMaterial, createEyeMaterial, createSkinMaterial } from './skinMaterial'
 import GroomRenderer from './features/groom/components/GroomRenderer'
 import GroomViewportTools from './features/groom/components/GroomViewportTools'
@@ -33,6 +33,19 @@ type MorphTargetMesh = THREE.Mesh & {
   morphTargetInfluences: number[]
 }
 
+type PoseSegmentSpec = {
+  bone: string
+  child?: string
+  from: number
+  to: number
+}
+
+type PoseAimSettings = {
+  mirror: boolean
+  strength: number
+  minVisibility: number
+}
+
 export type BoneDebug = {
   name: string
   position: [number, number, number]
@@ -49,6 +62,7 @@ const BODY_SKIN_MATERIAL_ALIASES = ['mbody', 'tslbodyskin']
 const HEAD_GEOMETRY_MIN_Y = 2.65
 const BODY_GEOMETRY_MAX_Y = 3.0
 const BODY_GEOMETRY_MIN_HEIGHT = 1.5
+const MODEL_BASE_POSITION = new THREE.Vector3(0, -3.1, 0)
 const HEAD_LOOK_YAW = 1.05
 const HEAD_LOOK_PITCH = 0.58
 const NECK_LOOK_YAW = 0.18
@@ -58,6 +72,26 @@ const FOCUS_LOCK_EYE_ALPHA = 0.18
 const EYE_FORWARD = new THREE.Vector3(0, 0, 1)
 const EYE_OBJECT_NAMES = ['Eye_L', 'Eye_R']
 const EYE_MESH_NAMES = new Set(EYE_OBJECT_NAMES)
+const POSE_SEGMENTS: PoseSegmentSpec[] = [
+  { bone: 'DEF-spine.003', child: 'DEF-spine.004', from: 23, to: 11 },
+  { bone: 'DEF-spine.004', child: 'DEF-spine.005', from: 23, to: 11 },
+  { bone: 'DEF-spine.005', child: 'DEF-spine.006', from: 23, to: 11 },
+  { bone: 'DEF-spine.006', from: 11, to: 0 },
+
+  { bone: 'DEF-upper_arm.L', child: 'DEF-forearm.L.001', from: 11, to: 13 },
+  { bone: 'DEF-forearm.L.001', child: 'DEF-hand.L', from: 13, to: 15 },
+  { bone: 'DEF-hand.L', child: 'DEF-f_middle.01.L', from: 15, to: 19 },
+  { bone: 'DEF-upper_arm.R', child: 'DEF-forearm.R.001', from: 12, to: 14 },
+  { bone: 'DEF-forearm.R.001', child: 'DEF-hand.R', from: 14, to: 16 },
+  { bone: 'DEF-hand.R', child: 'DEF-f_middle.01.R', from: 16, to: 20 },
+
+  { bone: 'DEF-thigh.L', child: 'DEF-thigh.L.001', from: 23, to: 25 },
+  { bone: 'DEF-thigh.L.001', child: 'DEF-foot.L', from: 25, to: 27 },
+  { bone: 'DEF-foot.L', child: 'DEF-toe.L', from: 27, to: 31 },
+  { bone: 'DEF-thigh.R', child: 'DEF-thigh.R.001', from: 24, to: 26 },
+  { bone: 'DEF-thigh.R.001', child: 'DEF-foot.R', from: 26, to: 28 },
+  { bone: 'DEF-foot.R', child: 'DEF-toe.R', from: 28, to: 32 },
+]
 
 function normalizeBoneName(name: string) {
   return name.replace(/^DEF-/, '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase()
@@ -337,6 +371,117 @@ function aimObjectForwardAtTarget(
   object.quaternion.slerp(delta.multiply(rest.quaternion), alpha)
 }
 
+function poseLandmarkVisible(landmark: PoseTestLandmark | undefined, minVisibility: number) {
+  if (!landmark) return false
+  return (landmark.visibility ?? landmark.presence ?? 1) >= minVisibility
+}
+
+function poseVector(landmark: PoseTestLandmark, mirror: boolean, out = new THREE.Vector3()) {
+  const mirrorSign = mirror ? -1 : 1
+  return out.set(landmark.x * mirrorSign, -landmark.y, -landmark.z)
+}
+
+function poseMidpoint(
+  landmarks: PoseTestLandmark[],
+  a: number,
+  b: number,
+  settings: PoseAimSettings,
+  out: THREE.Vector3,
+) {
+  if (
+    !poseLandmarkVisible(landmarks[a], settings.minVisibility) ||
+    !poseLandmarkVisible(landmarks[b], settings.minVisibility)
+  ) {
+    return false
+  }
+
+  const va = poseVector(landmarks[a], settings.mirror, new THREE.Vector3())
+  const vb = poseVector(landmarks[b], settings.mirror, new THREE.Vector3())
+  out.copy(va).add(vb).multiplyScalar(0.5)
+  return true
+}
+
+function getRestAimDirection(
+  bone: THREE.Bone,
+  rest: Record<string, BoneRest>,
+  bones: Record<string, THREE.Bone>,
+  childName: string | undefined,
+  out: THREE.Vector3,
+) {
+  const boneRest = rest[bone.name]
+  const child = childName ? getBoneByName(bones, childName) : null
+  const childRest = child ? rest[child.name] : null
+
+  if (boneRest && childRest) {
+    return out.copy(childRest.worldPosition).sub(boneRest.worldPosition).normalize()
+  }
+
+  if (!boneRest) return null
+  return out.set(0, 1, 0).applyQuaternion(boneRest.worldQuaternion).normalize()
+}
+
+function aimBoneAtPoseSegment(
+  spec: PoseSegmentSpec,
+  landmarks: PoseTestLandmark[],
+  bones: Record<string, THREE.Bone>,
+  rest: Record<string, BoneRest>,
+  settings: PoseAimSettings,
+) {
+  const bone = getBoneByName(bones, spec.bone)
+  const boneRest = bone ? rest[bone.name] : null
+  const from = landmarks[spec.from]
+  const to = landmarks[spec.to]
+  if (
+    !bone ||
+    !boneRest ||
+    !poseLandmarkVisible(from, settings.minVisibility) ||
+    !poseLandmarkVisible(to, settings.minVisibility)
+  ) {
+    return false
+  }
+
+  const fromVector = poseVector(from, settings.mirror, new THREE.Vector3())
+  const toVector = poseVector(to, settings.mirror, new THREE.Vector3())
+  const targetDirection = toVector.sub(fromVector)
+  if (targetDirection.lengthSq() < 0.00001) return false
+  targetDirection.normalize()
+
+  const restDirection = getRestAimDirection(
+    bone,
+    rest,
+    bones,
+    spec.child,
+    new THREE.Vector3(),
+  )
+  if (!restDirection) return false
+
+  const delta = new THREE.Quaternion().setFromUnitVectors(restDirection, targetDirection)
+  const targetWorldQuaternion = delta.multiply(boneRest.worldQuaternion)
+  const parentWorldQuaternion = new THREE.Quaternion()
+  bone.parent?.getWorldQuaternion(parentWorldQuaternion)
+  const targetLocalQuaternion = parentWorldQuaternion.invert().multiply(targetWorldQuaternion)
+
+  bone.quaternion.slerp(targetLocalQuaternion, settings.strength)
+  return true
+}
+
+function applyMediaPipePose(
+  landmarks: PoseTestLandmark[],
+  bones: Record<string, THREE.Bone>,
+  rest: Record<string, BoneRest>,
+  scene: THREE.Object3D,
+  settings: PoseAimSettings,
+) {
+  let applied = 0
+  for (const spec of POSE_SEGMENTS) {
+    if (aimBoneAtPoseSegment(spec, landmarks, bones, rest, settings)) {
+      applied += 1
+      scene.updateMatrixWorld(true)
+    }
+  }
+  return applied
+}
+
 function applyMorphTargets(
   meshes: MorphTargetMesh[],
   targets: Record<string, number>,
@@ -374,6 +519,13 @@ export default function HumanModel() {
     subsurfaceStrength,
     showHair,
     showModeling: showModelingOverlay,
+    poseTestEnabled,
+    poseTestMirror,
+    poseTestRigStrength,
+    poseTestMinVisibility,
+    poseTestFollowPosition,
+    poseTestPositionScale,
+    poseTestWorldLandmarks,
   } = useSnapshot(appState)
   const { scene } = useGLTF(MODEL_URL)
 
@@ -392,6 +544,16 @@ export default function HumanModel() {
   const facsValuesRef = useRef(facsValues)
   const modelingValuesRef = useRef(modelingValues)
   const eyeLook2DRef = useRef(eyeLook2D)
+  const poseTestWorldLandmarksRef = useRef<PoseTestLandmark[] | null>(poseTestWorldLandmarks ? [...poseTestWorldLandmarks] : null)
+  const poseTestEnabledRef = useRef(poseTestEnabled)
+  const poseTestSettingsRef = useRef({
+    mirror: poseTestMirror,
+    strength: poseTestRigStrength,
+    minVisibility: poseTestMinVisibility,
+  })
+  const poseTestFollowPositionRef = useRef(poseTestFollowPosition)
+  const poseTestPositionScaleRef = useRef(poseTestPositionScale)
+  const poseHipCalibrationRef = useRef<THREE.Vector3 | null>(null)
 
   // Sync refs so useFrame sees latest values without re-triggering effects
   useEffect(() => {
@@ -407,6 +569,34 @@ export default function HumanModel() {
   useEffect(() => {
     eyeLook2DRef.current = eyeLook2D
   }, [eyeLook2D])
+
+  useEffect(() => {
+    poseTestWorldLandmarksRef.current = poseTestWorldLandmarks ? [...poseTestWorldLandmarks] : null
+  }, [poseTestWorldLandmarks])
+
+  useEffect(() => {
+    poseTestEnabledRef.current = poseTestEnabled
+    if (!poseTestEnabled) {
+      poseHipCalibrationRef.current = null
+      scene.position.copy(MODEL_BASE_POSITION)
+    }
+  }, [poseTestEnabled, scene])
+
+  useEffect(() => {
+    poseTestSettingsRef.current = {
+      mirror: poseTestMirror,
+      strength: poseTestRigStrength,
+      minVisibility: poseTestMinVisibility,
+    }
+  }, [poseTestMinVisibility, poseTestMirror, poseTestRigStrength])
+
+  useEffect(() => {
+    poseTestFollowPositionRef.current = poseTestFollowPosition
+  }, [poseTestFollowPosition])
+
+  useEffect(() => {
+    poseTestPositionScaleRef.current = poseTestPositionScale
+  }, [poseTestPositionScale])
 
   useEffect(() => {
     if (!showBones) {
@@ -611,6 +801,34 @@ export default function HumanModel() {
           new THREE.Euler(eLook.rightY * -0.38, eLook.rightX * 0.42, 0),
         )
         eyeR.quaternion.copy(restR.quaternion.clone().multiply(q))
+      }
+
+      const poseLandmarks = poseTestEnabledRef.current ? poseTestWorldLandmarksRef.current : null
+      if (poseLandmarks?.length) {
+        const poseSettings = poseTestSettingsRef.current
+        applyMediaPipePose(poseLandmarks, bones, rest, scene, poseSettings)
+
+        if (poseTestFollowPositionRef.current) {
+          const hipCenter = new THREE.Vector3()
+          if (poseMidpoint(poseLandmarks, 23, 24, poseSettings, hipCenter)) {
+            if (!poseHipCalibrationRef.current) {
+              poseHipCalibrationRef.current = hipCenter.clone()
+            }
+            const offset = hipCenter
+              .sub(poseHipCalibrationRef.current)
+              .multiplyScalar(poseTestPositionScaleRef.current)
+            scene.position.set(
+              MODEL_BASE_POSITION.x + offset.x,
+              MODEL_BASE_POSITION.y + offset.y * 0.35,
+              MODEL_BASE_POSITION.z + offset.z,
+            )
+          }
+        } else {
+          poseHipCalibrationRef.current = null
+          scene.position.lerp(MODEL_BASE_POSITION, 0.2)
+        }
+      } else if (!poseTestEnabledRef.current) {
+        scene.position.lerp(MODEL_BASE_POSITION, 0.2)
       }
     }
 

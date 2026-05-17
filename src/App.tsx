@@ -2,7 +2,7 @@ import { Suspense, useEffect } from 'react'
 import { Canvas, extend, useThree, type ThreeToJSXElements } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import * as THREE from 'three/webgpu'
-import { Smile, Box, Layers, Scissors } from 'lucide-react'
+import { Activity, Smile, Box, Layers, Scissors } from 'lucide-react'
 import { useSnapshot } from 'valtio'
 
 declare module '@react-three/fiber' {
@@ -15,8 +15,9 @@ import HumanModel from './HumanModel'
 import CharacterModelingPanel from './CharacterModelingPanel'
 import ControlPanel from './ControlPanel'
 import SkinningPanel from './SkinningPanel'
+import TestPanel from './TestPanel'
 import GroomPanel, { BrushToolbar } from './features/groom/components/GroomPanel'
-import { appState, toggleShowExpressions, toggleShowHair, toggleShowModeling, toggleShowSkinning } from './appState'
+import { appState, toggleShowExpressions, toggleShowHair, toggleShowModeling, toggleShowSkinning, toggleShowTest } from './appState'
 
 function FovUpdater() {
   const { camera, invalidate } = useThree()
@@ -34,9 +35,10 @@ function FovUpdater() {
 }
 
 export default function App() {
-  const { fov, isTransforming, showExpressions, showHair, showModeling, showSkinning } = useSnapshot(appState)
+  const { fov, isTransforming, showExpressions, showHair, showModeling, showSkinning, showTest } = useSnapshot(appState)
 
   const panels = [
+    { key: 'test', label: 'Test', Icon: Activity, active: showTest, toggle: toggleShowTest },
     { key: 'expressions', label: 'Expressions', Icon: Smile, active: showExpressions, toggle: toggleShowExpressions },
     { key: 'modeling', label: 'Modeling', Icon: Box, active: showModeling, toggle: toggleShowModeling },
     { key: 'skinning', label: 'Skinning', Icon: Layers, active: showSkinning, toggle: toggleShowSkinning },
@@ -133,6 +135,7 @@ export default function App() {
       </Canvas>
 
       {showExpressions && <ControlPanel />}
+      {showTest && <TestPanel />}
       {showModeling && <CharacterModelingPanel />}
       {showSkinning && <SkinningPanel />}
       {showHair && <GroomPanel />}

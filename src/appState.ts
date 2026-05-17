@@ -16,6 +16,14 @@ import type { BoneDebug } from './HumanModel'
 
 type Updater<T> = T | ((previous: T) => T)
 
+export type PoseTestLandmark = {
+  x: number
+  y: number
+  z: number
+  visibility?: number
+  presence?: number
+}
+
 type AppState = {
   facsValues: FacsValues
   modelingValues: ModelingValues
@@ -43,7 +51,22 @@ type AppState = {
   showModeling: boolean
   showSkinning: boolean
   showHair: boolean
+  showTest: boolean
+  poseTestEnabled: boolean
+  poseTestStatus: string
+  poseTestModelUrl: string
+  poseTestCameraId: string
+  poseTestMirror: boolean
+  poseTestRigStrength: number
+  poseTestMinVisibility: number
+  poseTestFollowPosition: boolean
+  poseTestPositionScale: number
+  poseTestWorldLandmarks: PoseTestLandmark[] | null
+  poseTestFrameTime: number
 }
+
+export const DEFAULT_POSE_TEST_MODEL_URL =
+  'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task'
 
 function resolveUpdater<T>(previous: T, next: Updater<T>) {
   return typeof next === 'function' ? (next as (value: T) => T)(previous) : next
@@ -76,6 +99,18 @@ export const appState = proxy<AppState>({
   showModeling: false,
   showSkinning: false,
   showHair: false,
+  showTest: false,
+  poseTestEnabled: false,
+  poseTestStatus: 'Idle',
+  poseTestModelUrl: DEFAULT_POSE_TEST_MODEL_URL,
+  poseTestCameraId: '',
+  poseTestMirror: true,
+  poseTestRigStrength: 0.74,
+  poseTestMinVisibility: 0.42,
+  poseTestFollowPosition: true,
+  poseTestPositionScale: 1.35,
+  poseTestWorldLandmarks: null,
+  poseTestFrameTime: 0,
 })
 
 export function setFacsValues(next: Updater<FacsValues>) {
@@ -182,6 +217,51 @@ export function setShowHair(value: boolean) {
   appState.showHair = value
 }
 
+export function setShowTest(value: boolean) {
+  appState.showTest = value
+}
+
+export function setPoseTestEnabled(value: boolean) {
+  appState.poseTestEnabled = value
+}
+
+export function setPoseTestStatus(value: string) {
+  appState.poseTestStatus = value
+}
+
+export function setPoseTestModelUrl(value: string) {
+  appState.poseTestModelUrl = value
+}
+
+export function setPoseTestCameraId(value: string) {
+  appState.poseTestCameraId = value
+}
+
+export function setPoseTestMirror(value: boolean) {
+  appState.poseTestMirror = value
+}
+
+export function setPoseTestRigStrength(value: number) {
+  appState.poseTestRigStrength = value
+}
+
+export function setPoseTestMinVisibility(value: number) {
+  appState.poseTestMinVisibility = value
+}
+
+export function setPoseTestFollowPosition(value: boolean) {
+  appState.poseTestFollowPosition = value
+}
+
+export function setPoseTestPositionScale(value: number) {
+  appState.poseTestPositionScale = value
+}
+
+export function setPoseTestWorldLandmarks(value: PoseTestLandmark[] | null) {
+  appState.poseTestWorldLandmarks = value
+  appState.poseTestFrameTime = value ? performance.now() : 0
+}
+
 export function toggleShowExpressions() {
   appState.showExpressions = !appState.showExpressions
 }
@@ -196,4 +276,8 @@ export function toggleShowSkinning() {
 
 export function toggleShowHair() {
   appState.showHair = !appState.showHair
+}
+
+export function toggleShowTest() {
+  appState.showTest = !appState.showTest
 }
