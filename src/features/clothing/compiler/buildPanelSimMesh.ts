@@ -75,8 +75,8 @@ export function buildPanelSimMesh(
       const u = col / (cols - 1)
       const v = row / (rows - 1)
       const localX = (u - 0.5) * worldWidth
-      const localZ = (v - 0.5) * worldHeight
-      const world = applyPlacement(localX, 0, localZ, panel.placement)
+      const localY = (0.5 - v) * worldHeight
+      const world = applyPlacement(localX, localY, 0, panel.placement)
       const particle = particleOffset + particleIndices.length
       gridToParticle[gridIndex] = particle
       particleIndices.push(particle)
@@ -268,8 +268,8 @@ function applyPlacement(x: number, y: number, z: number, placement: PatternPanel
 function applyPlacementFromPattern(x: number, y: number, panel: PatternPanel) {
   const bounds = boundsOf(panel)
   const worldX = ((x - bounds.minX) / bounds.width - 0.5) * bounds.width * PATTERN_UNIT_SCALE
-  const worldZ = ((y - bounds.minY) / bounds.height - 0.5) * bounds.height * PATTERN_UNIT_SCALE
-  return applyPlacement(worldX, 0, worldZ, panel.placement)
+  const worldY = (0.5 - (y - bounds.minY) / bounds.height) * bounds.height * PATTERN_UNIT_SCALE
+  return applyPlacement(worldX, worldY, 0, panel.placement)
 }
 
 function uvToPattern(value: number, min: number, span: number) {

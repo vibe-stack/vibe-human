@@ -1,4 +1,5 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, test } from 'node:test'
+import assert from 'node:assert/strict'
 import { createDemoGarment } from '../demo/createDemoGarment'
 import { toPatternDocument } from '../document/legacyAdapter'
 import type { PatternPlacement } from '../document/types'
@@ -13,7 +14,7 @@ describe('clothing compiler architecture', () => {
     const seam = Object.values(document.seams)[0]
     seam.a.edgeId = 'missing-edge'
     const issues = validatePatternDocument(document)
-    expect(issues.some((issue) => issue.code === 'invalid-seam-edge-a')).toBe(true)
+    assert.equal(issues.some((issue) => issue.code === 'invalid-seam-edge-a'), true)
   })
 
   test('seam sample counts match', () => {
@@ -21,15 +22,37 @@ describe('clothing compiler architecture', () => {
     const seam = Object.values(document.seams)[0]
     const pointsA = samplePanelEdge(document.panels[seam.a.panelId], seam.a.edgeId, 12, seam.a.reversed)
     const pointsB = samplePanelEdge(document.panels[seam.b.panelId], seam.b.edgeId, 12, seam.b.reversed)
-    expect(pointsA.length).toBe(pointsB.length)
+    assert.equal(pointsA.length, pointsB.length)
   })
 
   test('panel discretization outputs particles with panel ids and panel uvs', () => {
     const runtime = compileGarmentRuntime(buildDocument(), { quality: 'medium', seamSamples: 12 }).value
-    expect(runtime.simMesh.particleCount).toBeGreaterThan(0)
-    expect(runtime.simMesh.panelIds.length).toBe(runtime.simMesh.particleCount)
-    expect(runtime.simMesh.panelUvs.length).toBe(runtime.simMesh.particleCount * 2)
-    expect(new Set(runtime.simMesh.panelIds)).toEqual(new Set(['torso-front', 'torso-back']))
+    assert.equal(runtime.simMesh.particleCount > 0, true)
+    assert.equal(runtime.simMesh.panelIds.length, runtime.simMesh.particleCount)
+    assert.equal(runtime.simMesh.panelUvs.length, runtime.simMesh.particleCount * 2)
+    assert.deepEqual(new Set(runtime.simMesh.panelIds), new Set(['torso-front', 'torso-back']))
+  })
+
+  test('panel pattern height is placed vertically', () => {
+    const runtime = compileGarmentRuntime(buildDocument(), { quality: 'medium', seamSamples: 12 }).value
+    let minY = Infinity
+    let maxY = -Infinity
+    for (let index = 1; index < runtime.simMesh.positions.length; index += 3) {
+      minY = Math.min(minY, runtime.simMesh.positions[index])
+      maxY = Math.max(maxY, runtime.simMesh.positions[index])
+    }
+    assert.equal(maxY - minY > 0.9, true)
+  })
+
+  test('seams start at placed distance and sew toward zero', () => {
+    const runtime = compileGarmentRuntime(buildDocument(), { quality: 'medium', seamSamples: 12 }).value
+    assert.equal(Object.keys(runtime.document.seams).length, 6)
+    assert.equal(runtime.simMesh.seamConstraints.length > 0, true)
+    for (const seam of runtime.simMesh.seamConstraints) {
+      assert.equal(seam.kind, 'seam')
+      assert.equal(seam.targetRest, 0)
+      assert.equal(seam.rest > 0, true)
+    }
   })
 
   test('render embedding references valid sim triangles', () => {
@@ -42,7 +65,7 @@ describe('clothing compiler architecture', () => {
       }
       for (let vertex = 0; vertex < panel.panelUvs.length / 2; vertex += 1) {
         const key = `${panel.embedding.simTriangles[vertex * 3]}:${panel.embedding.simTriangles[vertex * 3 + 1]}:${panel.embedding.simTriangles[vertex * 3 + 2]}`
-        expect(validKeys.has(key)).toBe(true)
+        assert.equal(validKeys.has(key), true)
       }
     }
   })
@@ -62,7 +85,7 @@ describe('clothing compiler architecture', () => {
     for (let step = 0; step < 5; step += 1) solver.step({ version: 1, proxies: [] })
 
     for (const value of solver.mesh.positions) {
-      expect(Number.isFinite(value)).toBe(true)
+      assert.equal(Number.isFinite(value), true)
     }
   })
 })
@@ -71,11 +94,11 @@ function buildDocument() {
   const garment = createDemoGarment()
   const placements: Record<string, PatternPlacement> = {
     'torso-front': {
-      position: { x: 0, y: 0.34, z: 0.16 },
+      position: { x: 0, y: -0.74, z: 0.3 },
       rotation: { x: 0, y: 0, z: 0 },
     },
     'torso-back': {
-      position: { x: 0, y: 0.34, z: -0.16 },
+      position: { x: 0, y: -0.74, z: -0.3 },
       rotation: { x: 0, y: Math.PI, z: 0 },
     },
   }

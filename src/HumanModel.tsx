@@ -660,6 +660,8 @@ export default function HumanModel() {
   const eyeObjectsRef = useRef<Record<string, THREE.Object3D>>({})
   const morphMeshesRef = useRef<MorphTargetMesh[]>([])
   const skeletonsRef = useRef<THREE.Skeleton[]>([])
+  const bodyCollisionMeshesRef = useRef<THREE.SkinnedMesh[]>([])
+  const headCollisionMeshesRef = useRef<THREE.SkinnedMesh[]>([])
   const restRef = useRef<Record<string, BoneRest>>({})
   const objectRestRef = useRef<Record<string, ObjectRest>>({})
   const tRef = useRef(1) // lerp progress, 1 = at target
@@ -751,6 +753,8 @@ export default function HumanModel() {
     const morphMeshes: MorphTargetMesh[] = []
     const skeletons: THREE.Skeleton[] = []
     const groomMeshes: THREE.Mesh[] = []
+    const bodyCollisionMeshes: THREE.SkinnedMesh[] = []
+    const headCollisionMeshes: THREE.SkinnedMesh[] = []
 
     scene.traverse((obj) => {
       const mesh = obj as THREE.SkinnedMesh
@@ -766,6 +770,11 @@ export default function HumanModel() {
 
       if (isHeadSkinMesh(obj)) {
         groomMeshes.push(obj as THREE.Mesh)
+        if (mesh.isSkinnedMesh) headCollisionMeshes.push(mesh)
+      }
+
+      if (isBodySkinMesh(obj) && mesh.isSkinnedMesh) {
+        bodyCollisionMeshes.push(mesh)
       }
 
       if (mesh.isSkinnedMesh) {
@@ -781,6 +790,8 @@ export default function HumanModel() {
     eyeObjectsRef.current = eyeObjects
     morphMeshesRef.current = morphMeshes
     skeletonsRef.current = skeletons
+    bodyCollisionMeshesRef.current = bodyCollisionMeshes
+    headCollisionMeshesRef.current = headCollisionMeshes
     registerGroomMeshes(groomMeshes)
 
     const availableTargets = new Set(
@@ -843,8 +854,6 @@ export default function HumanModel() {
     const rest = restRef.current
 
     if (!Object.keys(bones).length) return
-
-    setBodyProxySnapshot(buildBodyProxySnapshotFromBones(bones))
 
     tRef.current = Math.min(1, tRef.current + delta * 5)
     const t = tRef.current
@@ -987,6 +996,10 @@ export default function HumanModel() {
     for (const skeleton of skeletonsRef.current) {
       skeleton.update()
     }
+    setBodyProxySnapshot(buildBodyProxySnapshotFromBones(bones, {
+      bodyMeshes: bodyCollisionMeshesRef.current,
+      headMeshes: headCollisionMeshesRef.current,
+    }))
 
     if (showBones && selectedBone) {
       const rest = restRef.current[selectedBone.name]

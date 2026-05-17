@@ -1,4 +1,4 @@
-import type { BendConstraint, ClothSimMesh } from '../types'
+import type { ClothSimMesh } from '../types'
 
 export function solveBendConstraints(mesh: ClothSimMesh, dt: number) {
   const dtSq = dt * dt

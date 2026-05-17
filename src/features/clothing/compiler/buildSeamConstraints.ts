@@ -32,7 +32,8 @@ export function buildSeamConstraints(
       constraints.push({
         a: particleA,
         b: particleB,
-        rest: 0,
+        rest: particleDistance(meshA, particleA, meshB, particleB),
+        targetRest: 0,
         compliance: 0.00002 + (1 - seam.strength) * 0.0003,
         kind: 'seam',
       })
@@ -40,6 +41,32 @@ export function buildSeamConstraints(
   }
 
   return constraints
+}
+
+function particleDistance(
+  meshA: CompiledPanelSimMesh,
+  particleA: number,
+  meshB: CompiledPanelSimMesh,
+  particleB: number,
+) {
+  const ia = localParticleOffset(meshA, particleA)
+  const ib = localParticleOffset(meshB, particleB)
+  if (ia < 0 || ib < 0) return 0
+  const ax = meshA.positions[ia]
+  const ay = meshA.positions[ia + 1]
+  const az = meshA.positions[ia + 2]
+  const bx = meshB.positions[ib]
+  const by = meshB.positions[ib + 1]
+  const bz = meshB.positions[ib + 2]
+  return Math.hypot(bx - ax, by - ay, bz - az)
+}
+
+function localParticleOffset(mesh: CompiledPanelSimMesh, particle: number) {
+  const first = mesh.panelInfo.particleIndices[0]
+  if (first === undefined) return -1
+  const localParticle = particle - first
+  const offset = localParticle * 3
+  return offset >= 0 && offset + 2 < mesh.positions.length ? offset : -1
 }
 
 function nearestParticle(

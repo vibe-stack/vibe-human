@@ -28,7 +28,7 @@ export default function ClothScene() {
     <group>
       {renderPanels.map((panel) => {
         const selected = panel.panelId === garment.selectedPatternId
-        const placement = runtime.document.panels[panel.panelId]?.placement
+        const placement = document.panels[panel.panelId]?.placement
         if (!placement) return null
         return (
           <group key={panel.panelId}>

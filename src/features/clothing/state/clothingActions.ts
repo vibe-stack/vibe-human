@@ -247,17 +247,17 @@ export function loadDemoGarment(doc: GarmentDocument) {
   const patternIds = Object.keys(doc.patterns)
   if (patternIds.length === 1) {
     clothingStore.placements[patternIds[0]] = {
-      position: { x: 0, y: 0.72, z: 0 },
+      position: { x: 0, y: -0.74, z: 0.3 },
       rotation: { x: 0, y: 0, z: 0 },
     }
   } else if (patternIds.length >= 2) {
     const [frontId, backId] = patternIds
     clothingStore.placements[frontId] = {
-      position: { x: 0, y: 0.34, z: 0.16 },
+      position: { x: 0, y: -0.74, z: 0.3 },
       rotation: { x: 0, y: 0, z: 0 },
     }
     clothingStore.placements[backId] = {
-      position: { x: 0, y: 0.34, z: -0.16 },
+      position: { x: 0, y: -0.74, z: -0.3 },
       rotation: { x: 0, y: Math.PI, z: 0 },
     }
   }

@@ -6,6 +6,7 @@ export type DistanceConstraint = {
   a: number
   b: number
   rest: number
+  targetRest?: number
   compliance: number
   kind: Extract<ClothConstraintKind, 'stretch' | 'shear' | 'seam'>
 }
@@ -99,6 +100,9 @@ export type SolverParams = {
   dt: number
   groundY: number
   maxVelocity?: number
+  sewingTime?: number
+  gravityDelayTime?: number
+  gravityRampTime?: number
 }
 
 export type ClothFrame = {

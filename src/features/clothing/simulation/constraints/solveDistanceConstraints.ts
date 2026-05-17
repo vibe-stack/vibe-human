@@ -1,10 +1,19 @@
 import type { ClothSimMesh, DistanceConstraint } from '../types'
 
-export function solveDistanceConstraints(mesh: ClothSimMesh, constraints: DistanceConstraint[], dt: number) {
+type DistanceSolveOptions = {
+  seamRestScale?: number
+}
+
+export function solveDistanceConstraints(
+  mesh: ClothSimMesh,
+  constraints: DistanceConstraint[],
+  dt: number,
+  options: DistanceSolveOptions = {},
+) {
   const dtSq = dt * dt
   const { positions, invMass } = mesh
   for (const constraint of constraints) {
-    solveDistance(positions, invMass, constraint, dtSq)
+    solveDistance(positions, invMass, constraint, dtSq, options)
   }
 }
 
@@ -13,6 +22,7 @@ function solveDistance(
   invMass: Float32Array,
   constraint: DistanceConstraint,
   dtSq: number,
+  options: DistanceSolveOptions,
 ) {
   const ia = constraint.a * 3
   const ib = constraint.b * 3
@@ -33,7 +43,8 @@ function solveDistance(
   const wsum = wa + wb
   if (wsum < 1e-9) return
 
-  const C = length - constraint.rest
+  const rest = getConstraintRest(constraint, options)
+  const C = length - rest
   const alpha = constraint.compliance / dtSq
   const lambda = -C / (wsum + alpha)
   const invLength = 1 / length
@@ -51,4 +62,14 @@ function solveDistance(
     positions[ib + 1] += wb * lambda * gy
     positions[ib + 2] += wb * lambda * gz
   }
+}
+
+function getConstraintRest(constraint: DistanceConstraint, options: DistanceSolveOptions) {
+  if (constraint.targetRest === undefined) return constraint.rest
+  const scale = clamp01(options.seamRestScale ?? 0)
+  return constraint.targetRest + (constraint.rest - constraint.targetRest) * scale
+}
+
+function clamp01(value: number) {
+  return value < 0 ? 0 : value > 1 ? 1 : value
 }
