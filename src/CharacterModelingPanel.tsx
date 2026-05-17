@@ -2,8 +2,8 @@ import {
   type CSSProperties,
   type ReactNode,
   useMemo,
-  useState,
 } from 'react'
+
 import { useSnapshot } from 'valtio'
 import {
   appState,
@@ -22,14 +22,6 @@ import {
   type ModelingValues,
 } from './characterModeling'
 
-const panelBg: CSSProperties = {
-  background: 'rgba(14, 14, 18, 0.54)',
-  backdropFilter: 'blur(10px)',
-  border: '1px solid rgba(255,255,255,0.1)',
-  boxShadow: '0 24px 64px rgba(0,0,0,0.7)',
-  borderRadius: 8,
-}
-
 const labelStyle: CSSProperties = {
   fontSize: 9,
   fontWeight: 700,
@@ -40,7 +32,6 @@ const labelStyle: CSSProperties = {
 
 export default function CharacterModelingPanel() {
   const { modelingValues: values, modelingMode: mode, modelingSymmetric: symmetric, selectedModelingHandleId: selectedHandleId } = useSnapshot(appState)
-  const [collapsed, setCollapsed] = useState(false)
   const selectedHandle = useMemo(
     () => {
       const handle = getModelingHandleById(selectedHandleId, symmetric)
@@ -86,80 +77,37 @@ export default function CharacterModelingPanel() {
   ).length
 
   return (
-    <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 10 }}>
-      <div
-        onClick={() => setCollapsed(false)}
-        style={{
-          position: 'fixed',
-          right: collapsed ? 0 : -48,
-          top: 16,
-          pointerEvents: collapsed ? 'auto' : 'none',
-          ...panelBg,
-          borderRadius: '6px 0 0 6px',
-          padding: '12px 8px',
-          cursor: 'pointer',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: 4,
-          transition: 'right 0.28s cubic-bezier(0.4,0,0.2,1)',
-          zIndex: 12,
-        }}
-      >
-        <span style={{ fontSize: 8, fontWeight: 700, color: 'rgba(255,255,255,0.4)', fontFamily: "'Courier New', monospace", writingMode: 'vertical-rl', letterSpacing: '0.1em' }}>MODEL</span>
-        <span style={{ fontSize: 12, color: 'rgba(125,211,252,0.82)' }}>◀</span>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', userSelect: 'none' }}>
+
+      {/* Header */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '8px 12px',
+        borderBottom: '1px solid rgba(255,255,255,0.07)',
+        flexShrink: 0,
+      }}>
+        <span style={{ ...labelStyle, color: 'rgba(255,255,255,0.45)' }}>
+          CHARACTER MODEL
+        </span>
+        <span style={{ fontSize: 9, color: 'rgba(125,211,252,0.68)', fontFamily: 'monospace' }}>
+          {activeCount > 0 ? `${activeCount} ACTIVE` : 'NEUTRAL'}
+        </span>
       </div>
 
       <div
+        className="facs-scroll"
         style={{
-          position: 'fixed',
-          right: collapsed ? -348 : 16,
-          top: 16,
-          width: 332,
-          pointerEvents: 'auto',
-          userSelect: 'none',
+          padding: 10,
           display: 'flex',
           flexDirection: 'column',
-          overflow: 'hidden',
-          transition: 'right 0.28s cubic-bezier(0.4,0,0.2,1)',
-          zIndex: 11,
-          ...panelBg,
+          gap: 10,
+          flex: 1,
+          minHeight: 0,
+          overflowY: 'auto',
         }}
       >
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '8px 12px',
-          borderBottom: '1px solid rgba(255,255,255,0.07)',
-          flexShrink: 0,
-        }}>
-          <span style={{ ...labelStyle, color: 'rgba(255,255,255,0.45)' }}>
-            CHARACTER MODEL
-          </span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 9, color: 'rgba(125,211,252,0.68)', fontFamily: 'monospace' }}>
-              {activeCount > 0 ? `${activeCount} ACTIVE` : 'NEUTRAL'}
-            </span>
-            <button
-              onClick={() => setCollapsed(true)}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.3)', fontSize: 12, padding: '0 2px', lineHeight: 1 }}
-              aria-label="Collapse character modeling panel"
-            >▶</button>
-          </div>
-        </div>
-
-        <div
-          className="facs-scroll"
-          style={{
-            padding: 10,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 10,
-            maxHeight: 'calc(100vh - 52px)',
-            overflowY: 'auto',
-          }}
-        >
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
             <SegmentButton active={mode === 'transform'} onClick={() => setModelingMode('transform')}>
               TRANSFORM
@@ -241,7 +189,6 @@ export default function CharacterModelingPanel() {
             </div>
           )}
         </div>
-      </div>
     </div>
   )
 }

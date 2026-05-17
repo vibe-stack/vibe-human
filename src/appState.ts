@@ -262,22 +262,32 @@ export function setPoseTestWorldLandmarks(value: PoseTestLandmark[] | null) {
   appState.poseTestFrameTime = value ? performance.now() : 0
 }
 
+function activatePanel(key: 'showExpressions' | 'showModeling' | 'showSkinning' | 'showHair' | 'showTest') {
+  const next = !appState[key]
+  appState.showExpressions = false
+  appState.showModeling = false
+  appState.showSkinning = false
+  appState.showHair = false
+  appState.showTest = false
+  appState[key] = next
+}
+
 export function toggleShowExpressions() {
-  appState.showExpressions = !appState.showExpressions
+  activatePanel('showExpressions')
 }
 
 export function toggleShowModeling() {
-  appState.showModeling = !appState.showModeling
+  activatePanel('showModeling')
 }
 
 export function toggleShowSkinning() {
-  appState.showSkinning = !appState.showSkinning
+  activatePanel('showSkinning')
 }
 
 export function toggleShowHair() {
-  appState.showHair = !appState.showHair
+  activatePanel('showHair')
 }
 
 export function toggleShowTest() {
-  appState.showTest = !appState.showTest
+  activatePanel('showTest')
 }

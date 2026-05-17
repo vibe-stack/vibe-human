@@ -411,11 +411,11 @@ function updateFacsControl(id: string, value: number) {
 // ── Main export ───────────────────────────────────────────────────────────────
 export default function FaceOverlay() {
   return (
-    <div style={{ display:'flex', gap:0, alignItems:'stretch', width:'100%', height:'100%' }}>
-      <div style={{ flex:'0 0 56.5%', minWidth:0, height:'100%' }}>
+    <div style={{ display:'flex', flexDirection:'column', width:'100%' }}>
+      <div style={{ width:'100%', aspectRatio:`${MW} / ${MH}` }}>
         <MainPanel />
       </div>
-      <div style={{ flex:'0 0 43.5%', minWidth:0, height:'100%' }}>
+      <div style={{ width:'100%', aspectRatio:`${TW} / ${TH}` }}>
         <TweakersPanel />
       </div>
     </div>

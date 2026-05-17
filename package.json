@@ -11,13 +11,16 @@
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^0.10.35",
+    "@pixi/react": "^8.0.5",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.1",
     "@tailwindcss/vite": "^4.2.4",
     "@types/three": "^0.184.0",
     "lucide-react": "^1.16.0",
+    "pixi.js": "^8.2.6",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
+    "react-resizable-panels": "^4.11.1",
     "tailwindcss": "^4.2.4",
     "three": "^0.184.0",
     "valtio": "^2.3.2"

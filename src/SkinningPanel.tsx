@@ -26,14 +26,6 @@ import {
   type SkinTextureSlot,
 } from './skinMaterial'
 
-const panelBg: CSSProperties = {
-  background: 'rgba(14, 14, 18, 0.54)',
-  backdropFilter: 'blur(10px)',
-  border: '1px solid rgba(255,255,255,0.1)',
-  boxShadow: '0 24px 64px rgba(0,0,0,0.7)',
-  borderRadius: 8,
-}
-
 const labelStyle: CSSProperties = {
   fontSize: 9,
   fontWeight: 700,
@@ -187,13 +179,14 @@ export default function SkinningPanel() {
   return (
     <>
       <style>{scrollbarStyle}</style>
-      <div style={{ position: 'fixed', left: 16, bottom: 16, width: 300, zIndex: 11, userSelect: 'none', ...panelBg }}>
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', userSelect: 'none' }}>
         <div style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: '8px 12px',
           borderBottom: '1px solid rgba(255,255,255,0.07)',
+          flexShrink: 0,
         }}>
           <span style={labelStyle}>SKIN TEXTURES</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -222,7 +215,7 @@ export default function SkinningPanel() {
           </div>
         </div>
 
-        <div className="skin-scroll" style={{ padding: '4px 0', maxHeight: 480, overflowY: 'auto' }}>
+        <div className="skin-scroll" style={{ padding: '4px 0', flex: 1, minHeight: 0, overflowY: 'auto' }}>
 
           {sectionLabel('APPEARANCE')}
           {sliderRow('OILINESS', oiliness, 0, 1, 0.01, DEFAULT_OILINESS, setOiliness)}

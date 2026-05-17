@@ -21,14 +21,6 @@ type CameraDevice = {
   label: string
 }
 
-const panelBg: CSSProperties = {
-  background: 'rgba(14, 14, 18, 0.58)',
-  backdropFilter: 'blur(10px)',
-  border: '1px solid rgba(255,255,255,0.1)',
-  boxShadow: '0 24px 64px rgba(0,0,0,0.7)',
-  borderRadius: 8,
-}
-
 const labelStyle: CSSProperties = {
   fontSize: 9,
   fontWeight: 700,
@@ -173,7 +165,7 @@ export default function TestPanel() {
   const ageMs = poseTestFrameTime ? Math.max(0, performance.now() - poseTestFrameTime) : null
 
   return (
-    <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 20 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', userSelect: 'none' }}>
       <video
         ref={videoRef}
         aria-hidden="true"
@@ -186,17 +178,29 @@ export default function TestPanel() {
         }}
       />
 
+      {/* Header */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '8px 12px',
+        borderBottom: '1px solid rgba(255,255,255,0.07)',
+        flexShrink: 0,
+      }}>
+        <span style={{ ...labelStyle, color: 'rgba(255,255,255,0.45)', fontSize: 10 }}>TEST CAPTURE</span>
+        <span style={{ fontSize: 11, color: poseTestEnabled ? 'rgba(125,211,252,0.8)' : 'rgba(255,255,255,0.4)' }}>
+          {poseTestStatus}{ageMs !== null && poseTestEnabled ? ` · ${Math.round(ageMs)} ms` : ''}
+        </span>
+      </div>
+
       <div
         style={{
-          position: 'fixed',
-          left: 16,
-          top: 62,
-          width: 340,
+          flex: 1,
+          minHeight: 0,
           padding: 12,
-          pointerEvents: 'auto',
-          userSelect: 'none',
-          ...panelBg,
+          overflowY: 'auto',
         }}
+        className="facs-scroll"
       >
         <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'center', marginBottom: 12 }}>
           <div>

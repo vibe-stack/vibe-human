@@ -270,7 +270,7 @@ export function BrushToolbar() {
   return (
     <div
       style={{
-        position: 'fixed',
+        position: 'absolute',
         bottom: 20,
         left: '50%',
         transform: 'translateX(-50%)',
@@ -416,18 +416,11 @@ export default function GroomPanel() {
   return (
     <div
       style={{
-        position: 'fixed',
-        right: 16,
-        top: 52,
-        bottom: 16,
-        width: 280,
-        overflow: 'hidden',
-        zIndex: 11,
-        userSelect: 'none',
-        borderRadius: 10,
         display: 'flex',
         flexDirection: 'column',
-        ...glassBg,
+        height: '100%',
+        overflow: 'hidden',
+        userSelect: 'none',
       }}
     >
       {/* Header */}
