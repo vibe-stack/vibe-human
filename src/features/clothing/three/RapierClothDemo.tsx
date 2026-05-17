@@ -8,6 +8,7 @@ import { setIsTransforming } from '../../../appState'
 import { clothingStore } from '../state/clothingStore'
 import { selectPattern, setPatternPlacement } from '../state/clothingActions'
 import type { ClothSimQuality, PatternPiece, PatternPlacement } from '../state/clothingTypes'
+import { triangulatePattern } from '../geometry/triangulatePattern'
 
 type RapierWorld = InstanceType<(typeof RAPIER)['World']>
 type RapierRigidBody = ReturnType<RapierWorld['createRigidBody']>
@@ -62,36 +63,37 @@ const PARTICLE_RADIUS = 0.008
 const FIXED_STEP = 1 / 90
 const MAX_SUBSTEPS = 4
 const PATTERN_UNIT_SCALE = 0.004
+const RENDER_TRIANGLE_SUBDIVISIONS = 8
 
 const QUALITY_SETTINGS: Record<ClothSimQuality, QualitySettings> = {
   low: {
-    spacingScale: 0.85,
-    minParticles: 14,
-    maxParticles: 28,
+    spacingScale: 1.35,
+    minParticles: 10,
+    maxParticles: 16,
     solverIterations: 8,
     internalPgsIterations: 1,
     bendStiffness: 12,
   },
   medium: {
-    spacingScale: 0.42,
-    minParticles: 24,
-    maxParticles: 48,
+    spacingScale: 0.95,
+    minParticles: 14,
+    maxParticles: 26,
     solverIterations: 14,
     internalPgsIterations: 2,
     bendStiffness: 18,
   },
   high: {
-    spacingScale: 0.28,
-    minParticles: 34,
-    maxParticles: 72,
+    spacingScale: 0.68,
+    minParticles: 18,
+    maxParticles: 36,
     solverIterations: 20,
     internalPgsIterations: 3,
     bendStiffness: 24,
   },
   ultra: {
-    spacingScale: 0.2,
-    minParticles: 44,
-    maxParticles: 96,
+    spacingScale: 0.5,
+    minParticles: 22,
+    maxParticles: 48,
     solverIterations: 28,
     internalPgsIterations: 4,
     bendStiffness: 30,
@@ -333,6 +335,91 @@ function updateClothTopologyFromPattern(geometry: THREE.BufferGeometry, spec: Cl
   geometry.computeVertexNormals()
 }
 
+function createPatternRenderGeometry(piece: PatternPiece, spec: ClothSpec) {
+  const { vertices, indices } = triangulatePattern(piece)
+  const geometry = new THREE.BufferGeometry()
+
+  if (vertices.length < 3 || indices.length < 3) {
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(0), 3))
+    geometry.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(0), 2))
+    return geometry
+  }
+
+  const bounds = getPatternBounds(piece)
+  const renderUvs: number[] = []
+  const renderIndices: number[] = []
+
+  function pushUv(u: number, v: number) {
+    const index = renderUvs.length / 2
+    renderUvs.push(u, v)
+    return index
+  }
+
+  function vertexUv(index: number) {
+    const vertex = vertices[index]
+    return {
+      u: (vertex.x - bounds.minX) / bounds.width,
+      v: (vertex.y - bounds.minY) / bounds.depth,
+    }
+  }
+
+  for (let tri = 0; tri < indices.length; tri += 3) {
+    const a = vertexUv(indices[tri + 0])
+    const b = vertexUv(indices[tri + 1])
+    const c = vertexUv(indices[tri + 2])
+    const rows: number[][] = []
+
+    for (let i = 0; i <= RENDER_TRIANGLE_SUBDIVISIONS; i += 1) {
+      rows[i] = []
+      for (let j = 0; j <= RENDER_TRIANGLE_SUBDIVISIONS - i; j += 1) {
+        const wa = 1 - (i + j) / RENDER_TRIANGLE_SUBDIVISIONS
+        const wb = i / RENDER_TRIANGLE_SUBDIVISIONS
+        const wc = j / RENDER_TRIANGLE_SUBDIVISIONS
+        rows[i][j] = pushUv(
+          a.u * wa + b.u * wb + c.u * wc,
+          a.v * wa + b.v * wb + c.v * wc,
+        )
+      }
+    }
+
+    for (let i = 0; i < RENDER_TRIANGLE_SUBDIVISIONS; i += 1) {
+      for (let j = 0; j < RENDER_TRIANGLE_SUBDIVISIONS - i; j += 1) {
+        const v0 = rows[i][j]
+        const v1 = rows[i + 1][j]
+        const v2 = rows[i][j + 1]
+        renderIndices.push(v0, v1, v2)
+
+        if (j < RENDER_TRIANGLE_SUBDIVISIONS - i - 1) {
+          const v3 = rows[i + 1][j + 1]
+          renderIndices.push(v1, v3, v2)
+        }
+      }
+    }
+  }
+
+  const positions = new Float32Array((renderUvs.length / 2) * 3)
+  const uvs = new Float32Array(renderUvs)
+
+  for (let i = 0; i < renderUvs.length / 2; i += 1) {
+    const u = renderUvs[i * 2 + 0]
+    const v = renderUvs[i * 2 + 1]
+    const x = (u - 0.5) * spec.width
+    const z = (v - 0.48) * spec.depth
+    const ripple = Math.sin(u * Math.PI * 2.0) * Math.sin(v * Math.PI) * 0.015
+
+    positions[i * 3 + 0] = x
+    positions[i * 3 + 1] = 0.72 + ripple
+    positions[i * 3 + 2] = z
+  }
+
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2))
+  geometry.setIndex(renderIndices)
+  geometry.computeVertexNormals()
+
+  return geometry
+}
+
 function warpSimulationToPattern(sim: ClothSimulation | null, previous: ShapeBounds, next: ShapeBounds) {
   if (!sim || sim.disposed) return
   const scaleX = clamp(next.width / previous.width, 0.35, 2.85)
@@ -363,6 +450,47 @@ function writeBodiesToGeometry(sim: ClothSimulation, geometry: THREE.BufferGeome
     positions[i * 3 + 0] = translation.x
     positions[i * 3 + 1] = translation.y
     positions[i * 3 + 2] = translation.z
+  }
+
+  positionAttr.needsUpdate = true
+  geometry.computeVertexNormals()
+  return true
+}
+
+function sampleSimPosition(sim: ClothSimulation, spec: ClothSpec, u: number, v: number, out: THREE.Vector3) {
+  const gx = clamp(u, 0, 1) * (spec.cols - 1)
+  const gy = clamp(v, 0, 1) * (spec.rows - 1)
+  const x0 = Math.floor(gx)
+  const y0 = Math.floor(gy)
+  const x1 = Math.min(x0 + 1, spec.cols - 1)
+  const y1 = Math.min(y0 + 1, spec.rows - 1)
+  const tx = gx - x0
+  const ty = gy - y0
+
+  const a = vectorFromBody(bodyAt(sim.bodies, spec, x0, y0))
+  const b = vectorFromBody(bodyAt(sim.bodies, spec, x1, y0))
+  const c = vectorFromBody(bodyAt(sim.bodies, spec, x0, y1))
+  const d = vectorFromBody(bodyAt(sim.bodies, spec, x1, y1))
+  const top = a.lerp(b, tx)
+  const bottom = c.lerp(d, tx)
+  return out.copy(top.lerp(bottom, ty))
+}
+
+function writeVisualGeometryFromSim(sim: ClothSimulation, simSpec: ClothSpec, geometry: THREE.BufferGeometry) {
+  if (sim.disposed) return false
+  const positionAttr = geometry.getAttribute('position') as THREE.BufferAttribute | undefined
+  const uvAttr = geometry.getAttribute('uv') as THREE.BufferAttribute | undefined
+  if (!positionAttr || !uvAttr) return false
+
+  const positions = positionAttr.array as Float32Array
+  const uvs = uvAttr.array as Float32Array
+  const p = new THREE.Vector3()
+
+  for (let i = 0; i < positionAttr.count; i += 1) {
+    sampleSimPosition(sim, simSpec, uvs[i * 2 + 0], uvs[i * 2 + 1], p)
+    positions[i * 3 + 0] = p.x
+    positions[i * 3 + 1] = p.y
+    positions[i * 3 + 2] = p.z
   }
 
   positionAttr.needsUpdate = true
@@ -414,17 +542,19 @@ function ClothPiece({
   const simRef = useRef<ClothSimulation | null>(null)
   const shapeBoundsRef = useRef<ShapeBounds | null>(null)
   const dragRef = useRef<ClothDragState | null>(null)
+  const previousSimRunningRef = useRef(simRunning)
   const [rapierReady, setRapierReady] = useState(false)
 
   const simKey = `${piece.id}:${simResetKey}:${simQuality}`
-  const spec = useMemo(() => makeClothSpec(piece, simQuality), [piece.id, simKey])
-  const geometry = useMemo(() => createClothGeometry(spec), [simKey, spec])
-  const currentPlacement = placement ?? defaultPlacement(index, count)
   const patternRevision = JSON.stringify({
     points: Object.values(piece.points).map((point) => [point.id, point.x, point.y, point.in, point.out]),
     edges: piece.edges.map((edge) => [edge.id, edge.from, edge.to, edge.curve]),
     holes: piece.holes?.map((loop) => loop.map((edge) => [edge.id, edge.from, edge.to, edge.curve])),
   })
+  const spec = useMemo(() => makeClothSpec(piece, simQuality), [piece.id, simKey])
+  const simGeometry = useMemo(() => createClothGeometry(spec), [simKey, spec])
+  const visualGeometry = useMemo(() => createPatternRenderGeometry(piece, spec), [patternRevision, piece, spec])
+  const currentPlacement = placement ?? defaultPlacement(index, count)
 
   useEffect(() => {
     let cancelled = false
@@ -439,8 +569,9 @@ function ClothPiece({
       const next = createSimulation(spec, simQuality)
       simRef.current = next
       shapeBoundsRef.current = getWorldPatternBounds(piece)
-      updateClothTopologyFromPattern(geometry, spec, piece)
-      writeBodiesToGeometry(next, geometry)
+      updateClothTopologyFromPattern(simGeometry, spec, piece)
+      writeBodiesToGeometry(next, simGeometry)
+      writeVisualGeometryFromSim(next, spec, visualGeometry)
       setRapierReady(true)
     })
 
@@ -452,17 +583,21 @@ function ClothPiece({
       simRef.current = null
       disposeSimulation(previous)
     }
-  }, [geometry, piece.id, simKey, simQuality, spec])
+  }, [piece.id, simGeometry, simKey, simQuality, spec])
 
-  useEffect(() => () => geometry.dispose(), [geometry])
+  useEffect(() => () => simGeometry.dispose(), [simGeometry])
+  useEffect(() => () => visualGeometry.dispose(), [visualGeometry])
 
   useEffect(() => {
     const nextBounds = getWorldPatternBounds(piece)
     const previousBounds = shapeBoundsRef.current ?? nextBounds
-    updateClothTopologyFromPattern(geometry, spec, piece)
+    updateClothTopologyFromPattern(simGeometry, spec, piece)
     warpSimulationToPattern(simRef.current, previousBounds, nextBounds)
     shapeBoundsRef.current = nextBounds
-  }, [geometry, patternRevision, piece, spec])
+    if (simRef.current && !simRef.current.disposed) {
+      writeVisualGeometryFromSim(simRef.current, spec, visualGeometry)
+    }
+  }, [patternRevision, piece, simGeometry, spec, visualGeometry])
 
   function worldToLocalPoint(point: THREE.Vector3) {
     const group = groupRef.current
@@ -615,11 +750,41 @@ function ClothPiece({
     ;(event.target as HTMLElement).releasePointerCapture?.(event.pointerId)
   }
 
+  function bakePlacementIntoSimulation() {
+    const sim = simRef.current
+    const group = groupRef.current
+    if (!sim || sim.disposed || !group) return
+
+    group.updateMatrixWorld(true)
+    const matrix = group.matrixWorld.clone()
+    const p = new THREE.Vector3()
+
+    for (const body of sim.bodies) {
+      const current = body.translation()
+      p.set(current.x, current.y, current.z).applyMatrix4(matrix)
+      body.setTranslation({ x: p.x, y: p.y, z: p.z }, true)
+      body.setLinvel({ x: 0, y: 0, z: 0 }, true)
+    }
+
+    group.position.set(0, 0, 0)
+    group.rotation.set(0, 0, 0)
+    group.updateMatrixWorld(true)
+    setPatternPlacement(piece.id, {
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { x: 0, y: 0, z: 0 },
+    })
+  }
+
   useFrame((_, delta) => {
     const sim = simRef.current
     if (!sim || sim.disposed || !rapierReady) return
 
     try {
+      if (simRunning && !previousSimRunningRef.current) {
+        bakePlacementIntoSimulation()
+      }
+      previousSimRunningRef.current = simRunning
+
       if (dragRef.current) applyDragPull(dragRef.current)
 
       if (simRunning || dragRef.current) {
@@ -632,7 +797,8 @@ function ClothPiece({
         }
       }
 
-      writeBodiesToGeometry(sim, geometry)
+      writeBodiesToGeometry(sim, simGeometry)
+      writeVisualGeometryFromSim(sim, spec, visualGeometry)
     } catch (error) {
       console.error('Rapier cloth simulation failed; disposing invalid world.', error)
       simRef.current = null
@@ -658,7 +824,7 @@ function ClothPiece({
       rotation={[currentPlacement.rotation.x, currentPlacement.rotation.y, currentPlacement.rotation.z]}
     >
       <mesh
-        geometry={geometry}
+        geometry={visualGeometry}
         frustumCulled={false}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
@@ -674,7 +840,7 @@ function ClothPiece({
         />
       </mesh>
       {(showWireframe || showTriangulation) && (
-        <mesh geometry={geometry} frustumCulled={false}>
+        <mesh geometry={visualGeometry} frustumCulled={false}>
           <meshBasicMaterial color="#ffffff" wireframe transparent opacity={0.24} depthWrite={false} />
         </mesh>
       )}
