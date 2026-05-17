@@ -24,7 +24,9 @@ type BoneRest = {
 }
 
 type ObjectRest = {
+  position: THREE.Vector3
   quaternion: THREE.Quaternion
+  worldPosition: THREE.Vector3
   worldQuaternion: THREE.Quaternion
 }
 
@@ -72,6 +74,8 @@ const FOCUS_LOCK_EYE_ALPHA = 0.18
 const EYE_FORWARD = new THREE.Vector3(0, 0, 1)
 const EYE_OBJECT_NAMES = ['Eye_L', 'Eye_R']
 const EYE_MESH_NAMES = new Set(EYE_OBJECT_NAMES)
+const HEAD_POSE_DRIVER_BONE = 'DEF-spine.006'
+const HEAD_POSE_FOLLOW_BONE_PATTERN = /^DEF-(brow|cheek|chin|ear|eye|forehead|jaw|lid|lip|nose|teeth)/
 const POSE_SEGMENTS: PoseSegmentSpec[] = [
   { bone: 'DEF-spine.003', child: 'DEF-spine.004', from: 23, to: 11 },
   { bone: 'DEF-spine.004', child: 'DEF-spine.005', from: 23, to: 11 },
@@ -482,6 +486,86 @@ function applyMediaPipePose(
   return applied
 }
 
+function applyWorldTransformToBone(
+  bone: THREE.Bone,
+  targetWorldPosition: THREE.Vector3,
+  targetWorldQuaternion: THREE.Quaternion,
+) {
+  const parentWorldQuaternion = new THREE.Quaternion()
+  const parentWorldPosition = new THREE.Vector3()
+  const parentWorldScale = new THREE.Vector3()
+  bone.parent?.matrixWorld.decompose(parentWorldPosition, parentWorldQuaternion, parentWorldScale)
+
+  bone.position.copy(targetWorldPosition).sub(parentWorldPosition).applyQuaternion(parentWorldQuaternion.invert())
+  bone.quaternion.copy(parentWorldQuaternion.multiply(targetWorldQuaternion))
+}
+
+function applyWorldTransformToObject(
+  object: THREE.Object3D,
+  targetWorldPosition: THREE.Vector3,
+  targetWorldQuaternion: THREE.Quaternion,
+) {
+  const parentWorldQuaternion = new THREE.Quaternion()
+  const parentWorldPosition = new THREE.Vector3()
+  const parentWorldScale = new THREE.Vector3()
+  object.parent?.matrixWorld.decompose(parentWorldPosition, parentWorldQuaternion, parentWorldScale)
+
+  object.position.copy(targetWorldPosition).sub(parentWorldPosition).applyQuaternion(parentWorldQuaternion.invert())
+  object.quaternion.copy(parentWorldQuaternion.multiply(targetWorldQuaternion))
+}
+
+function applyHeadPoseFollowers(
+  bones: Record<string, THREE.Bone>,
+  rest: Record<string, BoneRest>,
+  eyeObjects: Record<string, THREE.Object3D>,
+  objectRest: Record<string, ObjectRest>,
+  scene: THREE.Object3D,
+  strength: number,
+) {
+  const driver = getBoneByName(bones, HEAD_POSE_DRIVER_BONE)
+  const driverRest = driver ? rest[driver.name] : null
+  if (!driver || !driverRest) return
+
+  scene.updateMatrixWorld(true)
+  const driverWorldPosition = driver.getWorldPosition(new THREE.Vector3())
+  const driverWorldQuaternion = driver.getWorldQuaternion(new THREE.Quaternion())
+  const headDelta = driverWorldQuaternion.clone().multiply(driverRest.worldQuaternion.clone().invert())
+  const targetPosition = new THREE.Vector3()
+  const targetQuaternion = new THREE.Quaternion()
+
+  for (const [name, bone] of Object.entries(bones)) {
+    const boneRest = rest[name]
+    if (!boneRest || !HEAD_POSE_FOLLOW_BONE_PATTERN.test(name)) continue
+
+    targetPosition
+      .copy(boneRest.worldPosition)
+      .sub(driverRest.worldPosition)
+      .applyQuaternion(headDelta)
+      .add(driverWorldPosition)
+    targetQuaternion.copy(headDelta).multiply(boneRest.worldQuaternion)
+
+    const blendedPosition = bone.getWorldPosition(new THREE.Vector3()).lerp(targetPosition, strength)
+    const blendedQuaternion = bone.getWorldQuaternion(new THREE.Quaternion()).slerp(targetQuaternion, strength)
+    applyWorldTransformToBone(bone, blendedPosition, blendedQuaternion)
+  }
+
+  for (const [name, object] of Object.entries(eyeObjects)) {
+    const restObject = objectRest[name]
+    if (!restObject) continue
+
+    targetPosition
+      .copy(restObject.worldPosition)
+      .sub(driverRest.worldPosition)
+      .applyQuaternion(headDelta)
+      .add(driverWorldPosition)
+    targetQuaternion.copy(headDelta).multiply(restObject.worldQuaternion)
+
+    const blendedPosition = object.getWorldPosition(new THREE.Vector3()).lerp(targetPosition, strength)
+    const blendedQuaternion = object.getWorldQuaternion(new THREE.Quaternion()).slerp(targetQuaternion, strength)
+    applyWorldTransformToObject(object, blendedPosition, blendedQuaternion)
+  }
+}
+
 function applyMorphTargets(
   meshes: MorphTargetMesh[],
   targets: Record<string, number>,
@@ -678,7 +762,9 @@ export default function HumanModel() {
       Object.entries(eyeObjects).map(([name, object]) => [
         name,
         {
+          position: object.position.clone(),
           quaternion: object.quaternion.clone(),
+          worldPosition: object.getWorldPosition(new THREE.Vector3()),
           worldQuaternion: object.getWorldQuaternion(new THREE.Quaternion()),
         },
       ]),
@@ -780,6 +866,7 @@ export default function HumanModel() {
           const rest = objectRestRef.current[name]
           if (!rest) continue
 
+          object.position.lerp(rest.position, 0.25)
           object.quaternion.slerp(rest.quaternion, 0.25)
         }
       }
@@ -807,6 +894,14 @@ export default function HumanModel() {
       if (poseLandmarks?.length) {
         const poseSettings = poseTestSettingsRef.current
         applyMediaPipePose(poseLandmarks, bones, rest, scene, poseSettings)
+        applyHeadPoseFollowers(
+          bones,
+          rest,
+          eyeObjectsRef.current,
+          objectRestRef.current,
+          scene,
+          poseSettings.strength,
+        )
 
         if (poseTestFollowPositionRef.current) {
           const hipCenter = new THREE.Vector3()
