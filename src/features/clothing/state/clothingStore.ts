@@ -1,5 +1,12 @@
 import { proxy } from 'valtio'
-import type { ClothSimQuality, ClothingTransformMode, GarmentDocument, ClothingTool, PatternPlacement } from './clothingTypes'
+import type {
+  ClothSimQuality,
+  ClothingTransformMode,
+  GarmentDocument,
+  ClothingTool,
+  PatternPlacement,
+  Vec2,
+} from './clothingTypes'
 
 // ---------------------------------------------------------------------------
 // Clothing feature state
@@ -24,6 +31,24 @@ type DirtyFlags = {
   previewDirty: boolean
 }
 
+/** A draft shape currently being drawn (rect/ellipse rubber-band, polygon/pen vertices). */
+export type DrawDraft =
+  | { kind: 'rect'; start: Vec2; current: Vec2 }
+  | { kind: 'ellipse'; start: Vec2; current: Vec2 }
+  | { kind: 'circle'; center: Vec2; current: Vec2 }
+  | { kind: 'polygon'; points: Vec2[]; current: Vec2 }
+  | { kind: 'pen'; points: Vec2[]; current: Vec2 }
+
+/** History entry: a serialized garment document snapshot. */
+type HistoryEntry = {
+  garment: GarmentDocument
+}
+
+type HistoryState = {
+  past: HistoryEntry[]
+  future: HistoryEntry[]
+}
+
 type ClothingState = {
   activeClothingTool: ClothingTool
   garment: GarmentDocument
@@ -35,6 +60,10 @@ type ClothingState = {
   simQuality: ClothSimQuality
   transformMode: ClothingTransformMode
   placements: Record<string, PatternPlacement>
+  draft: DrawDraft | null
+  history: HistoryState
+  // Multi-selection of pattern ids (for transform gizmo & deletion).
+  selectedPatternIds: string[]
 }
 
 const EMPTY_GARMENT: GarmentDocument = {
@@ -68,4 +97,7 @@ export const clothingStore = proxy<ClothingState>({
   simQuality: 'medium',
   transformMode: 'translate',
   placements: {},
+  draft: null,
+  history: { past: [], future: [] },
+  selectedPatternIds: [],
 })

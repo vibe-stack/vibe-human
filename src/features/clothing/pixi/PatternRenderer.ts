@@ -32,7 +32,9 @@ export class PatternRenderer {
     hoveredEntityId: string | null,
     showSeams: boolean,
     showPoints: boolean,
+    selectedPatternIds: ReadonlyArray<string> = [],
   ) {
+    const selSet = new Set(selectedPatternIds.length ? selectedPatternIds : (doc.selectedPatternId ? [doc.selectedPatternId] : []))
     this.fillGfx.clear()
     this.strokeGfx.clear()
     this.pointGfx.clear()
@@ -41,7 +43,7 @@ export class PatternRenderer {
     const patterns = Object.values(doc.patterns)
 
     for (const piece of patterns) {
-      const isSelected = piece.id === doc.selectedPatternId
+      const isSelected = selSet.has(piece.id)
       const isHovered  = piece.id === hoveredEntityId
       this.renderPieceFill(piece, isSelected, isHovered)
       this.renderPieceOutline(piece, isSelected, isHovered, doc.selectedEdgeId, showPoints)

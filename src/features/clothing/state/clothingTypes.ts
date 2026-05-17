@@ -72,7 +72,23 @@ export type GarmentDocument = {
 // Sub-tool identifiers
 // ---------------------------------------------------------------------------
 
-export type ClothingTool = 'select' | 'draw' | 'edit-points' | 'seam' | 'pan'
+export type ClothingTool =
+  | 'select'
+  | 'edit-points'
+  | 'rect'
+  | 'ellipse'
+  | 'circle'
+  | 'polygon'
+  | 'pen'
+  | 'seam'
+  | 'pan'
+
+export type BBox = { minX: number; minY: number; maxX: number; maxY: number }
+
+export type GizmoHandle =
+  | 'move'
+  | 'rotate'
+  | 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
 
 export type ClothSimQuality = 'low' | 'medium' | 'high' | 'ultra'
 

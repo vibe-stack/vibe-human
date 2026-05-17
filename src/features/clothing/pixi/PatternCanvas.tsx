@@ -1,270 +1,86 @@
 import { useEffect, useRef } from 'react'
 import * as PIXI from 'pixi.js'
-import { useSnapshot } from 'valtio'
 import { clothingStore } from '../state/clothingStore'
-import {
-  convertEdgeToCurve,
-  createRectanglePattern,
-  createSeam,
-  makeHoleFromPattern,
-  movePoint,
-  moveHandle,
-  selectPattern,
-  selectPoint,
-  selectEdge,
-  setHoveredEntity,
-} from '../state/clothingActions'
+import { setHoveredEntity } from '../state/clothingActions'
 import { PatternRenderer } from './PatternRenderer'
+import { OverlayRenderer } from './OverlayRenderer'
 import { pickAt } from './PatternPicker'
+import { CanvasController } from './interaction/CanvasController'
+import { screenToWorld } from './interaction/Camera'
 import { drawGrid, COLORS } from './pixiUtils'
 
 // ---------------------------------------------------------------------------
 // PatternCanvas
-// Mounts a Pixi application imperatively, using the ref to hold the app and
-// renderer so they survive re-renders without tearing down.
+//
+// Owns Pixi mounting, the render loop, and instantiates a CanvasController
+// that handles all interaction. Reads directly from clothingStore in the
+// ticker for max perf — no React re-renders per frame, no prop drilling.
 // ---------------------------------------------------------------------------
 
 export default function PatternCanvas() {
-  const canvasRef = useRef<HTMLDivElement>(null)
-  const pixiRef   = useRef<{
-    app: PIXI.Application
-    world: PIXI.Container
-    gridGfx: PIXI.Graphics
-    renderer: PatternRenderer
-  } | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
 
-  // Pixi mount / unmount
   useEffect(() => {
-    if (!canvasRef.current) return
-
+    if (!containerRef.current) return
+    const container = containerRef.current
     const app = new PIXI.Application()
-
     let mounted = true
+    let controller: CanvasController | null = null
 
     app.init({
-      resizeTo: canvasRef.current,
+      resizeTo: container,
       background: COLORS.background,
       antialias: true,
       resolution: window.devicePixelRatio,
       autoDensity: true,
     }).then(() => {
-      if (!mounted || !canvasRef.current) {
-        app.destroy()
-        return
-      }
+      if (!mounted) { app.destroy(); return }
 
-      canvasRef.current.appendChild(app.canvas as HTMLCanvasElement)
+      container.appendChild(app.canvas as HTMLCanvasElement)
+      const canvas = app.canvas as HTMLCanvasElement
 
-      // World container — pan & zoom applied here
+      // Scene graph
       const world = new PIXI.Container()
       app.stage.addChild(world)
 
-      // Grid (drawn behind everything)
       const gridGfx = new PIXI.Graphics()
       world.addChild(gridGfx)
 
-      // Pattern renderer
       const renderer = new PatternRenderer(world)
+      const overlay = new OverlayRenderer(world)
 
-      pixiRef.current = { app, world, gridGfx, renderer }
+      controller = new CanvasController(canvas)
 
-      // -----------------------------------------------------------------------
-      // Interaction: pan + zoom
-      // -----------------------------------------------------------------------
-      let isPanning = false
-      let panStart  = { x: 0, y: 0 }
-      let panOrigin = { x: 0, y: 0 }
-
-      let dragging:
-        | { type: 'point'; patternId: string; pointId: string }
-        | { type: 'handle'; patternId: string; pointId: string; handleKind: 'in' | 'out' }
-        | null = null
-      let pendingSeam: { patternId: string; edgeId: string } | null = null
-      let drawingRect: { start: { x: number; y: number }; current: { x: number; y: number } } | null = null
-
-      const canvas = app.canvas as HTMLCanvasElement
-
-      canvas.addEventListener('contextmenu', (e) => e.preventDefault())
-
-      canvas.addEventListener('wheel', (e) => {
-        e.preventDefault()
-        const factor  = e.deltaY < 0 ? 1.12 : 1 / 1.12
-        const newZoom = Math.max(0.05, Math.min(20, clothingStore.viewport2D.zoom * factor))
-
-        // Zoom toward cursor
-        const rect   = canvas.getBoundingClientRect()
-        const cx     = e.clientX - rect.left
-        const cy     = e.clientY - rect.top
-        const before = screenToWorld({ x: cx, y: cy })
-        clothingStore.viewport2D.zoom = newZoom
-        const after  = screenToWorld({ x: cx, y: cy })
-        clothingStore.viewport2D.panX += before.x - after.x
-        clothingStore.viewport2D.panY += before.y - after.y
-      }, { passive: false })
-
-      canvas.addEventListener('pointerdown', (e) => {
-        e.preventDefault()
-        const rect   = canvas.getBoundingClientRect()
+      // ---------------------------------------------------------------------
+      // Hover handling (kept here so it can run regardless of active tool)
+      // ---------------------------------------------------------------------
+      const onHoverMove = (e: PointerEvent) => {
+        const rect = canvas.getBoundingClientRect()
         const screen = { x: e.clientX - rect.left, y: e.clientY - rect.top }
-        const world  = screenToWorld(screen)
-
-        const tool = clothingStore.activeClothingTool
-        const isPanTool = tool === 'pan' || e.button === 1
-
-        if (e.button === 2) {
-          const pick = pickAt(clothingStore.garment, world, clothingStore.viewport2D.zoom)
-          if (pick?.type === 'pattern') {
-            const targetId = findContainingPatternId(pick.patternId, world)
-            if (targetId) makeHoleFromPattern(targetId, pick.patternId)
-          }
-          return
-        }
-
-        if (isPanTool) {
-          isPanning  = true
-          panStart   = screen
-          panOrigin  = { x: clothingStore.viewport2D.panX, y: clothingStore.viewport2D.panY }
-          canvas.setPointerCapture(e.pointerId)
-          return
-        }
-
-        if (tool === 'draw') {
-          drawingRect = { start: world, current: world }
-          canvas.setPointerCapture(e.pointerId)
-          return
-        }
-
-        if (tool === 'seam') {
-          const pick = pickAt(clothingStore.garment, world, clothingStore.viewport2D.zoom)
-          if (pick?.type === 'edge') {
-            if (!pendingSeam) {
-              pendingSeam = { patternId: pick.patternId, edgeId: pick.edgeId }
-              selectPattern(pick.patternId)
-              selectEdge(pick.edgeId)
-            } else {
-              createSeam(pendingSeam.patternId, pendingSeam.edgeId, pick.patternId, pick.edgeId)
-              pendingSeam = null
-              selectPattern(pick.patternId)
-              selectEdge(pick.edgeId)
-            }
-          }
-          return
-        }
-
-        if (tool === 'select' || tool === 'edit-points') {
-          const pick = pickAt(clothingStore.garment, world, clothingStore.viewport2D.zoom)
-
-          if (!pick) {
-            selectPattern(undefined)
-            selectPoint(undefined)
-            return
-          }
-
-          if (pick.type === 'point') {
-            selectPattern(pick.patternId)
-            selectPoint(pick.pointId)
-            if (tool === 'edit-points') {
-              dragging = { type: 'point', patternId: pick.patternId, pointId: pick.pointId }
-              canvas.setPointerCapture(e.pointerId)
-            }
-          } else if (pick.type === 'handle') {
-            selectPattern(pick.patternId)
-            selectPoint(pick.pointId)
-            if (tool === 'edit-points') {
-              dragging = { type: 'handle', patternId: pick.patternId, pointId: pick.pointId, handleKind: pick.handleKind }
-              canvas.setPointerCapture(e.pointerId)
-            }
-          } else if (pick.type === 'edge') {
-            selectPattern(pick.patternId)
-            selectEdge(pick.edgeId)
-            if (tool === 'edit-points' && e.detail >= 2) {
-              convertEdgeToCurve(pick.patternId, pick.edgeId)
-            }
-          } else if (pick.type === 'pattern') {
-            selectPattern(pick.patternId)
-          }
-        }
-      })
-
-      canvas.addEventListener('pointermove', (e) => {
-        const rect   = canvas.getBoundingClientRect()
-        const screen = { x: e.clientX - rect.left, y: e.clientY - rect.top }
-        const worldPt = screenToWorld(screen)
-
-        if (isPanning) {
-          const dx = screen.x - panStart.x
-          const dy = screen.y - panStart.y
-          clothingStore.viewport2D.panX = panOrigin.x - dx / clothingStore.viewport2D.zoom
-          clothingStore.viewport2D.panY = panOrigin.y - dy / clothingStore.viewport2D.zoom
-          return
-        }
-
-        if (dragging) {
-          if (dragging.type === 'point') {
-            movePoint(dragging.patternId, dragging.pointId, worldPt.x, worldPt.y)
-          } else {
-            moveHandle(dragging.patternId, dragging.pointId, dragging.handleKind, worldPt.x, worldPt.y)
-          }
-          return
-        }
-
-        if (drawingRect) {
-          drawingRect.current = worldPt
-          return
-        }
-
-        // Hover
+        const view = { w: canvas.clientWidth, h: canvas.clientHeight }
+        const worldPt = screenToWorld(screen, view.w, view.h)
         const pick = pickAt(clothingStore.garment, worldPt, clothingStore.viewport2D.zoom)
-        if (!pick) {
-          setHoveredEntity(null, null)
-        } else if (pick.type === 'point') {
-          setHoveredEntity(pick.pointId, 'point')
-        } else if (pick.type === 'edge') {
-          setHoveredEntity(pick.edgeId, 'edge')
-        } else if (pick.type === 'pattern') {
-          setHoveredEntity(pick.patternId, 'pattern')
-        }
-      })
+        if (!pick) setHoveredEntity(null, null)
+        else if (pick.type === 'point') setHoveredEntity(pick.pointId, 'point')
+        else if (pick.type === 'edge') setHoveredEntity(pick.edgeId, 'edge')
+        else if (pick.type === 'pattern') setHoveredEntity(pick.patternId, 'pattern')
+      }
+      canvas.addEventListener('pointermove', onHoverMove)
 
-      canvas.addEventListener('pointerup', (e) => {
-        if (drawingRect) {
-          const width = Math.abs(drawingRect.current.x - drawingRect.start.x)
-          const height = Math.abs(drawingRect.current.y - drawingRect.start.y)
-          if (width >= 8 && height >= 8) {
-            const id = createRectanglePattern(
-              {
-                x: (drawingRect.start.x + drawingRect.current.x) / 2,
-                y: (drawingRect.start.y + drawingRect.current.y) / 2,
-              },
-              width,
-              height,
-            )
-            selectPattern(id)
-          }
-        }
-        isPanning = false
-        dragging  = null
-        drawingRect = null
-        canvas.releasePointerCapture(e.pointerId)
-      })
-
-      // -----------------------------------------------------------------------
-      // Render loop — read from Valtio snapshot on each frame
-      // -----------------------------------------------------------------------
+      // ---------------------------------------------------------------------
+      // Render loop
+      // ---------------------------------------------------------------------
       app.ticker.add(() => {
-        const { garment, viewport2D, previewOptions } = clothingStore
+        const { garment, viewport2D, previewOptions, selectedPatternIds } = clothingStore
+        const viewW = canvas.clientWidth || app.renderer.width / window.devicePixelRatio
+        const viewH = canvas.clientHeight || app.renderer.height / window.devicePixelRatio
 
-        // Apply camera transform
-        const viewWidth = canvas.clientWidth || app.renderer.width / window.devicePixelRatio
-        const viewHeight = canvas.clientHeight || app.renderer.height / window.devicePixelRatio
-
-        world.x     =  -viewport2D.panX * viewport2D.zoom + viewWidth  / 2
-        world.y     =  -viewport2D.panY * viewport2D.zoom + viewHeight / 2
+        world.x = -viewport2D.panX * viewport2D.zoom + viewW / 2
+        world.y = -viewport2D.panY * viewport2D.zoom + viewH / 2
         world.scale.set(viewport2D.zoom)
 
-        // Grid: convert screen bounds to world
-        const wW = viewWidth  / viewport2D.zoom
-        const wH = viewHeight / viewport2D.zoom
+        const wW = viewW / viewport2D.zoom
+        const wH = viewH / viewport2D.zoom
         const wL = viewport2D.panX - wW / 2
         const wT = viewport2D.panY - wH / 2
         drawGrid(gridGfx, wL, wT, wL + wW, wT + wH, 50)
@@ -274,56 +90,36 @@ export default function PatternCanvas() {
           viewport2D.hoveredEntityId,
           previewOptions.showSeams,
           true,
+          selectedPatternIds,
         )
+        overlay.render(viewport2D.zoom)
       })
+
+      // Cleanup hook for hover listener
+      ;(controller as unknown as { _hoverCleanup?: () => void })._hoverCleanup = () => {
+        canvas.removeEventListener('pointermove', onHoverMove)
+      }
     })
 
     return () => {
       mounted = false
-      if (pixiRef.current) {
-        pixiRef.current.app.destroy({ removeView: true })
-        pixiRef.current = null
+      if (controller) {
+        ;(controller as unknown as { _hoverCleanup?: () => void })._hoverCleanup?.()
+        controller.destroy()
+        controller = null
       }
+      try { app.destroy(true, { children: true }) } catch {}
     }
-
-    // screenToWorld needs to be defined in this scope so the canvas callbacks can close over it
-    function screenToWorld(screen: { x: number; y: number }) {
-      if (!pixiRef.current) return { x: 0, y: 0 }
-      const { viewport2D } = clothingStore
-      const canvas = pixiRef.current.app.canvas as HTMLCanvasElement
-      const cx = (canvas.clientWidth || pixiRef.current.app.renderer.width / window.devicePixelRatio) / 2
-      const cy = (canvas.clientHeight || pixiRef.current.app.renderer.height / window.devicePixelRatio) / 2
-      return {
-        x: (screen.x - cx) / viewport2D.zoom + viewport2D.panX,
-        y: (screen.y - cy) / viewport2D.zoom + viewport2D.panY,
-      }
-    }
-
-    function findContainingPatternId(excludedPatternId: string, point: { x: number; y: number }) {
-      for (const piece of Object.values(clothingStore.garment.patterns)) {
-        if (piece.id === excludedPatternId || !piece.closed) continue
-        const pick = pickAt(
-          {
-            ...clothingStore.garment,
-            patterns: { [piece.id]: piece },
-          },
-          point,
-          clothingStore.viewport2D.zoom,
-        )
-        if (pick?.type === 'pattern') return piece.id
-      }
-      return null
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  // Use snapshot just to trigger re-sub if needed; actual rendering is in ticker
-  useSnapshot(clothingStore.viewport2D)
 
   return (
     <div
-      ref={canvasRef}
-      style={{ width: '100%', height: '100%', overflow: 'hidden', position: 'relative' }}
+      ref={containerRef}
+      style={{
+        width: '100%', height: '100%',
+        overflow: 'hidden', position: 'relative',
+        touchAction: 'none',
+      }}
     />
   )
 }

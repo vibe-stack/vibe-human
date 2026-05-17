@@ -1,20 +1,37 @@
 import { nanoid } from '../../../utils/nanoid'
 import { clothingStore } from './clothingStore'
-import type { ClothSimQuality, ClothingTool, ClothingTransformMode, GarmentDocument, PatternEdge, PatternPiece, PatternPoint, PatternPlacement, Seam, Vec2 } from './clothingTypes'
+import { pushHistory } from './historyActions'
+import { setSelectedPatterns } from './transformActions'
+import type {
+  ClothSimQuality,
+  ClothingTool,
+  ClothingTransformMode,
+  GarmentDocument,
+  PatternPiece,
+  PatternPlacement,
+  Seam,
+} from './clothingTypes'
+
+const uid = () => nanoid(8)
 
 // ---------------------------------------------------------------------------
-// Helper: generate a short id without external dep
+// Re-export submodules so existing imports keep working
 // ---------------------------------------------------------------------------
-function uid() {
-  return nanoid(8)
-}
+
+export * from './historyActions'
+export * from './shapeActions'
+export * from './pointActions'
+export * from './transformActions'
 
 // ---------------------------------------------------------------------------
 // Tool selection
 // ---------------------------------------------------------------------------
 
 export function setActiveClothingTool(tool: ClothingTool) {
+  if (clothingStore.activeClothingTool === tool) return
   clothingStore.activeClothingTool = tool
+  // Switching tools cancels any in-progress draft
+  clothingStore.draft = null
 }
 
 // ---------------------------------------------------------------------------
@@ -25,6 +42,7 @@ export function selectPattern(id: string | undefined) {
   clothingStore.garment.selectedPatternId = id
   clothingStore.garment.selectedPointId = undefined
   clothingStore.garment.selectedEdgeId = undefined
+  clothingStore.selectedPatternIds = id ? [id] : []
 }
 
 export function selectPoint(id: string | undefined) {
@@ -40,142 +58,117 @@ export function clearSelection() {
   clothingStore.garment.selectedPointId = undefined
   clothingStore.garment.selectedEdgeId = undefined
   clothingStore.garment.selectedSeamId = undefined
+  clothingStore.selectedPatternIds = []
 }
+
+export { setSelectedPatterns }
 
 // ---------------------------------------------------------------------------
-// Point mutation
+// Seams
 // ---------------------------------------------------------------------------
 
-export function movePoint(patternId: string, pointId: string, x: number, y: number) {
-  const pattern = clothingStore.garment.patterns[patternId]
-  if (!pattern) return
-  const pt = pattern.points[pointId]
-  if (!pt) return
-  pt.x = x
-  pt.y = y
-  clothingStore.dirty.previewDirty = true
-  clothingStore.dirty.triangulationDirty = true
-}
-
-export function addPoint(patternId: string, x: number, y: number) {
-  const pattern = clothingStore.garment.patterns[patternId]
-  if (!pattern) return
+export function createSeam(
+  patternIdA: string,
+  edgeIdA: string,
+  patternIdB: string,
+  edgeIdB: string,
+): string {
+  pushHistory()
   const id = uid()
-  pattern.points[id] = { id, x, y, kind: 'corner' }
-  clothingStore.dirty.previewDirty = true
-}
-
-export function moveHandle(patternId: string, pointId: string, handleKind: 'in' | 'out', x: number, y: number) {
-  const pattern = clothingStore.garment.patterns[patternId]
-  const point = pattern?.points[pointId]
-  if (!pattern || !point) return
-
-  point[handleKind] = { x: x - point.x, y: y - point.y }
-  point.kind = 'smooth'
-  clothingStore.dirty.previewDirty = true
-  clothingStore.dirty.triangulationDirty = true
-}
-
-export function convertEdgeToCurve(patternId: string, edgeId: string) {
-  const pattern = clothingStore.garment.patterns[patternId]
-  const edge = pattern?.edges.find((item) => item.id === edgeId)
-  if (!pattern || !edge) return
-
-  const from = pattern.points[edge.from]
-  const to = pattern.points[edge.to]
-  if (!from || !to) return
-
-  edge.curve = 'cubic'
-  from.out = from.out ?? { x: (to.x - from.x) / 3, y: (to.y - from.y) / 3 }
-  to.in = to.in ?? { x: (from.x - to.x) / 3, y: (from.y - to.y) / 3 }
-  from.kind = 'smooth'
-  to.kind = 'smooth'
-  clothingStore.dirty.previewDirty = true
-  clothingStore.dirty.triangulationDirty = true
-}
-
-function makePoint(id: string, x: number, y: number): PatternPoint {
-  return { id, x, y, kind: 'corner' }
-}
-
-function makeEdge(from: string, to: string, curve: 'line' | 'cubic' = 'line'): PatternEdge {
-  return { id: uid(), from, to, curve }
-}
-
-export function createRectanglePattern(center: Vec2, width = 180, height = 140): string {
-  const id = uid()
-  const topLeft = makePoint(uid(), center.x - width / 2, center.y - height / 2)
-  const topRight = makePoint(uid(), center.x + width / 2, center.y - height / 2)
-  const bottomRight = makePoint(uid(), center.x + width / 2, center.y + height / 2)
-  const bottomLeft = makePoint(uid(), center.x - width / 2, center.y + height / 2)
-  const piece: PatternPiece = {
+  const seam: Seam = {
     id,
-    name: `Pattern ${Object.keys(clothingStore.garment.patterns).length + 1}`,
-    points: {
-      [topLeft.id]: topLeft,
-      [topRight.id]: topRight,
-      [bottomRight.id]: bottomRight,
-      [bottomLeft.id]: bottomLeft,
-    },
-    edges: [
-      makeEdge(topLeft.id, topRight.id),
-      makeEdge(topRight.id, bottomRight.id),
-      makeEdge(bottomRight.id, bottomLeft.id),
-      makeEdge(bottomLeft.id, topLeft.id),
-    ],
-    closed: true,
-    particleDistance: 22,
+    name: `Seam ${Object.keys(clothingStore.garment.seams).length + 1}`,
+    a: { patternId: patternIdA, edgeId: edgeIdA },
+    b: { patternId: patternIdB, edgeId: edgeIdB },
+    strength: 1,
   }
-
-  clothingStore.garment.patterns[id] = piece
-  clothingStore.garment.selectedPatternId = id
-  clothingStore.garment.selectedPointId = undefined
-  clothingStore.garment.selectedEdgeId = undefined
-  markPreviewDirty()
+  clothingStore.garment.seams[id] = seam
   return id
 }
 
-export function setRectanglePatternBounds(patternId: string, a: Vec2, b: Vec2) {
-  const pattern = clothingStore.garment.patterns[patternId]
-  if (!pattern || pattern.edges.length < 4) return
-
-  const minX = Math.min(a.x, b.x)
-  const maxX = Math.max(a.x, b.x)
-  const minY = Math.min(a.y, b.y)
-  const maxY = Math.max(a.y, b.y)
-  if (maxX - minX < 4 || maxY - minY < 4) return
-
-  const topLeft = pattern.points[pattern.edges[0].from]
-  const topRight = pattern.points[pattern.edges[0].to]
-  const bottomRight = pattern.points[pattern.edges[1].to]
-  const bottomLeft = pattern.points[pattern.edges[2].to]
-  if (!topLeft || !topRight || !bottomRight || !bottomLeft) return
-
-  topLeft.x = minX
-  topLeft.y = minY
-  topRight.x = maxX
-  topRight.y = minY
-  bottomRight.x = maxX
-  bottomRight.y = maxY
-  bottomLeft.x = minX
-  bottomLeft.y = maxY
-  markPreviewDirty()
+export function deleteSeam(seamId: string) {
+  if (!clothingStore.garment.seams[seamId]) return
+  pushHistory()
+  delete clothingStore.garment.seams[seamId]
 }
 
-export function deletePoint(patternId: string, pointId: string) {
-  const pattern = clothingStore.garment.patterns[patternId]
-  if (!pattern) return
-  delete pattern.points[pointId]
-  pattern.edges = pattern.edges.filter((e) => e.from !== pointId && e.to !== pointId)
+// ---------------------------------------------------------------------------
+// Boolean: punch a hole in target using cutter outline.
+// History is pushed so this is properly undoable / revertible.
+// ---------------------------------------------------------------------------
+
+/**
+ * Subtract the topmost selected piece from the others. The last item in
+ * `clothingStore.selectedPatternIds` is treated as the cutter; all earlier
+ * ids become targets. This is the only "blessed" entry point for boolean
+ * subtract — explicit, predictable, and undoable.
+ */
+export function subtractTopFromSelection(): boolean {
+  const ids = [...clothingStore.selectedPatternIds]
+  if (ids.length < 2) return false
+  const cutterId = ids[ids.length - 1]
+  const targetIds = ids.slice(0, -1)
+  const cutter = clothingStore.garment.patterns[cutterId]
+  if (!cutter || !cutter.closed || cutter.edges.length < 3) return false
+
+  pushHistory()
+  for (const targetId of targetIds) {
+    const target = clothingStore.garment.patterns[targetId]
+    if (!target) continue
+    for (const point of Object.values(cutter.points)) {
+      target.points[point.id] = { ...point }
+    }
+    target.holes = target.holes ?? []
+    target.holes.push(cutter.edges.map((edge) => ({ ...edge })))
+  }
+  delete clothingStore.garment.patterns[cutterId]
+  clothingStore.selectedPatternIds = targetIds
+  clothingStore.garment.selectedPatternId = targetIds[0]
+  clothingStore.dirty.previewDirty = true
+  clothingStore.dirty.triangulationDirty = true
+  return true
+}
+
+export function makeHoleFromPattern(targetPatternId: string, cutterPatternId: string) {
+  if (targetPatternId === cutterPatternId) return
+  const target = clothingStore.garment.patterns[targetPatternId]
+  const cutter = clothingStore.garment.patterns[cutterPatternId]
+  if (!target || !cutter || !cutter.closed || cutter.edges.length < 3) return
+
+  pushHistory()
+  for (const point of Object.values(cutter.points)) {
+    target.points[point.id] = { ...point }
+  }
+  target.holes = target.holes ?? []
+  target.holes.push(cutter.edges.map((edge) => ({ ...edge })))
+
+  delete clothingStore.garment.patterns[cutterPatternId]
+  clothingStore.garment.selectedPatternId = targetPatternId
+  clothingStore.garment.selectedPointId = undefined
+  clothingStore.garment.selectedEdgeId = undefined
+  clothingStore.selectedPatternIds = [targetPatternId]
   clothingStore.dirty.previewDirty = true
   clothingStore.dirty.triangulationDirty = true
 }
 
 // ---------------------------------------------------------------------------
-// Pattern piece CRUD
+// Hover
+// ---------------------------------------------------------------------------
+
+export function setHoveredEntity(
+  id: string | null,
+  type: 'point' | 'edge' | 'pattern' | 'seam' | null,
+) {
+  clothingStore.viewport2D.hoveredEntityId = id
+  clothingStore.viewport2D.hoveredEntityType = type
+}
+
+// ---------------------------------------------------------------------------
+// Pattern piece blank create
 // ---------------------------------------------------------------------------
 
 export function createPatternPiece(): string {
+  pushHistory()
   const id = uid()
   const piece: PatternPiece = {
     id,
@@ -190,59 +183,6 @@ export function createPatternPiece(): string {
 }
 
 // ---------------------------------------------------------------------------
-// Seams
-// ---------------------------------------------------------------------------
-
-export function createSeam(
-  patternIdA: string,
-  edgeIdA: string,
-  patternIdB: string,
-  edgeIdB: string,
-): string {
-  const id = uid()
-  const seam: Seam = {
-    id,
-    name: `Seam ${Object.keys(clothingStore.garment.seams).length + 1}`,
-    a: { patternId: patternIdA, edgeId: edgeIdA },
-    b: { patternId: patternIdB, edgeId: edgeIdB },
-    strength: 1,
-  }
-  clothingStore.garment.seams[id] = seam
-  return id
-}
-
-export function makeHoleFromPattern(targetPatternId: string, cutterPatternId: string) {
-  if (targetPatternId === cutterPatternId) return
-  const target = clothingStore.garment.patterns[targetPatternId]
-  const cutter = clothingStore.garment.patterns[cutterPatternId]
-  if (!target || !cutter || !cutter.closed || cutter.edges.length < 3) return
-
-  for (const point of Object.values(cutter.points)) {
-    target.points[point.id] = { ...point }
-  }
-  target.holes = target.holes ?? []
-  target.holes.push(cutter.edges.map((edge) => ({ ...edge })))
-
-  delete clothingStore.garment.patterns[cutterPatternId]
-  clothingStore.garment.selectedPatternId = targetPatternId
-  clothingStore.garment.selectedPointId = undefined
-  clothingStore.garment.selectedEdgeId = undefined
-  markPreviewDirty()
-}
-
-// ---------------------------------------------------------------------------
-// Hover (called by PatternPicker)
-// ---------------------------------------------------------------------------
-
-export function setHoveredEntity(
-  id: string | null,
-  type: 'point' | 'edge' | 'pattern' | 'seam' | null,
-) {
-  clothingStore.viewport2D.hoveredEntityId = id
-  clothingStore.viewport2D.hoveredEntityType = type
-}
-
-// ---------------------------------------------------------------------------
 // Preview dirty flags
 // ---------------------------------------------------------------------------
 
@@ -250,6 +190,10 @@ export function markPreviewDirty() {
   clothingStore.dirty.previewDirty = true
   clothingStore.dirty.triangulationDirty = true
 }
+
+// ---------------------------------------------------------------------------
+// Simulation
+// ---------------------------------------------------------------------------
 
 export function toggleSimRunning() {
   clothingStore.simRunning = !clothingStore.simRunning
@@ -280,7 +224,7 @@ export function setPatternPlacement(patternId: string, placement: PatternPlaceme
 }
 
 // ---------------------------------------------------------------------------
-// Load garment document (replaces current)
+// Document loading
 // ---------------------------------------------------------------------------
 
 export function loadDemoGarment(doc: GarmentDocument) {
@@ -290,6 +234,23 @@ export function loadDemoGarment(doc: GarmentDocument) {
   clothingStore.viewport2D.panY = 0
   clothingStore.viewport2D.hoveredEntityId = null
   clothingStore.viewport2D.hoveredEntityType = null
+  clothingStore.history.past.length = 0
+  clothingStore.history.future.length = 0
+  clothingStore.selectedPatternIds = doc.selectedPatternId ? [doc.selectedPatternId] : []
   clothingStore.dirty.previewDirty = true
   clothingStore.dirty.triangulationDirty = true
+}
+
+// ---------------------------------------------------------------------------
+// Legacy compatibility — previous code paths still use these names.
+// They forward to the raw (no-history) helpers in pointActions.
+// Callers wanting history must push it themselves before dragging.
+// ---------------------------------------------------------------------------
+
+export { movePointRaw as movePoint, moveHandleRaw as moveHandle } from './pointActions'
+
+export function setRectanglePatternBounds(_patternId: string, _a: { x: number; y: number }, _b: { x: number; y: number }) {
+  // Retained for any external caller — no-op since rectangle drafting is now
+  // handled by the draft system. The original use-case (live rubber-band
+  // rectangle while drawing) is now drawn as a preview, not a committed piece.
 }

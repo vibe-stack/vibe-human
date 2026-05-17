@@ -33,10 +33,16 @@ export function pickAt(doc: GarmentDocument, worldPt: Vec2, zoom: number): PickR
   const handleTolSq = (HANDLE_TOLERANCE_PX / zoom) ** 2
   const edgeTolSq   = (EDGE_TOLERANCE_PX   / zoom) ** 2
 
+  // Iterate in REVERSE insertion order so the topmost (most recently created)
+  // piece wins when shapes overlap. Without this, dropping a circle inside a
+  // rectangle would make the rectangle steal the hit and the circle becomes
+  // unselectable.
+  const orderedPieces = Object.values(doc.patterns).slice().reverse()
+
   // -------------------------------------------------------------------------
   // 1. Points
   // -------------------------------------------------------------------------
-  for (const piece of Object.values(doc.patterns)) {
+  for (const piece of orderedPieces) {
     for (const pt of Object.values(piece.points)) {
       if (dist2(worldPt, pt) <= pointTolSq) {
         return { type: 'point', patternId: piece.id, pointId: pt.id }
@@ -47,7 +53,7 @@ export function pickAt(doc: GarmentDocument, worldPt: Vec2, zoom: number): PickR
   // -------------------------------------------------------------------------
   // 2. Bezier handles
   // -------------------------------------------------------------------------
-  for (const piece of Object.values(doc.patterns)) {
+  for (const piece of orderedPieces) {
     for (const pt of Object.values(piece.points)) {
       if (pt.in) {
         const hPos: Vec2 = { x: pt.x + pt.in.x, y: pt.y + pt.in.y }
@@ -67,7 +73,7 @@ export function pickAt(doc: GarmentDocument, worldPt: Vec2, zoom: number): PickR
   // -------------------------------------------------------------------------
   // 3. Edges (sampled polyline hit-test)
   // -------------------------------------------------------------------------
-  for (const piece of Object.values(doc.patterns)) {
+  for (const piece of orderedPieces) {
     for (const edge of piece.edges) {
       const pts = sampleEdge(piece, edge, 12)
       const toPt = piece.points[edge.to]
@@ -84,7 +90,7 @@ export function pickAt(doc: GarmentDocument, worldPt: Vec2, zoom: number): PickR
   // -------------------------------------------------------------------------
   // 4. Pattern fill (point-in-polygon)
   // -------------------------------------------------------------------------
-  for (const piece of Object.values(doc.patterns)) {
+  for (const piece of orderedPieces) {
     if (!piece.closed) continue
     if (pointInPattern(worldPt, piece)) {
       return { type: 'pattern', patternId: piece.id }
