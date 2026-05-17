@@ -1,5 +1,5 @@
 import { nanoid } from '../../../utils/nanoid'
-import type { GarmentDocument, PatternEdge, PatternPiece, PatternPoint } from '../state/clothingTypes'
+import type { GarmentDocument, PatternEdge, PatternPiece, PatternPoint, Seam } from '../state/clothingTypes'
 
 function uid() {
   return nanoid(8)
@@ -13,15 +13,15 @@ function makeEdge(from: string, to: string): PatternEdge {
   return { id: uid(), from, to, curve: 'line' }
 }
 
-function createHeadClothPanel(): PatternPiece {
-  const topLeft = makePoint('cloth-top-left', -140, -140)
-  const topRight = makePoint('cloth-top-right', 140, -140)
-  const bottomRight = makePoint('cloth-bottom-right', 140, 140)
-  const bottomLeft = makePoint('cloth-bottom-left', -140, 140)
+function createTorsoPanel(id: string, name: string, halfWidth = 90, halfHeight = 150): PatternPiece {
+  const topLeft = makePoint(`${id}-top-left`, -halfWidth, -halfHeight)
+  const topRight = makePoint(`${id}-top-right`, halfWidth, -halfHeight)
+  const bottomRight = makePoint(`${id}-bottom-right`, halfWidth, halfHeight)
+  const bottomLeft = makePoint(`${id}-bottom-left`, -halfWidth, halfHeight)
 
   return {
-    id: 'head-cloth-panel',
-    name: 'Head Cloth',
+    id,
+    name,
     points: {
       [topLeft.id]: topLeft,
       [topRight.id]: topRight,
@@ -36,20 +36,44 @@ function createHeadClothPanel(): PatternPiece {
     ],
     closed: true,
     fabricId: 'cotton-demo',
-    particleDistance: 22,
+    particleDistance: 18,
   }
 }
 
 export function createDemoGarment(): GarmentDocument {
-  const cloth = createHeadClothPanel()
+  const front = createTorsoPanel('torso-front', 'Torso Front')
+  const back = createTorsoPanel('torso-back', 'Torso Back')
+
+  const frontRight = front.edges[1]
+  const frontLeft = front.edges[3]
+  const backRight = back.edges[1]
+  const backLeft = back.edges[3]
+
+  const seams: Record<string, Seam> = {
+    'side-left': {
+      id: 'side-left',
+      name: 'Left Side Seam',
+      a: { patternId: front.id, edgeId: frontLeft.id },
+      b: { patternId: back.id, edgeId: backRight.id, reversed: true },
+      strength: 1,
+    },
+    'side-right': {
+      id: 'side-right',
+      name: 'Right Side Seam',
+      a: { patternId: front.id, edgeId: frontRight.id },
+      b: { patternId: back.id, edgeId: backLeft.id, reversed: true },
+      strength: 1,
+    },
+  }
 
   return {
     id: uid(),
-    name: 'Rapier Head Cloth Demo',
+    name: 'Two Panel Torso Demo',
     patterns: {
-      [cloth.id]: cloth,
+      [front.id]: front,
+      [back.id]: back,
     },
-    seams: {},
-    selectedPatternId: cloth.id,
+    seams,
+    selectedPatternId: front.id,
   }
 }

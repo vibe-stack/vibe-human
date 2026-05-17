@@ -16,13 +16,29 @@ const _vA = new THREE.Vector3()
 const _vB = new THREE.Vector3()
 const _vC = new THREE.Vector3()
 
+type MeshQueryCache = {
+  localMat: THREE.Matrix4
+  worldMat: THREE.Matrix4
+  normalMat: THREE.Matrix3
+}
+
+type MeshColliderWithCache = MeshCollider & {
+  __queryCache?: MeshQueryCache
+}
+
 /** Project every particle out of every collider. Pure SDF push — much
  *  cheaper and more reliable than rapier ball-vs-ball at this scale. */
 export function projectColliders(state: ClothSolverState) {
-  const { positions, prevPositions, colliders, particleCount } = state
+  const { positions, prevPositions, invMass, colliders, particleCount } = state
   if (colliders.length === 0) return
 
+  for (let k = 0; k < colliders.length; k += 1) {
+    const c = colliders[k]
+    if (c.kind === 'mesh') prepareMeshQuery(c)
+  }
+
   for (let i = 0; i < particleCount; i += 1) {
+    if (invMass[i] === 0) continue
     const o = i * 3
     let px = positions[o], py = positions[o + 1], pz = positions[o + 2]
     let touched = false
@@ -102,6 +118,19 @@ function pushOutOfCapsule(c: CapsuleCollider, px: number, py: number, pz: number
 
 function clamp01(v: number) { return v < 0 ? 0 : v > 1 ? 1 : v }
 
+function prepareMeshQuery(collider: MeshCollider) {
+  const c = collider as MeshColliderWithCache
+  const cache = c.__queryCache ??= {
+    localMat: new THREE.Matrix4(),
+    worldMat: new THREE.Matrix4(),
+    normalMat: new THREE.Matrix3(),
+  }
+  cache.worldMat.fromArray(c.mesh.matrixWorld.elements as ArrayLike<number>)
+  cache.localMat.copy(cache.worldMat).invert()
+  cache.normalMat.getNormalMatrix(cache.worldMat)
+  return cache
+}
+
 /**
  * Push a point out of a triangle mesh using a MeshBVH. We query for the
  * closest point on the mesh surface in mesh-local space, then decide which
@@ -116,10 +145,9 @@ function pushOutOfMesh(c: MeshCollider, px: number, py: number, pz: number): Pus
   const geom = c.mesh.geometry as unknown as THREE.BufferGeometry & { boundsTree?: MeshBVH }
   const bvh = geom.boundsTree
   if (!bvh) return null
+  const cache = prepareMeshQuery(c)
 
-  _worldMat.fromArray(c.mesh.matrixWorld.elements as ArrayLike<number>)
-  _localMat.copy(_worldMat).invert()
-  _localPoint.set(px, py, pz).applyMatrix4(_localMat)
+  _localPoint.set(px, py, pz).applyMatrix4(cache.localMat)
 
   const hit = bvh.closestPointToPoint(_localPoint, _hit)
   if (!hit) return null
@@ -127,36 +155,26 @@ function pushOutOfMesh(c: MeshCollider, px: number, py: number, pz: number): Pus
   if (!getTriangleNormal(geom, hit.faceIndex ?? 0, _faceNormal)) return null
 
   // Transform hit point + face normal to world.
-  _worldHit.copy(hit.point).applyMatrix4(_worldMat)
-  _normalMat.getNormalMatrix(_worldMat)
-  _worldNormal.copy(_faceNormal).applyMatrix3(_normalMat).normalize()
+  _worldHit.copy(hit.point).applyMatrix4(cache.worldMat)
+  _worldNormal.copy(_faceNormal).applyMatrix3(cache.normalMat).normalize()
 
   const dx = px - _worldHit.x
   const dy = py - _worldHit.y
   const dz = pz - _worldHit.z
   const dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
-  // Build a "surface→particle" direction in world space — this is the
-  // axis we'd push along even if we can't trust the face normal.
   const sgn = dx * _worldNormal.x + dy * _worldNormal.y + dz * _worldNormal.z
 
   // If the particle is clearly far from the surface AND on the outward
   // side of the face normal, it's free — skip.
   if (sgn > c.skin && dist > c.skin) return null
 
-  // Decide outward direction. If sgn is positive, the face normal already
-  // points toward the particle — use it. Otherwise the particle is on the
-  // back side of this face (likely inside the mesh) and we push along the
-  // direction *from surface to particle* if we have one, else along the
-  // negated normal as a last resort.
-  let nx: number, ny: number, nz: number
-  if (sgn > 0) {
-    nx = _worldNormal.x; ny = _worldNormal.y; nz = _worldNormal.z
-  } else if (dist > 1e-6) {
-    const inv = 1 / dist
-    nx = dx * inv; ny = dy * inv; nz = dz * inv
-  } else {
-    nx = -_worldNormal.x; ny = -_worldNormal.y; nz = -_worldNormal.z
-  }
+  // When the closest point is on the back side of a consistently wound body
+  // mesh, the particle is inside the collider and still needs to be pushed
+  // along the outward face normal. Using the surface→particle vector there
+  // moves the particle deeper into the body and causes the visible jumping.
+  const nx = _worldNormal.x
+  const ny = _worldNormal.y
+  const nz = _worldNormal.z
 
   return {
     x: _worldHit.x + nx * c.skin,

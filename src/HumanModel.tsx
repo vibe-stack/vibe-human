@@ -8,7 +8,11 @@ import { createBodySkinMaterial, createEyeMaterial, createSkinMaterial } from '.
 import GroomRenderer from './features/groom/components/GroomRenderer'
 import GroomViewportTools from './features/groom/components/GroomViewportTools'
 import { registerGroomMeshes, registerSkinMaterialForGroom, unregisterSkinMaterialForGroom } from './features/groom/store/groomStore'
-import { registerBodyMesh, unregisterBodyMesh } from './features/clothing/cloth/body/bodyMeshRegistry'
+import {
+  buildBodyProxySnapshotFromBones,
+  clearBodyProxySnapshot,
+  setBodyProxySnapshot,
+} from './features/clothing/simulation/collision/bodyProxyRegistry'
 import {
   buildModelingMorphs,
   MODELING_CONTROLS,
@@ -779,23 +783,6 @@ export default function HumanModel() {
     skeletonsRef.current = skeletons
     registerGroomMeshes(groomMeshes)
 
-    // Register every skinned mesh on the character as a cloth-collision
-    // source. We DELIBERATELY don't filter by name — the GLTF can have
-    // arbitrary mesh splits (Wolf3D_Body, Wolf3D_Outfit_Top, etc.) and the
-    // cloth should collide with all of them. Eyes are a single tiny mesh
-    // and can stay in; their BVH is trivial.
-    const bodyKeys: string[] = []
-    scene.traverse((obj) => {
-      const m = obj as THREE.SkinnedMesh
-      if (!m.isSkinnedMesh) return
-      // Skip teeth/eyes — they're inside the head and bloat the BVH for no
-      // benefit. Easy heuristic: name contains "tooth" / "eye" / "iris".
-      if (/(tooth|teeth|eye|iris|lash|brow)/i.test(m.name)) return
-      const key = m.uuid
-      bodyKeys.push(key)
-      registerBodyMesh(key, m)
-    })
-
     const availableTargets = new Set(
       morphMeshes.flatMap((mesh) => Object.keys(mesh.morphTargetDictionary)),
     )
@@ -847,7 +834,7 @@ export default function HumanModel() {
 
     return () => {
       cancelled = true
-      for (const key of bodyKeys) unregisterBodyMesh(key)
+      clearBodyProxySnapshot()
     }
   }, [scene])
 
@@ -856,6 +843,8 @@ export default function HumanModel() {
     const rest = restRef.current
 
     if (!Object.keys(bones).length) return
+
+    setBodyProxySnapshot(buildBodyProxySnapshotFromBones(bones))
 
     tRef.current = Math.min(1, tRef.current + delta * 5)
     const t = tRef.current

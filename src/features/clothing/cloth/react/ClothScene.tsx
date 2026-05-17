@@ -1,77 +1,128 @@
-import { useEffect, useRef, useState } from 'react'
-import { useFrame } from '@react-three/fiber'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSnapshot } from 'valtio'
+import * as THREE from 'three/webgpu'
+import { TransformControls } from '@react-three/drei'
+import { setIsTransforming } from '../../../../appState'
 import { clothingStore } from '../../state/clothingStore'
-import type { PatternPiece, PatternPlacement } from '../../state/clothingTypes'
-import { getBodyCollisionMeshes, refitBodyMeshes, subscribeBodyMesh } from '../body/bodyMeshRegistry'
-import ClothPiece from './ClothPiece'
-
-const CLOTH_DEFAULT_Y = 0.72
-// Refit the body BVH every Nth frame while sim is running. Refit is O(verts +
-// nodes); typical character meshes can be 10k+ verts and several meshes,
-// which can easily blow the frame budget if done every tick. Every-other-
-// frame is a fine quality/perf tradeoff for cloth that moves much slower
-// than the underlying character animation.
-const REFIT_EVERY_N_FRAMES = 30
-
-function defaultPlacement(index: number, count: number): PatternPlacement {
-  return {
-    position: { x: (index - (count - 1) / 2) * 0.08, y: CLOTH_DEFAULT_Y, z: index * 0.018 },
-    rotation: { x: 0, y: 0, z: 0 },
-  }
-}
+import { ClothingDebugView } from '../../debug/ClothingDebugView'
+import { toPatternDocument } from '../../document/legacyAdapter'
+import { useGarmentSimulation } from '../../rendering/useGarmentSimulation'
+import { selectPattern, setPatternPlacement } from '../../state/clothingActions'
+import type { GarmentDocument, PatternPlacement } from '../../state/clothingTypes'
 
 /** Renders all cloth pieces + optional collision-surface debug viz. */
 export default function ClothScene() {
   const { garment, placements, previewOptions, simRunning, simResetKey, simQuality, transformMode } = useSnapshot(clothingStore)
-  const pieces = Object.values(garment.patterns) as PatternPiece[]
-
-  // Single global BVH refit loop — runs ONCE per frame regardless of how
-  // many cloth pieces are mounted.
-  const tickRef = useRef(0)
-  useFrame(() => {
-    tickRef.current = (tickRef.current + 1) % REFIT_EVERY_N_FRAMES
-    if (tickRef.current !== 0) return
-    if (!simRunning) return
-    refitBodyMeshes()
+  const document = useMemo(
+    () => toPatternDocument(garment as unknown as GarmentDocument, placements),
+    [garment, placements],
+  )
+  const { runtime, renderPanels, colliderSnapshot } = useGarmentSimulation({
+    document,
+    quality: simQuality,
+    resetKey: simResetKey,
+    running: simRunning,
   })
 
   return (
     <group>
-      {pieces.map((piece, idx) => {
-        const placement = (placements[piece.id] as PatternPlacement | undefined) ?? defaultPlacement(idx, pieces.length)
+      {renderPanels.map((panel) => {
+        const selected = panel.panelId === garment.selectedPatternId
+        const placement = runtime.document.panels[panel.panelId]?.placement
+        if (!placement) return null
         return (
-          <ClothPiece
-            key={piece.id}
-            piece={piece}
-            placement={placement}
-            selected={piece.id === garment.selectedPatternId}
-            simRunning={simRunning}
-            simResetKey={simResetKey}
-            simQuality={simQuality}
-            transformMode={transformMode}
-            showWireframe={previewOptions.showWireframe}
-          />
+          <group key={panel.panelId}>
+            <mesh
+              geometry={panel.geometry}
+              frustumCulled={false}
+              onPointerDown={(event) => {
+                event.stopPropagation()
+                selectPattern(panel.panelId)
+              }}
+            >
+              <meshStandardMaterial
+                color={selected ? '#75a4ff' : '#5f8cff'}
+                roughness={0.82}
+                metalness={0}
+                side={THREE.DoubleSide}
+              />
+            </mesh>
+            {previewOptions.showWireframe && (
+              <mesh geometry={panel.geometry} frustumCulled={false}>
+                <meshBasicMaterial color="#ffffff" wireframe transparent opacity={0.22} depthWrite={false} />
+              </mesh>
+            )}
+            <PanelTransformHandle
+              panelId={panel.panelId}
+              placement={placement}
+              selected={selected}
+              simRunning={simRunning}
+              transformMode={transformMode}
+            />
+          </group>
         )
       })}
-      {previewOptions.showTriangulation && <BodyCollisionDebug />}
+      {previewOptions.showTriangulation && <ClothingDebugView runtime={runtime} colliderSnapshot={colliderSnapshot} />}
     </group>
   )
 }
 
-/** Wireframe of the live (refit) collision meshes. Helps verify the BVH
- *  actually matches the posed character. */
-function BodyCollisionDebug() {
-  const [, force] = useState(0)
-  useEffect(() => subscribeBodyMesh(() => force((n) => n + 1)), [])
-  const meshes = getBodyCollisionMeshes()
+function PanelTransformHandle({
+  panelId,
+  placement,
+  selected,
+  simRunning,
+  transformMode,
+}: {
+  panelId: string
+  placement: PatternPlacement
+  selected: boolean
+  simRunning: boolean
+  transformMode: 'translate' | 'rotate'
+}) {
+  const handleRef = useRef<THREE.Object3D>(null)
+  const [handleNode, setHandleNode] = useState<THREE.Object3D | null>(null)
+
+  useEffect(() => {
+    const handle = handleRef.current
+    if (!handle) return
+    handle.position.set(placement.position.x, placement.position.y, placement.position.z)
+    handle.rotation.set(placement.rotation.x, placement.rotation.y, placement.rotation.z)
+    handle.updateMatrixWorld(true)
+  }, [placement])
+
+  function syncPlacementFromHandle() {
+    const handle = handleRef.current
+    if (!handle) return
+    setPatternPlacement(panelId, {
+      position: { x: handle.position.x, y: handle.position.y, z: handle.position.z },
+      rotation: { x: handle.rotation.x, y: handle.rotation.y, z: handle.rotation.z },
+    })
+  }
+
   return (
-    <group>
-      {meshes.map((m) => (
-        <primitive key={m.uuid} object={m}>
-          <meshBasicMaterial color="#8be9ff" wireframe transparent opacity={0.25} depthWrite={false} />
-        </primitive>
-      ))}
-    </group>
+    <>
+      <object3D
+        ref={(object) => {
+          handleRef.current = object
+          setHandleNode(object)
+        }}
+        position={[placement.position.x, placement.position.y, placement.position.z]}
+        rotation={[placement.rotation.x, placement.rotation.y, placement.rotation.z]}
+      />
+      {selected && !simRunning && handleNode && (
+        <TransformControls
+          object={handleNode}
+          mode={transformMode}
+          size={0.7}
+          onMouseDown={() => setIsTransforming(true)}
+          onMouseUp={() => {
+            syncPlacementFromHandle()
+            setIsTransforming(false)
+          }}
+          onObjectChange={syncPlacementFromHandle}
+        />
+      )}
+    </>
   )
 }

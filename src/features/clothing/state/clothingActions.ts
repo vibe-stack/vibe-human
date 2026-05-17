@@ -243,6 +243,24 @@ export function resetPatternTransforms(patternIds?: string[]) {
 
 export function loadDemoGarment(doc: GarmentDocument) {
   clothingStore.garment = doc
+  clothingStore.placements = {}
+  const patternIds = Object.keys(doc.patterns)
+  if (patternIds.length === 1) {
+    clothingStore.placements[patternIds[0]] = {
+      position: { x: 0, y: 0.72, z: 0 },
+      rotation: { x: 0, y: 0, z: 0 },
+    }
+  } else if (patternIds.length >= 2) {
+    const [frontId, backId] = patternIds
+    clothingStore.placements[frontId] = {
+      position: { x: 0, y: 0.34, z: 0.16 },
+      rotation: { x: 0, y: 0, z: 0 },
+    }
+    clothingStore.placements[backId] = {
+      position: { x: 0, y: 0.34, z: -0.16 },
+      rotation: { x: 0, y: Math.PI, z: 0 },
+    }
+  }
   clothingStore.viewport2D.zoom = 1.35
   clothingStore.viewport2D.panX = 0
   clothingStore.viewport2D.panY = 0

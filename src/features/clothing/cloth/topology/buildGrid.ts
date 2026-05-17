@@ -1,4 +1,5 @@
 import type { PatternPiece } from '../../state/clothingTypes'
+import { sampleEdgeLoop, samplePatternOutline } from '../../geometry/patternSampling'
 import type { BendConstraint, DistanceConstraint } from '../solver/types'
 import type { ClothGrid } from './types'
 
@@ -48,7 +49,7 @@ export function buildGrid(piece: PatternPiece, params: GridParams): ClothGrid {
       const v = r / (rows - 1)
       positions[i]     = (u - 0.5) * worldWidth
       positions[i + 1] = 0
-      positions[i + 2] = (v - 0.48) * worldDepth
+      positions[i + 2] = (v - 0.5) * worldDepth
     }
   }
 
@@ -118,30 +119,45 @@ function buildActiveMask(
 ): boolean[] {
   const mask = new Array<boolean>(cols * rows).fill(true)
   if (!piece.closed) return mask
+  const outer = samplePatternOutline(piece, 12)
+  const holes = (piece.holes ?? [])
+    .map((holeEdges) => sampleEdgeLoop(piece, holeEdges, 12))
+    .filter((hole) => hole.length >= 3)
   for (let r = 0; r < rows; r += 1) {
     for (let c = 0; c < cols; c += 1) {
       const u = c / (cols - 1)
       const v = r / (rows - 1)
       const px = bounds.minX + u * bounds.width
       const py = bounds.minY + v * bounds.depth
-      mask[r * cols + c] = pointInPiece({ x: px, y: py }, piece)
+      mask[r * cols + c] = pointInPiece({ x: px, y: py }, outer, holes)
     }
   }
   return mask
 }
 
-function pointInPiece(pt: { x: number; y: number }, piece: PatternPiece): boolean {
-  const outer = piece.edges.map((e) => piece.points[e.from]).filter(Boolean)
+function pointInPiece(
+  pt: { x: number; y: number },
+  outer: { x: number; y: number }[],
+  holes: Array<{ x: number; y: number }[]>,
+): boolean {
   if (outer.length < 3) return false
-  if (!pointInPolygon(pt, outer as { x: number; y: number }[])) return false
-  for (const holeEdges of piece.holes ?? []) {
-    const hole = holeEdges.map((e) => piece.points[e.from]).filter(Boolean) as { x: number; y: number }[]
-    if (hole.length >= 3 && pointInPolygon(pt, hole)) return false
+  const outerHit = classifyPointInPolygon(pt, outer)
+  if (outerHit === 'outside') return false
+  for (const hole of holes) {
+    const holeHit = classifyPointInPolygon(pt, hole)
+    if (holeHit === 'inside') return false
   }
   return true
 }
 
-function pointInPolygon(p: { x: number; y: number }, poly: { x: number; y: number }[]) {
+function classifyPointInPolygon(
+  p: { x: number; y: number },
+  poly: { x: number; y: number }[],
+): 'inside' | 'boundary' | 'outside' {
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    if (pointOnSegment(p, poly[j], poly[i])) return 'boundary'
+  }
+
   let inside = false
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
     const a = poly[i], b = poly[j]
@@ -149,7 +165,27 @@ function pointInPolygon(p: { x: number; y: number }, poly: { x: number; y: numbe
       p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x
     if (intersect) inside = !inside
   }
-  return inside
+  return inside ? 'inside' : 'outside'
+}
+
+function pointOnSegment(
+  p: { x: number; y: number },
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+) {
+  const abx = b.x - a.x
+  const aby = b.y - a.y
+  const apx = p.x - a.x
+  const apy = p.y - a.y
+  const cross = abx * apy - aby * apx
+  if (Math.abs(cross) > 1e-6) return false
+
+  const dot = apx * abx + apy * aby
+  if (dot < -1e-6) return false
+
+  const lenSq = abx * abx + aby * aby
+  if (dot - lenSq > 1e-6) return false
+  return true
 }
 
 function clampInt(v: number, lo: number, hi: number) {

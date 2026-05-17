@@ -21,6 +21,7 @@ export type ClothInstance = {
   solver: ClothSolver
   grid: ReturnType<typeof buildGrid>
   visual: ReturnType<typeof buildVisualMesh>
+  sampleScratch: Float32Array
 }
 
 /**
@@ -92,7 +93,7 @@ export function useClothSolver(args: {
     })
 
     const visual = buildVisualMesh(piece)
-    return { solver, grid, visual }
+    return { solver, grid, visual, sampleScratch: new Float32Array(3) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [topologyKey])
 
@@ -202,7 +203,7 @@ function syncVisualFromSolver(inst: ClothInstance) {
   const { solver, grid, visual } = inst
   const positionAttr = visual.geometry.getAttribute('position') as { array: Float32Array; needsUpdate: boolean; count: number } | undefined
   if (!positionAttr || positionAttr.count === 0) return
-  const out: Float32Array = new Float32Array(3)
+  const out = inst.sampleScratch
   const uvs = visual.uvs
   const positions = positionAttr.array
   for (let i = 0; i < positionAttr.count; i += 1) {
