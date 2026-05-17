@@ -87,9 +87,116 @@ export type EllipsoidProxy = {
 
 export type ColliderProxy = SphereProxy | CapsuleProxy | EllipsoidProxy
 
+export type CollisionRegion =
+  | 'head'
+  | 'neck'
+  | 'chest'
+  | 'abdomen'
+  | 'pelvis'
+  | 'upperArm.L'
+  | 'upperArm.R'
+  | 'forearm.L'
+  | 'forearm.R'
+  | 'hand.L'
+  | 'hand.R'
+  | 'thigh.L'
+  | 'thigh.R'
+  | 'calf.L'
+  | 'calf.R'
+  | 'foot.L'
+  | 'foot.R'
+  | 'shoulder.L'
+  | 'shoulder.R'
+  | 'hip.L'
+  | 'hip.R'
+
+export type CollisionProxyBase = {
+  id: string
+  region: CollisionRegion
+  anchorBone: string
+  friction: number
+  skin: number
+}
+
+export type CollisionCapsuleProxy = CollisionProxyBase & {
+  kind: 'capsule'
+  ax: number
+  ay: number
+  az: number
+  bx: number
+  by: number
+  bz: number
+  r: number
+}
+
+export type CollisionEllipsoidProxy = CollisionProxyBase & {
+  kind: 'ellipsoid'
+  cx: number
+  cy: number
+  cz: number
+  rx: number
+  ry: number
+  rz: number
+  qx: number
+  qy: number
+  qz: number
+  qw: number
+}
+
+export type CollisionAvatarProxy = CollisionCapsuleProxy | CollisionEllipsoidProxy
+
+export type CollisionMeshPatch = {
+  id: string
+  region: CollisionRegion
+  anchorBone: string
+  vertices: number[]
+  indices: number[]
+}
+
+export type CollisionAvatar = {
+  version: 1
+  createdAt: number
+  source: {
+    meshCount: number
+    vertexCount: number
+    boneCount: number
+  }
+  settings: {
+    globalInflate: number
+    normalOffset: number
+    perRegionInflate: Partial<Record<CollisionRegion, number>>
+  }
+  proxies: CollisionAvatarProxy[]
+  lowResMeshPatches?: CollisionMeshPatch[]
+}
+
+export type CollisionMeshPatchSnapshot = {
+  id: string
+  region: CollisionRegion
+  vertices: Float32Array
+  indices: Uint32Array
+}
+
+export type MeshSurfaceColliderSnapshot = {
+  kind: 'mesh'
+  id: string
+  vertices: Float32Array
+  indices: Uint32Array
+  cellSize: number
+  cellKeys: Int32Array
+  cellStarts: Uint32Array
+  cellCounts: Uint32Array
+  cellTriangleIndices: Uint32Array
+  skin: number
+  thickness: number
+  friction: number
+}
+
 export type ColliderSnapshot = {
   version: number
   proxies: ColliderProxy[]
+  meshColliders?: MeshSurfaceColliderSnapshot[]
+  lowResMeshPatches?: CollisionMeshPatchSnapshot[]
 }
 
 export type SolverParams = {

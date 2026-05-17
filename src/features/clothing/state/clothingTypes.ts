@@ -94,6 +94,8 @@ export type ClothSimQuality = 'low' | 'medium' | 'high' | 'ultra'
 
 export type ClothingTransformMode = 'translate' | 'rotate'
 
+export type AvatarCollisionMode = 'authoring' | 'preview' | 'hybrid'
+
 export type PatternPlacement = {
   position: Vec3
   rotation: Vec3

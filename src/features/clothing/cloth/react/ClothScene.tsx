@@ -12,7 +12,7 @@ import type { GarmentDocument, PatternPlacement } from '../../state/clothingType
 
 /** Renders all cloth pieces + optional collision-surface debug viz. */
 export default function ClothScene() {
-  const { garment, placements, previewOptions, simRunning, simResetKey, simQuality, transformMode } = useSnapshot(clothingStore)
+  const { garment, placements, previewOptions, simRunning, simResetKey, simQuality, transformMode, collisionAvatar } = useSnapshot(clothingStore)
   const document = useMemo(
     () => toPatternDocument(garment as unknown as GarmentDocument, placements),
     [garment, placements],
@@ -22,6 +22,23 @@ export default function ClothScene() {
     quality: simQuality,
     resetKey: simResetKey,
     running: simRunning,
+    enabled: true,
+    collision: {
+      mode: collisionAvatar.mode,
+      buildRequestId: collisionAvatar.buildRequestId,
+      globalInflate: collisionAvatar.globalInflate,
+      normalOffset: collisionAvatar.normalOffset,
+      perRegionInflate: { ...collisionAvatar.perRegionInflate },
+      skinOffset: collisionAvatar.skinOffset,
+      garmentThickness: collisionAvatar.garmentThickness,
+      meshCellSize: collisionAvatar.meshCellSize,
+      meshSampleStride: collisionAvatar.meshSampleStride,
+      enableVertexTriangle: collisionAvatar.enableVertexTriangle,
+      debugPerf: collisionAvatar.debugPerf,
+      includeLowResMesh: previewOptions.showCollisionLowResMesh,
+      showCapsules: previewOptions.showCollisionCapsules,
+      showEllipsoids: previewOptions.showCollisionEllipsoids,
+    },
   })
 
   return (
@@ -62,7 +79,15 @@ export default function ClothScene() {
           </group>
         )
       })}
-      {previewOptions.showTriangulation && <ClothingDebugView runtime={runtime} colliderSnapshot={colliderSnapshot} />}
+      {(previewOptions.showTriangulation || previewOptions.showCollisionProxies) && (
+        <ClothingDebugView
+          runtime={runtime}
+          colliderSnapshot={colliderSnapshot}
+          showClothDebug={previewOptions.showTriangulation}
+          showCollisionProxies={previewOptions.showCollisionProxies}
+          showLowResMesh={previewOptions.showCollisionLowResMesh}
+        />
+      )}
     </group>
   )
 }

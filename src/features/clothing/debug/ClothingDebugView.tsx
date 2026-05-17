@@ -6,9 +6,15 @@ import type { ColliderSnapshot, GarmentRuntime } from '../simulation/types'
 export function ClothingDebugView({
   runtime,
   colliderSnapshot,
+  showClothDebug = true,
+  showCollisionProxies = true,
+  showLowResMesh = false,
 }: {
   runtime: GarmentRuntime
   colliderSnapshot: ColliderSnapshot
+  showClothDebug?: boolean
+  showCollisionProxies?: boolean
+  showLowResMesh?: boolean
 }) {
   const particleGeometry = useMemo(() => new THREE.BufferGeometry(), [])
   const constraintGeometry = useMemo(() => new THREE.BufferGeometry(), [])
@@ -16,6 +22,7 @@ export function ClothingDebugView({
   const particlePoints = useRef<THREE.Points>(null)
 
   useEffect(() => {
+    if (!showClothDebug) return
     particleGeometry.setAttribute('position', new THREE.BufferAttribute(runtime.simMesh.positions, 3))
     constraintGeometry.setAttribute('position', new THREE.BufferAttribute(buildConstraintPositions(runtime, false), 3))
     seamGeometry.setAttribute('position', new THREE.BufferAttribute(buildConstraintPositions(runtime, true), 3))
@@ -24,10 +31,12 @@ export function ClothingDebugView({
       constraintGeometry.dispose()
       seamGeometry.dispose()
     }
-  }, [runtime, particleGeometry, constraintGeometry, seamGeometry])
+  }, [runtime, particleGeometry, constraintGeometry, seamGeometry, showClothDebug])
 
   useFrame(() => {
+    if (!showClothDebug) return
     const particleAttr = particleGeometry.getAttribute('position') as THREE.BufferAttribute
+    if (!particleAttr) return
     particleAttr.needsUpdate = true
     const constraintAttr = constraintGeometry.getAttribute('position') as THREE.BufferAttribute
     const seamAttr = seamGeometry.getAttribute('position') as THREE.BufferAttribute
@@ -39,16 +48,20 @@ export function ClothingDebugView({
 
   return (
     <group>
-      <points ref={particlePoints} geometry={particleGeometry} frustumCulled={false}>
-        <pointsMaterial color="#ffffff" size={0.012} sizeAttenuation />
-      </points>
-      <lineSegments geometry={constraintGeometry} frustumCulled={false}>
-        <lineBasicMaterial color="#5ea3ff" transparent opacity={0.32} />
-      </lineSegments>
-      <lineSegments geometry={seamGeometry} frustumCulled={false}>
-        <lineBasicMaterial color="#ff9d4d" transparent opacity={0.9} />
-      </lineSegments>
-      {colliderSnapshot.proxies.map((proxy, index) => {
+      {showClothDebug && (
+        <>
+          <points ref={particlePoints} geometry={particleGeometry} frustumCulled={false}>
+            <pointsMaterial color="#ffffff" size={0.012} sizeAttenuation />
+          </points>
+          <lineSegments geometry={constraintGeometry} frustumCulled={false}>
+            <lineBasicMaterial color="#5ea3ff" transparent opacity={0.32} />
+          </lineSegments>
+          <lineSegments geometry={seamGeometry} frustumCulled={false}>
+            <lineBasicMaterial color="#ff9d4d" transparent opacity={0.9} />
+          </lineSegments>
+        </>
+      )}
+      {showCollisionProxies && colliderSnapshot.proxies.map((proxy, index) => {
         if (proxy.kind === 'sphere') {
           return (
             <mesh key={`sphere-${index}`} position={[proxy.cx, proxy.cy, proxy.cz]}>
@@ -78,6 +91,24 @@ export function ClothingDebugView({
           </mesh>
         )
       })}
+      {showLowResMesh && (colliderSnapshot.lowResMeshPatches ?? []).map((patch) => (
+        <mesh key={patch.id} frustumCulled={false}>
+          <bufferGeometry>
+            <bufferAttribute attach="attributes-position" args={[patch.vertices, 3]} />
+            <bufferAttribute attach="index" args={[patch.indices, 1]} />
+          </bufferGeometry>
+          <meshBasicMaterial color="#9cff8b" wireframe transparent opacity={0.22} depthWrite={false} />
+        </mesh>
+      ))}
+      {showLowResMesh && (colliderSnapshot.meshColliders ?? []).map((collider) => (
+        <mesh key={collider.id} frustumCulled={false}>
+          <bufferGeometry>
+            <bufferAttribute attach="attributes-position" args={[collider.vertices, 3]} />
+            <bufferAttribute attach="index" args={[collider.indices, 1]} />
+          </bufferGeometry>
+          <meshBasicMaterial color="#9cff8b" wireframe transparent opacity={0.28} depthWrite={false} />
+        </mesh>
+      ))}
     </group>
   )
 }

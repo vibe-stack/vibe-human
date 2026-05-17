@@ -3,6 +3,7 @@ import { clothingStore } from './clothingStore'
 import { pushHistory } from './historyActions'
 import { setSelectedPatterns } from './transformActions'
 import type {
+  AvatarCollisionMode,
   ClothSimQuality,
   ClothingTool,
   ClothingTransformMode,
@@ -11,6 +12,7 @@ import type {
   PatternPlacement,
   Seam,
 } from './clothingTypes'
+import type { CollisionRegion } from '../simulation/types'
 
 const uid = () => nanoid(8)
 
@@ -221,6 +223,65 @@ export function setTransformMode(mode: ClothingTransformMode) {
 
 export function setPatternPlacement(patternId: string, placement: PatternPlacement) {
   clothingStore.placements[patternId] = placement
+}
+
+export function requestCollisionAvatarBuild() {
+  clothingStore.collisionAvatar.buildRequestId += 1
+}
+
+export function setCollisionGlobalInflate(value: number) {
+  clothingStore.collisionAvatar.globalInflate = Math.max(0, Math.min(0.12, value))
+}
+
+export function setCollisionNormalOffset(value: number) {
+  clothingStore.collisionAvatar.normalOffset = Math.max(-0.04, Math.min(0.08, value))
+}
+
+export function setCollisionRegionInflate(region: CollisionRegion, value: number) {
+  clothingStore.collisionAvatar.perRegionInflate[region] = Math.max(0, Math.min(0.12, value))
+}
+
+export function setAvatarCollisionMode(mode: AvatarCollisionMode) {
+  clothingStore.collisionAvatar.mode = mode
+}
+
+export function setAvatarSkinOffset(value: number) {
+  clothingStore.collisionAvatar.skinOffset = Math.max(0, Math.min(0.12, value))
+}
+
+export function setGarmentCollisionThickness(value: number) {
+  clothingStore.collisionAvatar.garmentThickness = Math.max(0, Math.min(0.06, value))
+}
+
+export function setAvatarMeshCellSize(value: number) {
+  clothingStore.collisionAvatar.meshCellSize = Math.max(0.025, Math.min(0.3, value))
+}
+
+export function setCollisionAvatarStats(stats: {
+  generatedAt: number
+  proxyCount: number
+  meshPatchCount: number
+  sourceVertexCount: number
+}) {
+  clothingStore.collisionAvatar.generatedAt = stats.generatedAt
+  clothingStore.collisionAvatar.proxyCount = stats.proxyCount
+  clothingStore.collisionAvatar.meshPatchCount = stats.meshPatchCount
+  clothingStore.collisionAvatar.sourceVertexCount = stats.sourceVertexCount
+}
+
+export function setCollisionRuntimeStats(stats: {
+  meshColliderVertexCount: number
+  meshColliderTriangleCount: number
+  spatialHashCellCount: number
+}) {
+  if (
+    clothingStore.collisionAvatar.meshColliderVertexCount === stats.meshColliderVertexCount &&
+    clothingStore.collisionAvatar.meshColliderTriangleCount === stats.meshColliderTriangleCount &&
+    clothingStore.collisionAvatar.spatialHashCellCount === stats.spatialHashCellCount
+  ) return
+  clothingStore.collisionAvatar.meshColliderVertexCount = stats.meshColliderVertexCount
+  clothingStore.collisionAvatar.meshColliderTriangleCount = stats.meshColliderTriangleCount
+  clothingStore.collisionAvatar.spatialHashCellCount = stats.spatialHashCellCount
 }
 
 /** Wipe placements for the given pieces (or all selected if none passed)

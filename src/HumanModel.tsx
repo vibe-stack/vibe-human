@@ -8,11 +8,7 @@ import { createBodySkinMaterial, createEyeMaterial, createSkinMaterial } from '.
 import GroomRenderer from './features/groom/components/GroomRenderer'
 import GroomViewportTools from './features/groom/components/GroomViewportTools'
 import { registerGroomMeshes, registerSkinMaterialForGroom, unregisterSkinMaterialForGroom } from './features/groom/store/groomStore'
-import {
-  buildBodyProxySnapshotFromBones,
-  clearBodyProxySnapshot,
-  setBodyProxySnapshot,
-} from './features/clothing/simulation/collision/bodyProxyRegistry'
+import { registerAvatarCollisionSource } from './features/clothing/avatar-collision/AvatarCollisionSource'
 import {
   buildModelingMorphs,
   MODELING_CONTROLS,
@@ -793,6 +789,17 @@ export default function HumanModel() {
     bodyCollisionMeshesRef.current = bodyCollisionMeshes
     headCollisionMeshesRef.current = headCollisionMeshes
     registerGroomMeshes(groomMeshes)
+    const unregisterAvatarCollisionSource = registerAvatarCollisionSource({
+      getSkinnedMeshes: () => [
+        ...bodyCollisionMeshesRef.current,
+        ...headCollisionMeshesRef.current,
+      ],
+      getBodyMeshes: () => bodyCollisionMeshesRef.current,
+      getHeadMeshes: () => headCollisionMeshesRef.current,
+      getSkeletons: () => skeletonsRef.current,
+      getBones: () => bonesRef.current,
+      getRootObject: () => scene,
+    })
 
     const availableTargets = new Set(
       morphMeshes.flatMap((mesh) => Object.keys(mesh.morphTargetDictionary)),
@@ -845,7 +852,7 @@ export default function HumanModel() {
 
     return () => {
       cancelled = true
-      clearBodyProxySnapshot()
+      unregisterAvatarCollisionSource()
     }
   }, [scene])
 
@@ -996,10 +1003,6 @@ export default function HumanModel() {
     for (const skeleton of skeletonsRef.current) {
       skeleton.update()
     }
-    setBodyProxySnapshot(buildBodyProxySnapshotFromBones(bones, {
-      bodyMeshes: bodyCollisionMeshesRef.current,
-      headMeshes: headCollisionMeshesRef.current,
-    }))
 
     if (showBones && selectedBone) {
       const rest = restRef.current[selectedBone.name]

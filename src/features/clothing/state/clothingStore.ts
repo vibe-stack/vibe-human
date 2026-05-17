@@ -1,5 +1,6 @@
 import { proxy } from 'valtio'
 import type {
+  AvatarCollisionMode,
   ClothSimQuality,
   ClothingTransformMode,
   GarmentDocument,
@@ -7,6 +8,7 @@ import type {
   PatternPlacement,
   Vec2,
 } from './clothingTypes'
+import type { CollisionRegion } from '../simulation/types'
 
 // ---------------------------------------------------------------------------
 // Clothing feature state
@@ -24,6 +26,10 @@ type PreviewOptions3D = {
   showWireframe: boolean
   showSeams: boolean
   showTriangulation: boolean
+  showCollisionProxies: boolean
+  showCollisionCapsules: boolean
+  showCollisionEllipsoids: boolean
+  showCollisionLowResMesh: boolean
 }
 
 type DirtyFlags = {
@@ -59,6 +65,27 @@ type ClothingState = {
   simResetKey: number
   simQuality: ClothSimQuality
   transformMode: ClothingTransformMode
+  collisionAvatar: {
+    buildRequestId: number
+    generatedAt: number | null
+    proxyCount: number
+    meshPatchCount: number
+    sourceVertexCount: number
+    meshColliderVertexCount: number
+    meshColliderTriangleCount: number
+    spatialHashCellCount: number
+    globalInflate: number
+    normalOffset: number
+    perRegionInflate: Partial<Record<CollisionRegion, number>>
+    mode: AvatarCollisionMode
+    skinOffset: number
+    garmentThickness: number
+    meshCellSize: number
+    meshSampleStride: number
+    enableVertexTriangle: boolean
+    enableEdgeEdge: boolean
+    debugPerf: boolean
+  }
   placements: Record<string, PatternPlacement>
   draft: DrawDraft | null
   history: HistoryState
@@ -87,6 +114,10 @@ export const clothingStore = proxy<ClothingState>({
     showWireframe: false,
     showSeams: true,
     showTriangulation: false,
+    showCollisionProxies: false,
+    showCollisionCapsules: true,
+    showCollisionEllipsoids: true,
+    showCollisionLowResMesh: false,
   },
   dirty: {
     triangulationDirty: false,
@@ -96,6 +127,27 @@ export const clothingStore = proxy<ClothingState>({
   simResetKey: 0,
   simQuality: 'medium',
   transformMode: 'translate',
+  collisionAvatar: {
+    buildRequestId: 0,
+    generatedAt: null,
+    proxyCount: 0,
+    meshPatchCount: 0,
+    sourceVertexCount: 0,
+    meshColliderVertexCount: 0,
+    meshColliderTriangleCount: 0,
+    spatialHashCellCount: 0,
+    globalInflate: 0.018,
+    normalOffset: 0,
+    perRegionInflate: {},
+    mode: 'authoring',
+    skinOffset: 0.022,
+    garmentThickness: 0.008,
+    meshCellSize: 0.09,
+    meshSampleStride: 1,
+    enableVertexTriangle: true,
+    enableEdgeEdge: false,
+    debugPerf: false,
+  },
   placements: {},
   draft: null,
   history: { past: [], future: [] },

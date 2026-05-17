@@ -1,7 +1,18 @@
 import { useSnapshot } from 'valtio'
 import { clothingStore } from '../state/clothingStore'
-import { resetSim, setSimQuality, setTransformMode, toggleSimRunning } from '../state/clothingActions'
-import type { ClothSimQuality, ClothingTransformMode } from '../state/clothingTypes'
+import {
+  requestCollisionAvatarBuild,
+  resetSim,
+  setAvatarCollisionMode,
+  setAvatarMeshCellSize,
+  setAvatarSkinOffset,
+  setCollisionGlobalInflate,
+  setGarmentCollisionThickness,
+  setSimQuality,
+  setTransformMode,
+  toggleSimRunning,
+} from '../state/clothingActions'
+import type { AvatarCollisionMode, ClothSimQuality, ClothingTransformMode } from '../state/clothingTypes'
 
 const QUALITY_OPTIONS: Array<{ id: ClothSimQuality; label: string }> = [
   { id: 'low', label: 'Low' },
@@ -15,6 +26,12 @@ const TRANSFORM_OPTIONS: Array<{ id: ClothingTransformMode; label: string }> = [
   { id: 'rotate', label: 'Rotate' },
 ]
 
+const COLLISION_MODE_OPTIONS: Array<{ id: AvatarCollisionMode; label: string }> = [
+  { id: 'authoring', label: 'Author' },
+  { id: 'hybrid', label: 'Hybrid' },
+  { id: 'preview', label: 'Proxy' },
+]
+
 // ---------------------------------------------------------------------------
 // ClothingInspector — lives in the right sidebar when Clothing is active.
 // Shows selected entity info + preview toggles.
@@ -22,7 +39,7 @@ const TRANSFORM_OPTIONS: Array<{ id: ClothingTransformMode; label: string }> = [
 
 export default function ClothingInspector() {
   const snap = useSnapshot(clothingStore)
-  const { garment, previewOptions, activeClothingTool, simRunning, simQuality, transformMode } = snap
+  const { garment, previewOptions, activeClothingTool, simRunning, simQuality, transformMode, collisionAvatar } = snap
 
   const selectedPattern = garment.selectedPatternId
     ? garment.patterns[garment.selectedPatternId]
@@ -74,6 +91,29 @@ export default function ClothingInspector() {
           <Row label="Mode" value="PARTICLE SPRINGS" />
           <Row label="Quality" value={simQuality.toUpperCase()} />
           <Row label="Particle Dist" value={`${selectedPattern.particleDistance} u`} />
+          <Slider
+            label="Particle Distance"
+            value={selectedPattern.particleDistance}
+            min={8}
+            max={32}
+            step={1}
+            onChange={(value) => {
+              if (!selectedPattern) return
+              clothingStore.garment.patterns[selectedPattern.id].particleDistance = value
+              clothingStore.dirty.triangulationDirty = true
+              clothingStore.dirty.previewDirty = true
+              clothingStore.simResetKey += 1
+              clothingStore.simRunning = false
+            }}
+          />
+          <Slider
+            label="Substeps"
+            value={simQuality === 'low' ? 1 : simQuality === 'medium' ? 2 : simQuality === 'high' ? 3 : 4}
+            min={1}
+            max={4}
+            step={1}
+            onChange={(value) => setSimQuality(value <= 1 ? 'low' : value === 2 ? 'medium' : value === 3 ? 'high' : 'ultra')}
+          />
           <SegmentedControl
             value={simQuality}
             options={QUALITY_OPTIONS}
@@ -109,6 +149,65 @@ export default function ClothingInspector() {
           value={previewOptions.showTriangulation}
           onChange={(v) => { clothingStore.previewOptions.showTriangulation = v }}
         />
+        <Toggle
+          label="Collision Overlay"
+          value={previewOptions.showCollisionProxies}
+          onChange={(v) => { clothingStore.previewOptions.showCollisionProxies = v }}
+        />
+      </Section>
+
+      <Section label="AVATAR COLLISION">
+        <Row label="Mode" value={collisionAvatar.mode.toUpperCase()} />
+        <SegmentedControl
+          value={collisionAvatar.mode}
+          options={COLLISION_MODE_OPTIONS}
+          onChange={setAvatarCollisionMode}
+        />
+        <ButtonRow>
+          <SmallButton label="BUILD MESH" onClick={() => {
+            setAvatarCollisionMode('authoring')
+            requestCollisionAvatarBuild()
+          }} />
+          <SmallButton label="FAST PROXIES" onClick={() => {
+            setAvatarCollisionMode('preview')
+            requestCollisionAvatarBuild()
+          }} />
+        </ButtonRow>
+        <Row label="Proxies" value={String(collisionAvatar.proxyCount)} />
+        <Row label="Mesh Verts" value={String(collisionAvatar.sourceVertexCount)} />
+        <Row label="Collider Verts" value={String(collisionAvatar.meshColliderVertexCount)} />
+        <Row label="Collider Tris" value={String(collisionAvatar.meshColliderTriangleCount)} />
+        <Row label="Hash Cells" value={String(collisionAvatar.spatialHashCellCount)} />
+        <Slider label="Avatar Skin Offset" value={collisionAvatar.skinOffset} min={0} max={0.08} step={0.002} onChange={setAvatarSkinOffset} />
+        <Slider label="Garment Thickness" value={collisionAvatar.garmentThickness} min={0} max={0.04} step={0.001} onChange={setGarmentCollisionThickness} />
+        <Slider label="Proxy Inflate" value={collisionAvatar.globalInflate} min={0} max={0.08} step={0.002} onChange={setCollisionGlobalInflate} />
+        <Slider label="Hash Cell Size" value={collisionAvatar.meshCellSize} min={0.04} max={0.2} step={0.005} onChange={setAvatarMeshCellSize} />
+        <Toggle
+          label="Capsules"
+          value={previewOptions.showCollisionCapsules}
+          onChange={(v) => { clothingStore.previewOptions.showCollisionCapsules = v }}
+        />
+        <Toggle
+          label="Ellipsoids"
+          value={previewOptions.showCollisionEllipsoids}
+          onChange={(v) => { clothingStore.previewOptions.showCollisionEllipsoids = v }}
+        />
+        <Toggle
+          label="Low-res Mesh"
+          value={previewOptions.showCollisionLowResMesh}
+          onChange={(v) => { clothingStore.previewOptions.showCollisionLowResMesh = v }}
+        />
+        <Toggle
+          label="Vertex-Triangle"
+          value={collisionAvatar.enableVertexTriangle}
+          onChange={(v) => { clothingStore.collisionAvatar.enableVertexTriangle = v }}
+        />
+        <Toggle
+          label="Perf Logs"
+          value={collisionAvatar.debugPerf}
+          onChange={(v) => { clothingStore.collisionAvatar.debugPerf = v }}
+        />
+        <Row label="Edge-Edge" value="NOT WIRED" />
       </Section>
 
       {/* Document info */}
@@ -271,5 +370,37 @@ function Toggle({
         }} />
       </div>
     </div>
+  )
+}
+
+function Slider({
+  label,
+  value,
+  min,
+  max,
+  step,
+  onChange,
+}: {
+  label: string
+  value: number
+  min: number
+  max: number
+  step: number
+  onChange: (value: number) => void
+}) {
+  return (
+    <label style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'center' }}>
+      <span style={{ opacity: 0.7 }}>{label}</span>
+      <span style={{ color: 'rgba(255,255,255,0.85)', fontVariantNumeric: 'tabular-nums' }}>{value.toFixed(step >= 1 ? 0 : 3)}</span>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(event) => onChange(Number(event.currentTarget.value))}
+        style={{ gridColumn: '1 / -1', width: '100%' }}
+      />
+    </label>
   )
 }

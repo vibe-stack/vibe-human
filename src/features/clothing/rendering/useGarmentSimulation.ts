@@ -1,17 +1,38 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, type MutableRefObject } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three/webgpu'
 import type { PatternDocument, PatternPanel } from '../document/types'
 import { compileGarmentRuntime } from '../compiler/compileGarmentRuntime'
 import type { CompileQuality } from '../compiler/types'
 import { XPBDClothSolver } from '../simulation/solver'
-import type { ClothFrame, GarmentRuntime, SolverParams } from '../simulation/types'
-import { getBodyProxySnapshot, subscribeBodyProxy } from '../simulation/collision/bodyProxyRegistry'
+import type { ClothFrame, CollisionAvatar, CollisionRegion, GarmentRuntime, SolverParams } from '../simulation/types'
+import {
+  buildAvatarMeshColliderSnapshotFromSkinnedMeshes,
+  buildColliderSnapshotFromCollisionAvatar,
+  buildCollisionAvatarFromSkinnedMeshes,
+  clearBodyProxySnapshot,
+  getBodyProxySnapshot,
+  setBodyProxySnapshot,
+  setCollisionAvatar,
+} from '../avatar-collision/AvatarCollisionRegistry'
+import { getAvatarCollisionSource } from '../avatar-collision/AvatarCollisionSource'
+import type { AvatarCollisionMode } from '../state/clothingTypes'
+import { setCollisionAvatarStats, setCollisionRuntimeStats } from '../state/clothingActions'
 
 const FIXED_DT = 1 / 60
 const MAX_SUBSTEPS = 4
 const CLOTH_GROUND_Y = -3.15
 const PATTERN_UNIT_SCALE = 0.004
+const HYBRID_MESH_REGIONS = new Set<CollisionRegion>([
+  'neck',
+  'chest',
+  'abdomen',
+  'pelvis',
+  'shoulder.L',
+  'shoulder.R',
+  'hip.L',
+  'hip.R',
+])
 
 const SOLVER_PRESETS: Record<CompileQuality, SolverParams> = {
   low: { gravity: -9.81, damping: 0.08, substeps: 1, iterations: 4, dt: FIXED_DT, groundY: CLOTH_GROUND_Y, maxVelocity: 6, sewingTime: 0.85, gravityDelayTime: 0.7, gravityRampTime: 0.45 },
@@ -30,8 +51,25 @@ export function useGarmentSimulation(args: {
   quality: CompileQuality
   resetKey: number
   running: boolean
+  enabled: boolean
+  collision: {
+    mode: AvatarCollisionMode
+    buildRequestId: number
+    globalInflate: number
+    normalOffset: number
+    perRegionInflate: Partial<Record<CollisionRegion, number>>
+    skinOffset: number
+    garmentThickness: number
+    meshCellSize: number
+    meshSampleStride: number
+    enableVertexTriangle: boolean
+    debugPerf: boolean
+    includeLowResMesh: boolean
+    showCapsules: boolean
+    showEllipsoids: boolean
+  }
 }) {
-  const { document, quality, resetKey, running } = args
+  const { document, quality, resetKey, running, enabled, collision } = args
   const topologyKey = useMemo(() => buildTopologyKey(document, quality, resetKey), [document, quality, resetKey])
   const compileResult = useMemo(
     () => compileGarmentRuntime(document, { quality, seamSamples: 12 }),
@@ -41,16 +79,31 @@ export function useGarmentSimulation(args: {
     () => compileResult.value.renderPanels.map((panel) => createRenderPanelEntry(panel)),
     [compileResult],
   )
-  const [colliderVersion, setColliderVersion] = useState(0)
   const runtimeRef = useRef<GarmentRuntime | null>(null)
   const solverRef = useRef<XPBDClothSolver | null>(null)
   const renderPanelsRef = useRef<RenderPanelEntry[]>(renderPanels)
   const frameRef = useRef<ClothFrame | null>(null)
   const accumRef = useRef(0)
+  const avatarRef = useRef<CollisionAvatar | null>(null)
+  const avatarBuildRequestRef = useRef(-1)
+  const collisionRef = useRef(collision)
+  const enabledRef = useRef(enabled)
 
   useEffect(() => {
-    const unsubscribe = subscribeBodyProxy(() => setColliderVersion((value) => value + 1))
-    return () => { unsubscribe() }
+    collisionRef.current = collision
+  }, [collision])
+
+  useEffect(() => {
+    enabledRef.current = enabled
+    if (!enabled) clearBodyProxySnapshot()
+  }, [enabled])
+
+  useEffect(() => {
+    return () => {
+      clearBodyProxySnapshot()
+      avatarRef.current = null
+      avatarBuildRequestRef.current = -1
+    }
   }, [])
 
   useEffect(() => {
@@ -84,6 +137,7 @@ export function useGarmentSimulation(args: {
   }, [document, quality, running])
 
   useFrame((_, delta) => {
+    if (!enabledRef.current) return
     const runtime = runtimeRef.current
     const solver = solverRef.current
     if (!runtime || !solver) return
@@ -91,7 +145,12 @@ export function useGarmentSimulation(args: {
       accumRef.current += Math.min(delta, 1 / 20)
       let steps = 0
       while (accumRef.current >= FIXED_DT && steps < MAX_SUBSTEPS) {
+        updateColliderSnapshotForStep(Boolean(runtime.simMesh.particleCount), avatarRef, avatarBuildRequestRef, collisionRef.current)
+        const start = collisionRef.current.debugPerf ? performance.now() : 0
         frameRef.current = solver.step(getBodyProxySnapshot())
+        if (collisionRef.current.debugPerf) {
+          console.debug(`[clothing] solver step ${(performance.now() - start).toFixed(2)}ms`)
+        }
         accumRef.current -= FIXED_DT
         steps += 1
       }
@@ -104,8 +163,104 @@ export function useGarmentSimulation(args: {
     issues: compileResult.issues,
     renderPanels,
     colliderSnapshot: getBodyProxySnapshot(),
-    colliderVersion,
   }
+}
+
+function updateColliderSnapshotForStep(
+  hasActiveGarment: boolean,
+  avatarRef: MutableRefObject<CollisionAvatar | null>,
+  buildRequestRef: MutableRefObject<number>,
+  collision: Parameters<typeof useGarmentSimulation>[0]['collision'],
+) {
+  if (!hasActiveGarment) return
+  const source = getAvatarCollisionSource()
+  const bones = source.getBones()
+  const bodyMeshes = source.getBodyMeshes()
+  const headMeshes = source.getHeadMeshes()
+  const hasAvatar = Object.keys(bones).length > 0 && (bodyMeshes.length > 0 || headMeshes.length > 0)
+  if (!hasAvatar) {
+    setBodyProxySnapshot({ proxies: [] })
+    return
+  }
+
+  if (
+    collision.mode !== 'authoring' &&
+    (!avatarRef.current || buildRequestRef.current !== collision.buildRequestId)
+  ) {
+    const start = collision.debugPerf ? performance.now() : 0
+    const avatar = buildCollisionAvatarFromSkinnedMeshes(bones, {
+      bodyMeshes,
+      headMeshes,
+      includeLowResMesh: collision.includeLowResMesh,
+      settings: {
+        globalInflate: collision.globalInflate,
+        normalOffset: collision.normalOffset,
+        perRegionInflate: collision.perRegionInflate,
+      },
+    })
+    avatarRef.current = avatar
+    buildRequestRef.current = collision.buildRequestId
+    setCollisionAvatar(avatar)
+    setCollisionAvatarStats({
+      generatedAt: avatar.createdAt,
+      proxyCount: avatar.proxies.length,
+      meshPatchCount: avatar.lowResMeshPatches?.length ?? 0,
+      sourceVertexCount: avatar.source.vertexCount,
+    })
+    if (collision.debugPerf) {
+      console.debug(`[clothing] buildCollisionAvatarProxies ${(performance.now() - start).toFixed(2)}ms`)
+    }
+  }
+
+  const proxySnapshot = collision.mode === 'authoring'
+    ? { proxies: [] }
+    : buildColliderSnapshotFromCollisionAvatar(avatarRef.current, bones, {
+      globalInflate: collision.globalInflate,
+      normalOffset: collision.normalOffset,
+      perRegionInflate: collision.perRegionInflate,
+      includeLowResMesh: collision.includeLowResMesh,
+      showCapsules: collision.showCapsules,
+      showEllipsoids: collision.showEllipsoids,
+    })
+
+  const shouldBuildMesh =
+    collision.enableVertexTriangle &&
+    collision.mode !== 'preview' &&
+    (collision.mode === 'authoring' || collision.mode === 'hybrid')
+
+  const meshCollider = shouldBuildMesh
+    ? timed(collision.debugPerf, 'buildAvatarMeshCollider', () => buildAvatarMeshColliderSnapshotFromSkinnedMeshes(
+      source.getSkinnedMeshes(),
+      {
+        id: collision.mode === 'hybrid' ? 'avatar.mesh.torso' : 'avatar.mesh',
+        skinOffset: collision.skinOffset,
+        garmentThickness: collision.garmentThickness,
+        cellSize: collision.meshCellSize,
+        triangleStride: collision.meshSampleStride,
+        includeRegions: collision.mode === 'hybrid' ? HYBRID_MESH_REGIONS : undefined,
+        debugPerf: collision.debugPerf,
+      },
+    ))
+    : null
+  setCollisionRuntimeStats({
+    meshColliderVertexCount: meshCollider ? meshCollider.vertices.length / 3 : 0,
+    meshColliderTriangleCount: meshCollider ? meshCollider.indices.length / 3 : 0,
+    spatialHashCellCount: meshCollider ? meshCollider.cellKeys.length : 0,
+  })
+
+  setBodyProxySnapshot({
+    proxies: proxySnapshot.proxies,
+    meshColliders: meshCollider ? [meshCollider] : undefined,
+    lowResMeshPatches: proxySnapshot.lowResMeshPatches,
+  })
+}
+
+function timed<T>(enabled: boolean, label: string, fn: () => T) {
+  if (!enabled) return fn()
+  const start = performance.now()
+  const result = fn()
+  console.debug(`[clothing] ${label} ${(performance.now() - start).toFixed(2)}ms`)
+  return result
 }
 
 function buildTopologyKey(document: PatternDocument, quality: CompileQuality, resetKey: number) {
