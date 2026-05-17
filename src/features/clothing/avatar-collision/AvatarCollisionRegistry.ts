@@ -23,6 +23,8 @@ type SnapshotOptions = {
   globalInflate?: number
   normalOffset?: number
   perRegionInflate?: Partial<Record<CollisionRegion, number>>
+  skinOffset?: number
+  garmentThickness?: number
   includeLowResMesh?: boolean
   showCapsules?: boolean
   showEllipsoids?: boolean
@@ -43,7 +45,7 @@ const TORSO_FRICTION = 0.68
 const LIMB_FRICTION = 0.56
 const HEAD_FRICTION = 0.52
 const BUILD_SAMPLE_STRIDE = 3
-const LOW_RES_VERTEX_STRIDE = 12
+const LOW_RES_VERTEX_STRIDE = 24
 const MAX_HASH_CELLS_PER_TRIANGLE = 128
 
 export const COLLISION_REGIONS: CollisionRegion[] = [
@@ -256,7 +258,15 @@ export function buildColliderSnapshotFromCollisionAvatar(
 
   return {
     proxies,
-    lowResMeshPatches: options.includeLowResMesh ? snapshotLowResMeshPatches(avatar, bones) : undefined,
+    lowResMeshPatches: options.includeLowResMesh
+      ? snapshotLowResMeshPatches(avatar, bones, {
+        globalInflate,
+        normalOffset,
+        perRegionInflate,
+        skinOffset: options.skinOffset ?? DEFAULT_SKIN,
+        garmentThickness: options.garmentThickness ?? 0.008,
+      })
+      : undefined,
   }
 }
 
@@ -598,7 +608,17 @@ function getOrCreatePatch(patches: Map<CollisionRegion, CollisionMeshPatch>, reg
   return patch
 }
 
-function snapshotLowResMeshPatches(avatar: CollisionAvatar, bones: Record<string, THREE.Bone>) {
+function snapshotLowResMeshPatches(
+  avatar: CollisionAvatar,
+  bones: Record<string, THREE.Bone>,
+  options: {
+    globalInflate: number
+    normalOffset: number
+    perRegionInflate: Partial<Record<CollisionRegion, number>>
+    skinOffset: number
+    garmentThickness: number
+  },
+) {
   return (avatar.lowResMeshPatches ?? []).map((patch) => {
     const bone = getBoneByName(bones, patch.anchorBone)
     const vertices = new Float32Array(patch.vertices.length)
@@ -615,8 +635,21 @@ function snapshotLowResMeshPatches(avatar: CollisionAvatar, bones: Record<string
       region: patch.region,
       vertices,
       indices: new Uint32Array(patch.indices),
+      skin: Math.max(
+        0,
+        options.skinOffset
+          + Math.max(0, options.globalInflate)
+          + Math.max(0, options.perRegionInflate[patch.region] ?? 0)
+          + options.normalOffset,
+      ),
+      thickness: Math.max(0, options.garmentThickness),
+      friction: frictionForRegion(avatar, patch.region),
     }
   })
+}
+
+function frictionForRegion(avatar: CollisionAvatar, region: CollisionRegion) {
+  return avatar.proxies.find((proxy) => proxy.region === region)?.friction ?? TORSO_FRICTION
 }
 
 function anchorBoneNameForRegion(region: CollisionRegion, bones: Record<string, THREE.Bone>) {

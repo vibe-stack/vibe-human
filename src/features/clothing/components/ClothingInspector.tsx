@@ -207,7 +207,7 @@ export default function ClothingInspector() {
           value={collisionAvatar.debugPerf}
           onChange={(v) => { clothingStore.collisionAvatar.debugPerf = v }}
         />
-        <Row label="Edge-Edge" value="NOT WIRED" />
+        <Row label="Low-res Patches" value={String(collisionAvatar.meshPatchCount)} />
       </Section>
 
       {/* Document info */}

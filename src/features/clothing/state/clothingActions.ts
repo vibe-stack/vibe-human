@@ -75,16 +75,32 @@ export function createSeam(
   patternIdB: string,
   edgeIdB: string,
 ): string {
+  if (patternIdA === patternIdB && edgeIdA === edgeIdB) return ''
+
+  const patternA = clothingStore.garment.patterns[patternIdA]
+  const patternB = clothingStore.garment.patterns[patternIdB]
+  const edgeA = patternA?.edges.find((edge) => edge.id === edgeIdA)
+  const edgeB = patternB?.edges.find((edge) => edge.id === edgeIdB)
+  if (!patternA || !patternB || !edgeA || !edgeB) return ''
+
+  const existing = findExistingSeam(patternIdA, edgeIdA, patternIdB, edgeIdB)
+  if (existing) {
+    clothingStore.garment.selectedSeamId = existing.id
+    return existing.id
+  }
+
   pushHistory()
   const id = uid()
   const seam: Seam = {
     id,
     name: `Seam ${Object.keys(clothingStore.garment.seams).length + 1}`,
     a: { patternId: patternIdA, edgeId: edgeIdA },
-    b: { patternId: patternIdB, edgeId: edgeIdB },
+    b: { patternId: patternIdB, edgeId: edgeIdB, reversed: inferSeamReversal(patternA, edgeA, patternB, edgeB) || undefined },
     strength: 1,
   }
   clothingStore.garment.seams[id] = seam
+  clothingStore.garment.selectedSeamId = id
+  markPreviewDirty()
   return id
 }
 
@@ -92,6 +108,63 @@ export function deleteSeam(seamId: string) {
   if (!clothingStore.garment.seams[seamId]) return
   pushHistory()
   delete clothingStore.garment.seams[seamId]
+  if (clothingStore.garment.selectedSeamId === seamId) {
+    clothingStore.garment.selectedSeamId = undefined
+  }
+  markPreviewDirty()
+}
+
+function findExistingSeam(
+  patternIdA: string,
+  edgeIdA: string,
+  patternIdB: string,
+  edgeIdB: string,
+) {
+  return Object.values(clothingStore.garment.seams).find((seam) => (
+    (seam.a.patternId === patternIdA
+      && seam.a.edgeId === edgeIdA
+      && seam.b.patternId === patternIdB
+      && seam.b.edgeId === edgeIdB)
+    ||
+    (seam.a.patternId === patternIdB
+      && seam.a.edgeId === edgeIdB
+      && seam.b.patternId === patternIdA
+      && seam.b.edgeId === edgeIdA)
+  ))
+}
+
+function inferSeamReversal(
+  patternA: PatternPiece,
+  edgeA: PatternPiece['edges'][number],
+  patternB: PatternPiece,
+  edgeB: PatternPiece['edges'][number],
+) {
+  const aFrom = patternA.points[edgeA.from]
+  const aTo = patternA.points[edgeA.to]
+  const bFrom = patternB.points[edgeB.from]
+  const bTo = patternB.points[edgeB.to]
+  if (!aFrom || !aTo || !bFrom || !bTo) return false
+
+  const avx = aTo.x - aFrom.x
+  const avy = aTo.y - aFrom.y
+  const bvx = bTo.x - bFrom.x
+  const bvy = bTo.y - bFrom.y
+  const aLen = Math.hypot(avx, avy)
+  const bLen = Math.hypot(bvx, bvy)
+
+  if (aLen > 1e-6 && bLen > 1e-6) {
+    return (avx * bvx + avy * bvy) / (aLen * bLen) < 0
+  }
+
+  const directCost = squaredDistance(aFrom.x, aFrom.y, bFrom.x, bFrom.y) + squaredDistance(aTo.x, aTo.y, bTo.x, bTo.y)
+  const reversedCost = squaredDistance(aFrom.x, aFrom.y, bTo.x, bTo.y) + squaredDistance(aTo.x, aTo.y, bFrom.x, bFrom.y)
+  return reversedCost < directCost
+}
+
+function squaredDistance(ax: number, ay: number, bx: number, by: number) {
+  const dx = ax - bx
+  const dy = ay - by
+  return dx * dx + dy * dy
 }
 
 // ---------------------------------------------------------------------------

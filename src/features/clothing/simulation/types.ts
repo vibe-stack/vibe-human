@@ -175,6 +175,9 @@ export type CollisionMeshPatchSnapshot = {
   region: CollisionRegion
   vertices: Float32Array
   indices: Uint32Array
+  skin: number
+  thickness: number
+  friction: number
 }
 
 export type MeshSurfaceColliderSnapshot = {

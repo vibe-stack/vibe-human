@@ -656,6 +656,7 @@ export default function HumanModel() {
   const eyeObjectsRef = useRef<Record<string, THREE.Object3D>>({})
   const morphMeshesRef = useRef<MorphTargetMesh[]>([])
   const skeletonsRef = useRef<THREE.Skeleton[]>([])
+  const collisionSkinnedMeshesRef = useRef<THREE.SkinnedMesh[]>([])
   const bodyCollisionMeshesRef = useRef<THREE.SkinnedMesh[]>([])
   const headCollisionMeshesRef = useRef<THREE.SkinnedMesh[]>([])
   const restRef = useRef<Record<string, BoneRest>>({})
@@ -749,6 +750,7 @@ export default function HumanModel() {
     const morphMeshes: MorphTargetMesh[] = []
     const skeletons: THREE.Skeleton[] = []
     const groomMeshes: THREE.Mesh[] = []
+    const collisionSkinnedMeshes: THREE.SkinnedMesh[] = []
     const bodyCollisionMeshes: THREE.SkinnedMesh[] = []
     const headCollisionMeshes: THREE.SkinnedMesh[] = []
 
@@ -764,12 +766,16 @@ export default function HumanModel() {
         morphMeshes.push(morphMesh as MorphTargetMesh)
       }
 
+      if (mesh.isSkinnedMesh && isSkinCandidateMesh(obj)) {
+        collisionSkinnedMeshes.push(mesh)
+      }
+
       if (isHeadSkinMesh(obj)) {
         groomMeshes.push(obj as THREE.Mesh)
         if (mesh.isSkinnedMesh) headCollisionMeshes.push(mesh)
       }
 
-      if (isBodySkinMesh(obj) && mesh.isSkinnedMesh) {
+      if (mesh.isSkinnedMesh && (isBodySkinMesh(obj) || (isSkinCandidateMesh(obj) && !isHeadSkinMesh(obj)))) {
         bodyCollisionMeshes.push(mesh)
       }
 
@@ -786,14 +792,15 @@ export default function HumanModel() {
     eyeObjectsRef.current = eyeObjects
     morphMeshesRef.current = morphMeshes
     skeletonsRef.current = skeletons
-    bodyCollisionMeshesRef.current = bodyCollisionMeshes
+    collisionSkinnedMeshesRef.current = collisionSkinnedMeshes
+    const uniqueBodyCollisionMeshes = bodyCollisionMeshes.length > 0
+      ? [...new Set(bodyCollisionMeshes)]
+      : collisionSkinnedMeshes.filter((mesh) => !headCollisionMeshes.includes(mesh))
+    bodyCollisionMeshesRef.current = uniqueBodyCollisionMeshes
     headCollisionMeshesRef.current = headCollisionMeshes
     registerGroomMeshes(groomMeshes)
     const unregisterAvatarCollisionSource = registerAvatarCollisionSource({
-      getSkinnedMeshes: () => [
-        ...bodyCollisionMeshesRef.current,
-        ...headCollisionMeshesRef.current,
-      ],
+      getSkinnedMeshes: () => collisionSkinnedMeshesRef.current,
       getBodyMeshes: () => bodyCollisionMeshesRef.current,
       getHeadMeshes: () => headCollisionMeshesRef.current,
       getSkeletons: () => skeletonsRef.current,

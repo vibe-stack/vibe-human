@@ -1,7 +1,23 @@
-import type { CapsuleProxy, ClothSimMesh, ColliderProxy, ColliderSnapshot, EllipsoidProxy, MeshSurfaceColliderSnapshot, SphereProxy } from '../types'
+import type {
+  CapsuleProxy,
+  ClothSimMesh,
+  ColliderProxy,
+  ColliderSnapshot,
+  CollisionMeshPatchSnapshot,
+  EllipsoidProxy,
+  MeshSurfaceColliderSnapshot,
+  SphereProxy,
+} from '../types'
 
 export function solveCollisionConstraints(mesh: ClothSimMesh, snapshot: ColliderSnapshot | null) {
-  if (!snapshot || (snapshot.proxies.length === 0 && (snapshot.meshColliders?.length ?? 0) === 0)) return
+  if (
+    !snapshot
+    || (
+      snapshot.proxies.length === 0
+      && (snapshot.meshColliders?.length ?? 0) === 0
+      && (snapshot.lowResMeshPatches?.length ?? 0) === 0
+    )
+  ) return
   const { positions, prevPositions, invMass, particleCount } = mesh
 
   for (let particle = 0; particle < particleCount; particle += 1) {
@@ -31,6 +47,25 @@ export function solveCollisionConstraints(mesh: ClothSimMesh, snapshot: Collider
       hit = true
     }
 
+    for (const patch of snapshot.lowResMeshPatches ?? []) {
+      const pushed = pushOutOfLowResPatch(patch, px, py, pz)
+      if (!pushed) continue
+      px = pushed.x
+      py = pushed.y
+      pz = pushed.z
+      const dx = px - prevPositions[offset]
+      const dy = py - prevPositions[offset + 1]
+      const dz = pz - prevPositions[offset + 2]
+      const normalDot = dx * pushed.nx + dy * pushed.ny + dz * pushed.nz
+      const tx = dx - pushed.nx * normalDot
+      const ty = dy - pushed.ny * normalDot
+      const tz = dz - pushed.nz * normalDot
+      prevPositions[offset] += tx * Math.min(1, patch.friction)
+      prevPositions[offset + 1] += ty * Math.min(1, patch.friction)
+      prevPositions[offset + 2] += tz * Math.min(1, patch.friction)
+      hit = true
+    }
+
     for (const proxy of snapshot.proxies) {
       const pushed = pushOut(proxy, px, py, pz)
       if (!pushed) continue
@@ -55,6 +90,52 @@ export function solveCollisionConstraints(mesh: ClothSimMesh, snapshot: Collider
       positions[offset + 1] = py
       positions[offset + 2] = pz
     }
+  }
+}
+
+function pushOutOfLowResPatch(patch: CollisionMeshPatchSnapshot, px: number, py: number, pz: number) {
+  const target = patch.skin + patch.thickness
+  if (target <= 0 || patch.indices.length < 3) return null
+
+  let best: ReturnType<typeof closestPointOnPatchTriangle> | null = null
+  let bestDistSq = Infinity
+
+  for (let triangle = 0; triangle < Math.floor(patch.indices.length / 3); triangle += 1) {
+    const closest = closestPointOnPatchTriangle(patch, triangle, px, py, pz)
+    if (!closest) continue
+    const dx = px - closest.x
+    const dy = py - closest.y
+    const dz = pz - closest.z
+    const distSq = dx * dx + dy * dy + dz * dz
+    if (distSq < bestDistSq) {
+      best = closest
+      bestDistSq = distSq
+    }
+  }
+
+  if (!best || bestDistSq >= target * target) return null
+  const dist = Math.sqrt(bestDistSq)
+  let nx = px - best.x
+  let ny = py - best.y
+  let nz = pz - best.z
+  if (dist > 1e-6) {
+    const inv = 1 / dist
+    nx *= inv
+    ny *= inv
+    nz *= inv
+  } else {
+    nx = best.nx
+    ny = best.ny
+    nz = best.nz
+  }
+  const correction = target - dist
+  return {
+    x: px + nx * correction,
+    y: py + ny * correction,
+    z: pz + nz * correction,
+    nx,
+    ny,
+    nz,
   }
 }
 
@@ -121,6 +202,41 @@ function closestPointOnTriangle(collider: MeshSurfaceColliderSnapshot, triangle:
   const cx = collider.vertices[ic]
   const cy = collider.vertices[ic + 1]
   const cz = collider.vertices[ic + 2]
+  const abx = bx - ax
+  const aby = by - ay
+  const abz = bz - az
+  const acx = cx - ax
+  const acy = cy - ay
+  const acz = cz - az
+  const nxRaw = aby * acz - abz * acy
+  const nyRaw = abz * acx - abx * acz
+  const nzRaw = abx * acy - aby * acx
+  const nLen = Math.sqrt(nxRaw * nxRaw + nyRaw * nyRaw + nzRaw * nzRaw)
+  if (nLen < 1e-9) return null
+  const closest = closestPointTriangleRaw(px, py, pz, ax, ay, az, bx, by, bz, cx, cy, cz)
+  return {
+    x: closest.x,
+    y: closest.y,
+    z: closest.z,
+    nx: nxRaw / nLen,
+    ny: nyRaw / nLen,
+    nz: nzRaw / nLen,
+  }
+}
+
+function closestPointOnPatchTriangle(patch: CollisionMeshPatchSnapshot, triangle: number, px: number, py: number, pz: number) {
+  const ia = patch.indices[triangle * 3] * 3
+  const ib = patch.indices[triangle * 3 + 1] * 3
+  const ic = patch.indices[triangle * 3 + 2] * 3
+  const ax = patch.vertices[ia]
+  const ay = patch.vertices[ia + 1]
+  const az = patch.vertices[ia + 2]
+  const bx = patch.vertices[ib]
+  const by = patch.vertices[ib + 1]
+  const bz = patch.vertices[ib + 2]
+  const cx = patch.vertices[ic]
+  const cy = patch.vertices[ic + 1]
+  const cz = patch.vertices[ic + 2]
   const abx = bx - ax
   const aby = by - ay
   const abz = bz - az

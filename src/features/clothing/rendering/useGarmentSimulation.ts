@@ -205,7 +205,11 @@ function updateColliderSnapshotForStep(
 
   if (
     collision.mode !== 'authoring' &&
-    (!avatarRef.current || buildRequestRef.current !== collision.buildRequestId)
+    (
+      !avatarRef.current
+      || buildRequestRef.current !== collision.buildRequestId
+      || (collision.includeLowResMesh && (avatarRef.current.lowResMeshPatches?.length ?? 0) === 0)
+    )
   ) {
     const start = collision.debugPerf ? performance.now() : 0
     const avatar = buildCollisionAvatarFromSkinnedMeshes(bones, {
@@ -238,6 +242,8 @@ function updateColliderSnapshotForStep(
       globalInflate: collision.globalInflate,
       normalOffset: collision.normalOffset,
       perRegionInflate: collision.perRegionInflate,
+      skinOffset: collision.skinOffset,
+      garmentThickness: collision.garmentThickness,
       includeLowResMesh: collision.includeLowResMesh,
       showCapsules: collision.showCapsules,
       showEllipsoids: collision.showEllipsoids,
