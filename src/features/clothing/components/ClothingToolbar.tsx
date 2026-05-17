@@ -7,6 +7,7 @@ import {
   Hexagon,
   MousePointer2,
   Pause,
+  Move3d,
   Pen,
   PenTool,
   Play,
@@ -24,6 +25,7 @@ import {
   deletePieces,
   duplicatePieces,
   redo,
+  resetPatternTransforms,
   resetSim,
   setActiveClothingTool,
   subtractTopFromSelection,
@@ -131,7 +133,13 @@ export default function ClothingToolbar() {
         {simRunning ? <Pause size={12} /> : <Play size={12} />}
         {simRunning ? 'STOP' : 'RUN'}
       </PrimaryButton>
-      <IconButton onClick={resetSim} title="Reset sim">
+      <IconButton
+        onClick={() => resetPatternTransforms()}
+        title="Reset 3D transforms for selected pieces (or all if none selected)"
+      >
+        <Move3d size={14} />
+      </IconButton>
+      <IconButton onClick={resetSim} title="Reset cloth shape (keeps placement)">
         <RotateCcw size={14} />
       </IconButton>
     </div>

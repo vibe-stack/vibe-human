@@ -1,7 +1,6 @@
-import RapierClothDemo from './RapierClothDemo'
+import { ClothScene } from '../cloth'
 
-// GarmentPreviewMesh is the 3D clothing entry point used by App.tsx.
-// It now renders a real Rapier-backed cloth sample instead of flat demo panels.
+/** 3D clothing entry point. Renders the PBD-driven cloth scene. */
 export default function GarmentPreviewMesh() {
-  return <RapierClothDemo />
+  return <ClothScene />
 }

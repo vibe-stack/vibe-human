@@ -223,6 +223,20 @@ export function setPatternPlacement(patternId: string, placement: PatternPlaceme
   clothingStore.placements[patternId] = placement
 }
 
+/** Wipe placements for the given pieces (or all selected if none passed)
+ *  so they fall back to defaultPlacement. Bumps the sim reset key so the
+ *  solver re-spawns at the new (default) frame. */
+export function resetPatternTransforms(patternIds?: string[]) {
+  const ids = patternIds ?? [...clothingStore.selectedPatternIds]
+  if (ids.length === 0) {
+    for (const k of Object.keys(clothingStore.placements)) delete clothingStore.placements[k]
+  } else {
+    for (const id of ids) delete clothingStore.placements[id]
+  }
+  clothingStore.simResetKey += 1
+  clothingStore.simRunning = false
+}
+
 // ---------------------------------------------------------------------------
 // Document loading
 // ---------------------------------------------------------------------------

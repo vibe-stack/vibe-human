@@ -26,6 +26,7 @@
     "react-resizable-panels": "^4.11.1",
     "tailwindcss": "^4.2.4",
     "three": "^0.184.0",
+    "three-mesh-bvh": "^0.9.10",
     "valtio": "^2.3.2"
   },
   "devDependencies": {
