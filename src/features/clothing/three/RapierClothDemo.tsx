@@ -24,7 +24,8 @@ type ClothSpec = {
 
 type ClothSimulation = {
   world: RapierWorld
-  bodies: RapierRigidBody[]
+  /** Sparse: indices that fall in holes / outside outline are null. */
+  bodies: Array<RapierRigidBody | null>
   accumulator: number
   disposed: boolean
 }
@@ -63,7 +64,8 @@ const PARTICLE_RADIUS = 0.008
 const FIXED_STEP = 1 / 90
 const MAX_SUBSTEPS = 4
 const PATTERN_UNIT_SCALE = 0.004
-const RENDER_TRIANGLE_SUBDIVISIONS = 8
+const RENDER_TRIANGLE_SUBDIVISIONS = 6
+const CLOTH_LOCAL_Y = 0.72
 
 const QUALITY_SETTINGS: Record<ClothSimQuality, QualitySettings> = {
   low: {
@@ -161,6 +163,12 @@ function makeClothSpec(piece: PatternPiece | undefined, quality: ClothSimQuality
   }
 }
 
+/**
+ * Local-space spawn position for one cloth particle. We keep y around 0 so
+ * the cloth's group origin sits at the cloth center — this puts the
+ * TransformControls gizmo on the cloth instead of below the model. The
+ * default placement adds the spawn height once at the group level.
+ */
 function makeInitialPosition(spec: ClothSpec, col: number, row: number) {
   const u = col / (spec.cols - 1)
   const v = row / (spec.rows - 1)
@@ -168,11 +176,11 @@ function makeInitialPosition(spec: ClothSpec, col: number, row: number) {
   const z = (v - 0.48) * spec.depth
   const ripple = Math.sin(u * Math.PI * 2.0) * Math.sin(v * Math.PI) * 0.015
 
-  return { x, y: 0.72 + ripple, z }
+  return { x, y: ripple, z }
 }
 
-function bodyAt(bodies: RapierRigidBody[], spec: ClothSpec, col: number, row: number) {
-  return bodies[row * spec.cols + col]
+function bodyAt(bodies: Array<RapierRigidBody | null>, spec: ClothSpec, col: number, row: number) {
+  return bodies[row * spec.cols + col] ?? null
 }
 
 function addSpring(
@@ -191,7 +199,11 @@ function addSpring(
   )
 }
 
-function createSimulation(spec: ClothSpec, quality: ClothSimQuality): ClothSimulation {
+function createSimulation(
+  spec: ClothSpec,
+  quality: ClothSimQuality,
+  piece: PatternPiece | undefined,
+): ClothSimulation {
   const settings = QUALITY_SETTINGS[quality]
   const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 })
   world.timestep = FIXED_STEP
@@ -217,10 +229,17 @@ function createSimulation(spec: ClothSpec, quality: ClothSimQuality): ClothSimul
     chestBody,
   )
 
-  const bodies: RapierRigidBody[] = []
+  // Same active mask as the rendered topology — single source of truth so a
+  // particle exists iff a visible triangle could touch it.
+  const active = buildActiveMask(spec, piece)
+
+  const bodies: Array<RapierRigidBody | null> = []
 
   for (let row = 0; row < spec.rows; row += 1) {
     for (let col = 0; col < spec.cols; col += 1) {
+      const idx = row * spec.cols + col
+      if (!active[idx]) { bodies.push(null); continue }
+
       const p = makeInitialPosition(spec, col, row)
       const body = world.createRigidBody(
         RAPIER.RigidBodyDesc.dynamic()
@@ -240,20 +259,29 @@ function createSimulation(spec: ClothSpec, quality: ClothSimQuality): ClothSimul
     }
   }
 
+  const link = (
+    a: RapierRigidBody | null,
+    b: RapierRigidBody | null,
+    rest: number,
+    stiff: number,
+    damp: number,
+  ) => { if (a && b) addSpring(world, a, b, rest, stiff, damp) }
+
   for (let row = 0; row < spec.rows; row += 1) {
     for (let col = 0; col < spec.cols; col += 1) {
       const current = bodyAt(bodies, spec, col, row)
+      if (!current) continue
 
-      if (col + 1 < spec.cols) addSpring(world, current, bodyAt(bodies, spec, col + 1, row), spec.spacingX, 52, 4.2)
-      if (row + 1 < spec.rows) addSpring(world, current, bodyAt(bodies, spec, col, row + 1), spec.spacingZ, 52, 4.2)
+      if (col + 1 < spec.cols) link(current, bodyAt(bodies, spec, col + 1, row), spec.spacingX, 52, 4.2)
+      if (row + 1 < spec.rows) link(current, bodyAt(bodies, spec, col, row + 1), spec.spacingZ, 52, 4.2)
       if (col + 1 < spec.cols && row + 1 < spec.rows) {
-        addSpring(world, current, bodyAt(bodies, spec, col + 1, row + 1), Math.hypot(spec.spacingX, spec.spacingZ), 34, 3.4)
+        link(current, bodyAt(bodies, spec, col + 1, row + 1), Math.hypot(spec.spacingX, spec.spacingZ), 34, 3.4)
       }
       if (col > 0 && row + 1 < spec.rows) {
-        addSpring(world, current, bodyAt(bodies, spec, col - 1, row + 1), Math.hypot(spec.spacingX, spec.spacingZ), 34, 3.4)
+        link(current, bodyAt(bodies, spec, col - 1, row + 1), Math.hypot(spec.spacingX, spec.spacingZ), 34, 3.4)
       }
-      if (col + 2 < spec.cols) addSpring(world, current, bodyAt(bodies, spec, col + 2, row), spec.spacingX * 2, settings.bendStiffness, 2.2)
-      if (row + 2 < spec.rows) addSpring(world, current, bodyAt(bodies, spec, col, row + 2), spec.spacingZ * 2, settings.bendStiffness, 2.2)
+      if (col + 2 < spec.cols) link(current, bodyAt(bodies, spec, col + 2, row), spec.spacingX * 2, settings.bendStiffness, 2.2)
+      if (row + 2 < spec.rows) link(current, bodyAt(bodies, spec, col, row + 2), spec.spacingZ * 2, settings.bendStiffness, 2.2)
     }
   }
 
@@ -310,23 +338,39 @@ function pointInPatternPiece(point: { x: number; y: number }, piece: PatternPiec
   return true
 }
 
+/** Compute the per-cell active mask. A cell is active iff its corresponding
+ *  pattern-space point is inside the piece (outer outline minus holes). */
+function buildActiveMask(spec: ClothSpec, piece: PatternPiece | undefined): boolean[] {
+  const mask = new Array<boolean>(spec.cols * spec.rows).fill(true)
+  if (!piece?.closed) return mask
+  const bounds = getPatternBounds(piece)
+  for (let row = 0; row < spec.rows; row += 1) {
+    for (let col = 0; col < spec.cols; col += 1) {
+      const u = col / (spec.cols - 1)
+      const v = row / (spec.rows - 1)
+      const px = bounds.minX + u * bounds.width
+      const py = bounds.minY + v * bounds.depth
+      mask[row * spec.cols + col] = pointInPatternPiece({ x: px, y: py }, piece)
+    }
+  }
+  return mask
+}
+
 function updateClothTopologyFromPattern(geometry: THREE.BufferGeometry, spec: ClothSpec, piece: PatternPiece | undefined) {
   if (!piece?.closed) return
-  const bounds = getPatternBounds(piece)
+  const mask = buildActiveMask(spec, piece)
   const indices: number[] = []
 
+  // Include a quad only if ALL FOUR corner particles exist (active). This
+  // prevents triangles from referencing a never-written vertex stuck at
+  // (0,0,0), which was producing the "edges at origin" spikes.
   for (let row = 0; row < spec.rows - 1; row += 1) {
     for (let col = 0; col < spec.cols - 1; col += 1) {
-      const center = {
-        x: bounds.minX + ((col + 0.5) / (spec.cols - 1)) * bounds.width,
-        y: bounds.minY + ((row + 0.5) / (spec.rows - 1)) * bounds.depth,
-      }
-      if (!pointInPatternPiece(center, piece)) continue
-
       const a = row * spec.cols + col
       const b = a + 1
       const c = a + spec.cols
       const d = c + 1
+      if (!mask[a] || !mask[b] || !mask[c] || !mask[d]) continue
       indices.push(a, c, b, b, c, d)
     }
   }
@@ -335,7 +379,15 @@ function updateClothTopologyFromPattern(geometry: THREE.BufferGeometry, spec: Cl
   geometry.computeVertexNormals()
 }
 
-function createPatternRenderGeometry(piece: PatternPiece, spec: ClothSpec) {
+/**
+ * Build a high-res renderable mesh from the (hole-aware) pattern outline.
+ * Each earcut triangle is subdivided barycentrically into RTS² smaller
+ * triangles so the silhouette is smooth even when the sim grid is coarse.
+ * UVs are stored in pattern-space [0,1]² so we can sample the sim grid at
+ * render time. This is the marvelous-designer-style decoupling: physics is
+ * a sparse grid, visuals are a dense triangulation skinned to that grid.
+ */
+function createPatternRenderGeometry(piece: PatternPiece) {
   const { vertices, indices } = triangulatePattern(piece)
   const geometry = new THREE.BufferGeometry()
 
@@ -348,6 +400,7 @@ function createPatternRenderGeometry(piece: PatternPiece, spec: ClothSpec) {
   const bounds = getPatternBounds(piece)
   const renderUvs: number[] = []
   const renderIndices: number[] = []
+  const N = RENDER_TRIANGLE_SUBDIVISIONS
 
   function pushUv(u: number, v: number) {
     const index = renderUvs.length / 2
@@ -356,42 +409,32 @@ function createPatternRenderGeometry(piece: PatternPiece, spec: ClothSpec) {
   }
 
   function vertexUv(index: number) {
-    const vertex = vertices[index]
-    return {
-      u: (vertex.x - bounds.minX) / bounds.width,
-      v: (vertex.y - bounds.minY) / bounds.depth,
-    }
+    const v = vertices[index]
+    return { u: (v.x - bounds.minX) / bounds.width, v: (v.y - bounds.minY) / bounds.depth }
   }
 
   for (let tri = 0; tri < indices.length; tri += 3) {
-    const a = vertexUv(indices[tri + 0])
-    const b = vertexUv(indices[tri + 1])
-    const c = vertexUv(indices[tri + 2])
+    const A = vertexUv(indices[tri + 0])
+    const B = vertexUv(indices[tri + 1])
+    const C = vertexUv(indices[tri + 2])
     const rows: number[][] = []
-
-    for (let i = 0; i <= RENDER_TRIANGLE_SUBDIVISIONS; i += 1) {
+    for (let i = 0; i <= N; i += 1) {
       rows[i] = []
-      for (let j = 0; j <= RENDER_TRIANGLE_SUBDIVISIONS - i; j += 1) {
-        const wa = 1 - (i + j) / RENDER_TRIANGLE_SUBDIVISIONS
-        const wb = i / RENDER_TRIANGLE_SUBDIVISIONS
-        const wc = j / RENDER_TRIANGLE_SUBDIVISIONS
-        rows[i][j] = pushUv(
-          a.u * wa + b.u * wb + c.u * wc,
-          a.v * wa + b.v * wb + c.v * wc,
-        )
+      for (let j = 0; j <= N - i; j += 1) {
+        const wa = 1 - (i + j) / N
+        const wb = i / N
+        const wc = j / N
+        rows[i][j] = pushUv(A.u * wa + B.u * wb + C.u * wc, A.v * wa + B.v * wb + C.v * wc)
       }
     }
-
-    for (let i = 0; i < RENDER_TRIANGLE_SUBDIVISIONS; i += 1) {
-      for (let j = 0; j < RENDER_TRIANGLE_SUBDIVISIONS - i; j += 1) {
+    for (let i = 0; i < N; i += 1) {
+      for (let j = 0; j < N - i; j += 1) {
         const v0 = rows[i][j]
         const v1 = rows[i + 1][j]
         const v2 = rows[i][j + 1]
         renderIndices.push(v0, v1, v2)
-
-        if (j < RENDER_TRIANGLE_SUBDIVISIONS - i - 1) {
-          const v3 = rows[i + 1][j + 1]
-          renderIndices.push(v1, v3, v2)
+        if (j < N - i - 1) {
+          renderIndices.push(v1, rows[i + 1][j + 1], v2)
         }
       }
     }
@@ -399,25 +442,64 @@ function createPatternRenderGeometry(piece: PatternPiece, spec: ClothSpec) {
 
   const positions = new Float32Array((renderUvs.length / 2) * 3)
   const uvs = new Float32Array(renderUvs)
-
-  for (let i = 0; i < renderUvs.length / 2; i += 1) {
-    const u = renderUvs[i * 2 + 0]
-    const v = renderUvs[i * 2 + 1]
-    const x = (u - 0.5) * spec.width
-    const z = (v - 0.48) * spec.depth
-    const ripple = Math.sin(u * Math.PI * 2.0) * Math.sin(v * Math.PI) * 0.015
-
-    positions[i * 3 + 0] = x
-    positions[i * 3 + 1] = 0.72 + ripple
-    positions[i * 3 + 2] = z
-  }
-
+  // Initialise positions to the rest layout so the first frame before sim
+  // doesn't show a flattened mesh. The sim ticker will overwrite these.
+  // (No spec available here — leave zero; sim init will write real values.)
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
   geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2))
   geometry.setIndex(renderIndices)
   geometry.computeVertexNormals()
-
   return geometry
+}
+
+/**
+ * Sample the sim grid bilinearly. Visual vertices live in pattern-space UV
+ * [0,1]². Because the active mask used for body creation is derived from the
+ * same `pointInPatternPiece` test that earcut respects, a visual vertex
+ * inside the rendered mesh is in a quad whose 4 corner bodies all exist —
+ * so the lerp is clean. We still guard against missing corners for safety.
+ */
+function sampleSimAt(sim: ClothSimulation, spec: ClothSpec, u: number, v: number, out: THREE.Vector3) {
+  const gx = clamp(u, 0, 1) * (spec.cols - 1)
+  const gy = clamp(v, 0, 1) * (spec.rows - 1)
+  const x0 = Math.floor(gx)
+  const y0 = Math.floor(gy)
+  const x1 = Math.min(x0 + 1, spec.cols - 1)
+  const y1 = Math.min(y0 + 1, spec.rows - 1)
+  const tx = gx - x0
+  const ty = gy - y0
+
+  const ba = bodyAt(sim.bodies, spec, x0, y0)
+  const bb = bodyAt(sim.bodies, spec, x1, y0)
+  const bc = bodyAt(sim.bodies, spec, x0, y1)
+  const bd = bodyAt(sim.bodies, spec, x1, y1)
+  const fallback = ba ?? bb ?? bc ?? bd
+  if (!fallback) return out.set(0, 0, 0)
+  const a = ba ? vectorFromBody(ba) : vectorFromBody(fallback)
+  const b = bb ? vectorFromBody(bb) : vectorFromBody(fallback)
+  const c = bc ? vectorFromBody(bc) : vectorFromBody(fallback)
+  const d = bd ? vectorFromBody(bd) : vectorFromBody(fallback)
+  const top = a.lerp(b, tx)
+  const bottom = c.lerp(d, tx)
+  return out.copy(top.lerp(bottom, ty))
+}
+
+function writeVisualFromSim(sim: ClothSimulation, spec: ClothSpec, geometry: THREE.BufferGeometry) {
+  if (sim.disposed) return
+  const positionAttr = geometry.getAttribute('position') as THREE.BufferAttribute | undefined
+  const uvAttr = geometry.getAttribute('uv') as THREE.BufferAttribute | undefined
+  if (!positionAttr || !uvAttr || uvAttr.count === 0) return
+  const positions = positionAttr.array as Float32Array
+  const uvs = uvAttr.array as Float32Array
+  const p = new THREE.Vector3()
+  for (let i = 0; i < positionAttr.count; i += 1) {
+    sampleSimAt(sim, spec, uvs[i * 2 + 0], uvs[i * 2 + 1], p)
+    positions[i * 3 + 0] = p.x
+    positions[i * 3 + 1] = p.y
+    positions[i * 3 + 2] = p.z
+  }
+  positionAttr.needsUpdate = true
+  geometry.computeVertexNormals()
 }
 
 function warpSimulationToPattern(sim: ClothSimulation | null, previous: ShapeBounds, next: ShapeBounds) {
@@ -427,6 +509,7 @@ function warpSimulationToPattern(sim: ClothSimulation | null, previous: ShapeBou
   if (Math.abs(scaleX - 1) < 0.01 && Math.abs(scaleZ - 1) < 0.01) return
 
   for (const body of sim.bodies) {
+    if (!body) continue
     const p = body.translation()
     body.setTranslation({ x: p.x * scaleX, y: p.y, z: p.z * scaleZ }, true)
   }
@@ -446,51 +529,12 @@ function writeBodiesToGeometry(sim: ClothSimulation, geometry: THREE.BufferGeome
 
   const positions = positionAttr.array as Float32Array
   for (let i = 0; i < sim.bodies.length; i += 1) {
-    const translation = sim.bodies[i].translation()
+    const body = sim.bodies[i]
+    if (!body) continue
+    const translation = body.translation()
     positions[i * 3 + 0] = translation.x
     positions[i * 3 + 1] = translation.y
     positions[i * 3 + 2] = translation.z
-  }
-
-  positionAttr.needsUpdate = true
-  geometry.computeVertexNormals()
-  return true
-}
-
-function sampleSimPosition(sim: ClothSimulation, spec: ClothSpec, u: number, v: number, out: THREE.Vector3) {
-  const gx = clamp(u, 0, 1) * (spec.cols - 1)
-  const gy = clamp(v, 0, 1) * (spec.rows - 1)
-  const x0 = Math.floor(gx)
-  const y0 = Math.floor(gy)
-  const x1 = Math.min(x0 + 1, spec.cols - 1)
-  const y1 = Math.min(y0 + 1, spec.rows - 1)
-  const tx = gx - x0
-  const ty = gy - y0
-
-  const a = vectorFromBody(bodyAt(sim.bodies, spec, x0, y0))
-  const b = vectorFromBody(bodyAt(sim.bodies, spec, x1, y0))
-  const c = vectorFromBody(bodyAt(sim.bodies, spec, x0, y1))
-  const d = vectorFromBody(bodyAt(sim.bodies, spec, x1, y1))
-  const top = a.lerp(b, tx)
-  const bottom = c.lerp(d, tx)
-  return out.copy(top.lerp(bottom, ty))
-}
-
-function writeVisualGeometryFromSim(sim: ClothSimulation, simSpec: ClothSpec, geometry: THREE.BufferGeometry) {
-  if (sim.disposed) return false
-  const positionAttr = geometry.getAttribute('position') as THREE.BufferAttribute | undefined
-  const uvAttr = geometry.getAttribute('uv') as THREE.BufferAttribute | undefined
-  if (!positionAttr || !uvAttr) return false
-
-  const positions = positionAttr.array as Float32Array
-  const uvs = uvAttr.array as Float32Array
-  const p = new THREE.Vector3()
-
-  for (let i = 0; i < positionAttr.count; i += 1) {
-    sampleSimPosition(sim, simSpec, uvs[i * 2 + 0], uvs[i * 2 + 1], p)
-    positions[i * 3 + 0] = p.x
-    positions[i * 3 + 1] = p.y
-    positions[i * 3 + 2] = p.z
   }
 
   positionAttr.needsUpdate = true
@@ -505,7 +549,7 @@ function vectorFromBody(body: RapierRigidBody) {
 
 function defaultPlacement(index: number, count: number): PatternPlacement {
   return {
-    position: { x: (index - (count - 1) / 2) * 0.08, y: 0, z: index * 0.018 },
+    position: { x: (index - (count - 1) / 2) * 0.08, y: CLOTH_LOCAL_Y, z: index * 0.018 },
     rotation: { x: 0, y: 0, z: 0 },
   }
 }
@@ -553,7 +597,7 @@ function ClothPiece({
   })
   const spec = useMemo(() => makeClothSpec(piece, simQuality), [piece.id, simKey])
   const simGeometry = useMemo(() => createClothGeometry(spec), [simKey, spec])
-  const visualGeometry = useMemo(() => createPatternRenderGeometry(piece, spec), [patternRevision, piece, spec])
+  const visualGeometry = useMemo(() => createPatternRenderGeometry(piece), [patternRevision, piece])
   const currentPlacement = placement ?? defaultPlacement(index, count)
 
   useEffect(() => {
@@ -566,12 +610,12 @@ function ClothPiece({
       simRef.current = null
       disposeSimulation(previous)
 
-      const next = createSimulation(spec, simQuality)
+      const next = createSimulation(spec, simQuality, piece)
       simRef.current = next
       shapeBoundsRef.current = getWorldPatternBounds(piece)
       updateClothTopologyFromPattern(simGeometry, spec, piece)
       writeBodiesToGeometry(next, simGeometry)
-      writeVisualGeometryFromSim(next, spec, visualGeometry)
+      writeVisualFromSim(next, spec, visualGeometry)
       setRapierReady(true)
     })
 
@@ -595,7 +639,8 @@ function ClothPiece({
     warpSimulationToPattern(simRef.current, previousBounds, nextBounds)
     shapeBoundsRef.current = nextBounds
     if (simRef.current && !simRef.current.disposed) {
-      writeVisualGeometryFromSim(simRef.current, spec, visualGeometry)
+      writeBodiesToGeometry(simRef.current, simGeometry)
+      writeVisualFromSim(simRef.current, spec, visualGeometry)
     }
   }, [patternRevision, piece, simGeometry, spec, visualGeometry])
 
@@ -620,7 +665,9 @@ function ClothPiece({
     const particles: Array<DragParticle & { distanceSq: number }> = []
 
     for (let i = 0; i < sim.bodies.length; i += 1) {
-      const bodyPoint = vectorFromBody(sim.bodies[i])
+      const body = sim.bodies[i]
+      if (!body) continue
+      const bodyPoint = vectorFromBody(body)
       const dSq = bodyPoint.distanceToSquared(localPoint)
       if (dSq < nearestDistanceSq) {
         nearestDistanceSq = dSq
@@ -638,12 +685,15 @@ function ClothPiece({
     }
 
     if (!particles.length && nearestIndex >= 0) {
-      particles.push({
-        index: nearestIndex,
-        offset: vectorFromBody(sim.bodies[nearestIndex]).sub(localPoint),
-        weight: 1,
-        distanceSq: nearestDistanceSq,
-      })
+      const nearestBody = sim.bodies[nearestIndex]
+      if (nearestBody) {
+        particles.push({
+          index: nearestIndex,
+          offset: vectorFromBody(nearestBody).sub(localPoint),
+          weight: 1,
+          distanceSq: nearestDistanceSq,
+        })
+      }
     }
 
     return particles
@@ -752,23 +802,36 @@ function ClothPiece({
 
   function bakePlacementIntoSimulation() {
     const sim = simRef.current
-    const group = groupRef.current
-    if (!sim || sim.disposed || !group) return
+    if (!sim || sim.disposed) return
 
-    group.updateMatrixWorld(true)
-    const matrix = group.matrixWorld.clone()
+    // Build the transform from the AUTHORITATIVE placement, not the group
+    // ref — drei's TransformControls juggling can desync the ref matrix.
+    const matrix = new THREE.Matrix4().compose(
+      new THREE.Vector3(currentPlacement.position.x, currentPlacement.position.y, currentPlacement.position.z),
+      new THREE.Quaternion().setFromEuler(
+        new THREE.Euler(currentPlacement.rotation.x, currentPlacement.rotation.y, currentPlacement.rotation.z),
+      ),
+      new THREE.Vector3(1, 1, 1),
+    )
+
     const p = new THREE.Vector3()
-
     for (const body of sim.bodies) {
+      if (!body) continue
       const current = body.translation()
       p.set(current.x, current.y, current.z).applyMatrix4(matrix)
       body.setTranslation({ x: p.x, y: p.y, z: p.z }, true)
       body.setLinvel({ x: 0, y: 0, z: 0 }, true)
     }
 
-    group.position.set(0, 0, 0)
-    group.rotation.set(0, 0, 0)
-    group.updateMatrixWorld(true)
+    // Zero the group's transform imperatively AND in the store so we don't
+    // get a frame where the visual mesh (now in world coords via sim) is
+    // also offset by the React-driven group transform.
+    const group = groupRef.current
+    if (group) {
+      group.position.set(0, 0, 0)
+      group.rotation.set(0, 0, 0)
+      group.updateMatrixWorld(true)
+    }
     setPatternPlacement(piece.id, {
       position: { x: 0, y: 0, z: 0 },
       rotation: { x: 0, y: 0, z: 0 },
@@ -798,7 +861,7 @@ function ClothPiece({
       }
 
       writeBodiesToGeometry(sim, simGeometry)
-      writeVisualGeometryFromSim(sim, spec, visualGeometry)
+      writeVisualFromSim(sim, spec, visualGeometry)
     } catch (error) {
       console.error('Rapier cloth simulation failed; disposing invalid world.', error)
       simRef.current = null
@@ -817,6 +880,11 @@ function ClothPiece({
     })
   }
 
+  // High-res visual mesh decoupled from physics resolution (marvelous-style):
+  // the sim is a coarse rapier grid; the rendered mesh is the earcut'd
+  // pattern outline subdivided, with each vertex re-sampled from the sim
+  // grid every frame via bilinear interpolation. This gives a smooth hole
+  // silhouette without forcing the physics to a giant grid.
   const group = (
     <group
       ref={groupRef}
