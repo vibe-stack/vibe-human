@@ -5,7 +5,14 @@ import type { PatternDocument, PatternPanel } from '../document/types'
 import { compileGarmentRuntime } from '../compiler/compileGarmentRuntime'
 import type { CompileQuality } from '../compiler/types'
 import { XPBDClothSolver } from '../simulation/solver'
-import type { ClothFrame, CollisionAvatar, CollisionRegion, GarmentRuntime, SolverParams } from '../simulation/types'
+import type {
+  ClothFrame,
+  CollisionAvatar,
+  CollisionRegion,
+  GarmentRuntime,
+  MeshSurfaceColliderSnapshot,
+  SolverParams,
+} from '../simulation/types'
 import {
   buildAvatarMeshColliderSnapshotFromSkinnedMeshes,
   buildColliderSnapshotFromCollisionAvatar,
@@ -86,6 +93,8 @@ export function useGarmentSimulation(args: {
   const accumRef = useRef(0)
   const avatarRef = useRef<CollisionAvatar | null>(null)
   const avatarBuildRequestRef = useRef(-1)
+  const meshColliderRef = useRef<MeshSurfaceColliderSnapshot | null>(null)
+  const meshColliderKeyRef = useRef('')
   const collisionRef = useRef(collision)
   const enabledRef = useRef(enabled)
 
@@ -103,6 +112,8 @@ export function useGarmentSimulation(args: {
       clearBodyProxySnapshot()
       avatarRef.current = null
       avatarBuildRequestRef.current = -1
+      meshColliderRef.current = null
+      meshColliderKeyRef.current = ''
     }
   }, [])
 
@@ -145,7 +156,14 @@ export function useGarmentSimulation(args: {
       accumRef.current += Math.min(delta, 1 / 20)
       let steps = 0
       while (accumRef.current >= FIXED_DT && steps < MAX_SUBSTEPS) {
-        updateColliderSnapshotForStep(Boolean(runtime.simMesh.particleCount), avatarRef, avatarBuildRequestRef, collisionRef.current)
+        updateColliderSnapshotForStep(
+          Boolean(runtime.simMesh.particleCount),
+          avatarRef,
+          avatarBuildRequestRef,
+          meshColliderRef,
+          meshColliderKeyRef,
+          collisionRef.current,
+        )
         const start = collisionRef.current.debugPerf ? performance.now() : 0
         frameRef.current = solver.step(getBodyProxySnapshot())
         if (collisionRef.current.debugPerf) {
@@ -170,6 +188,8 @@ function updateColliderSnapshotForStep(
   hasActiveGarment: boolean,
   avatarRef: MutableRefObject<CollisionAvatar | null>,
   buildRequestRef: MutableRefObject<number>,
+  meshColliderRef: MutableRefObject<MeshSurfaceColliderSnapshot | null>,
+  meshColliderKeyRef: MutableRefObject<string>,
   collision: Parameters<typeof useGarmentSimulation>[0]['collision'],
 ) {
   if (!hasActiveGarment) return
@@ -228,8 +248,22 @@ function updateColliderSnapshotForStep(
     collision.mode !== 'preview' &&
     (collision.mode === 'authoring' || collision.mode === 'hybrid')
 
-  const meshCollider = shouldBuildMesh
-    ? timed(collision.debugPerf, 'buildAvatarMeshCollider', () => buildAvatarMeshColliderSnapshotFromSkinnedMeshes(
+  const meshKey = shouldBuildMesh
+    ? [
+      collision.mode,
+      collision.buildRequestId,
+      collision.skinOffset.toFixed(4),
+      collision.garmentThickness.toFixed(4),
+      collision.meshCellSize.toFixed(4),
+      collision.meshSampleStride,
+      source.getSkinnedMeshes().length,
+    ].join('|')
+    : ''
+  if (!shouldBuildMesh) {
+    meshColliderRef.current = null
+    meshColliderKeyRef.current = ''
+  } else if (!meshColliderRef.current || meshColliderKeyRef.current !== meshKey) {
+    meshColliderRef.current = timed(collision.debugPerf, 'buildAvatarMeshCollider', () => buildAvatarMeshColliderSnapshotFromSkinnedMeshes(
       source.getSkinnedMeshes(),
       {
         id: collision.mode === 'hybrid' ? 'avatar.mesh.torso' : 'avatar.mesh',
@@ -241,7 +275,9 @@ function updateColliderSnapshotForStep(
         debugPerf: collision.debugPerf,
       },
     ))
-    : null
+    meshColliderKeyRef.current = meshKey
+  }
+  const meshCollider = meshColliderRef.current
   setCollisionRuntimeStats({
     meshColliderVertexCount: meshCollider ? meshCollider.vertices.length / 3 : 0,
     meshColliderTriangleCount: meshCollider ? meshCollider.indices.length / 3 : 0,

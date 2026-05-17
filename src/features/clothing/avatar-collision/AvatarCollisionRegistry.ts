@@ -44,6 +44,7 @@ const LIMB_FRICTION = 0.56
 const HEAD_FRICTION = 0.52
 const BUILD_SAMPLE_STRIDE = 3
 const LOW_RES_VERTEX_STRIDE = 12
+const MAX_HASH_CELLS_PER_TRIANGLE = 128
 
 export const COLLISION_REGIONS: CollisionRegion[] = [
   'head',
@@ -267,10 +268,12 @@ export function buildAvatarMeshColliderSnapshotFromSkinnedMeshes(
   const includeRegions = options.includeRegions
   const vertices: number[] = []
   const indices: number[] = []
+  const vertexMap = new Map<string, number>()
   let triangleOrdinal = 0
   const extractionStart = options.debugPerf ? performance.now() : 0
 
-  for (const mesh of meshes) {
+  for (let meshIndex = 0; meshIndex < meshes.length; meshIndex += 1) {
+    const mesh = meshes[meshIndex]
     const position = mesh.geometry.getAttribute('position') as THREE.BufferAttribute | undefined
     if (!position) continue
     const index = mesh.geometry.index
@@ -285,11 +288,10 @@ export function buildAvatarMeshColliderSnapshotFromSkinnedMeshes(
         continue
       }
       triangleOrdinal += 1
-      const base = vertices.length / 3
-      pushSkinnedWorldVertex(vertices, mesh, ia)
-      pushSkinnedWorldVertex(vertices, mesh, ib)
-      pushSkinnedWorldVertex(vertices, mesh, ic)
-      indices.push(base, base + 1, base + 2)
+      const a = pushUniqueSkinnedWorldVertex(vertices, vertexMap, meshIndex, mesh, ia)
+      const b = pushUniqueSkinnedWorldVertex(vertices, vertexMap, meshIndex, mesh, ib)
+      const c = pushUniqueSkinnedWorldVertex(vertices, vertexMap, meshIndex, mesh, ic)
+      indices.push(a, b, c)
     }
   }
 
@@ -349,17 +351,42 @@ function collectRegionSamples(
     if (!region) continue
     counts[region] = (counts[region] ?? 0) + 1
     if (index % BUILD_SAMPLE_STRIDE !== 0) continue
-    mesh.applyBoneTransform(index, _samplePoint)
+    copySkinnedWorldVertex(mesh, position, index, _samplePoint)
     _samplePoint.applyMatrix4(mesh.matrixWorld)
     out[region].push(_samplePoint.clone())
   }
   return position.count
 }
 
-function pushSkinnedWorldVertex(vertices: number[], mesh: THREE.SkinnedMesh, vertexIndex: number) {
-  mesh.applyBoneTransform(vertexIndex, _samplePoint)
+function pushUniqueSkinnedWorldVertex(
+  vertices: number[],
+  vertexMap: Map<string, number>,
+  meshIndex: number,
+  mesh: THREE.SkinnedMesh,
+  vertexIndex: number,
+) {
+  const key = `${meshIndex}:${vertexIndex}`
+  const existing = vertexMap.get(key)
+  if (existing !== undefined) return existing
+  const position = mesh.geometry.getAttribute('position') as THREE.BufferAttribute | undefined
+  if (!position) return 0
+  const nextIndex = vertices.length / 3
+  copySkinnedWorldVertex(mesh, position, vertexIndex, _samplePoint)
   _samplePoint.applyMatrix4(mesh.matrixWorld)
   vertices.push(_samplePoint.x, _samplePoint.y, _samplePoint.z)
+  vertexMap.set(key, nextIndex)
+  return nextIndex
+}
+
+function copySkinnedWorldVertex(
+  mesh: THREE.SkinnedMesh,
+  position: THREE.BufferAttribute,
+  vertexIndex: number,
+  target: THREE.Vector3,
+) {
+  target.fromBufferAttribute(position, vertexIndex)
+  mesh.applyBoneTransform(vertexIndex, target)
+  return target
 }
 
 function triangleMatchesRegions(
@@ -547,7 +574,7 @@ function buildLowResMeshPatches(meshes: THREE.SkinnedMesh[], bones: Record<strin
       const anchor = getBoneByName(bones, anchorBoneNameForRegion(region, bones))
       if (!anchor) continue
       const patch = getOrCreatePatch(patches, region, anchor.name)
-      mesh.applyBoneTransform(index, _samplePoint)
+      copySkinnedWorldVertex(mesh, position, index, _samplePoint)
       _samplePoint.applyMatrix4(mesh.matrixWorld)
       const local = anchor.worldToLocal(_samplePoint.clone())
       patch.vertices.push(local.x, local.y, local.z)
@@ -711,6 +738,11 @@ function buildTriangleSpatialHash(vertices: Float32Array, indices: Uint32Array, 
     const maxCx = Math.floor(maxX / safeCellSize)
     const maxCy = Math.floor(maxY / safeCellSize)
     const maxCz = Math.floor(maxZ / safeCellSize)
+    const cellSpan =
+      (maxCx - minCx + 1) *
+      (maxCy - minCy + 1) *
+      (maxCz - minCz + 1)
+    if (!Number.isFinite(cellSpan) || cellSpan > MAX_HASH_CELLS_PER_TRIANGLE) continue
     for (let cx = minCx; cx <= maxCx; cx += 1) {
       for (let cy = minCy; cy <= maxCy; cy += 1) {
         for (let cz = minCz; cz <= maxCz; cz += 1) {
