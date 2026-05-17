@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
+import { TransformControls } from '@react-three/drei'
 import { useSnapshot } from 'valtio'
 import * as THREE from 'three/webgpu'
 import RAPIER from '@dimforge/rapier3d-compat'
 import { setIsTransforming } from '../../../appState'
 import { clothingStore } from '../state/clothingStore'
-import type { ClothSimQuality, PatternPiece } from '../state/clothingTypes'
+import { selectPattern, setPatternPlacement } from '../state/clothingActions'
+import type { ClothSimQuality, PatternPiece, PatternPlacement } from '../state/clothingTypes'
 
 type RapierWorld = InstanceType<(typeof RAPIER)['World']>
 type RapierRigidBody = ReturnType<RapierWorld['createRigidBody']>
@@ -41,7 +43,6 @@ type ClothDragState = {
   particles: DragParticle[]
   plane: THREE.Plane
   point: THREE.Vector3
-  previousPoint: THREE.Vector3
   velocity: THREE.Vector3
   lastTime: number
 }
@@ -57,38 +58,40 @@ type QualitySettings = {
 
 const HEAD_CENTER = { x: 0, y: 0.03, z: 0.02 }
 const HEAD_RADIUS = 0.34
-const PARTICLE_RADIUS = 0.009
+const PARTICLE_RADIUS = 0.008
 const FIXED_STEP = 1 / 90
 const MAX_SUBSTEPS = 4
+const PATTERN_UNIT_SCALE = 0.004
+
 const QUALITY_SETTINGS: Record<ClothSimQuality, QualitySettings> = {
   low: {
-    spacingScale: 1.35,
-    minParticles: 10,
-    maxParticles: 16,
+    spacingScale: 0.85,
+    minParticles: 14,
+    maxParticles: 28,
     solverIterations: 8,
     internalPgsIterations: 1,
     bendStiffness: 12,
   },
   medium: {
-    spacingScale: 1,
-    minParticles: 12,
-    maxParticles: 24,
+    spacingScale: 0.42,
+    minParticles: 24,
+    maxParticles: 48,
     solverIterations: 14,
     internalPgsIterations: 2,
     bendStiffness: 18,
   },
   high: {
-    spacingScale: 0.72,
-    minParticles: 16,
-    maxParticles: 32,
+    spacingScale: 0.28,
+    minParticles: 34,
+    maxParticles: 72,
     solverIterations: 20,
     internalPgsIterations: 3,
     bendStiffness: 24,
   },
   ultra: {
-    spacingScale: 0.55,
-    minParticles: 20,
-    maxParticles: 42,
+    spacingScale: 0.2,
+    minParticles: 44,
+    maxParticles: 96,
     solverIterations: 28,
     internalPgsIterations: 4,
     bendStiffness: 30,
@@ -108,7 +111,7 @@ function clamp(value: number, min: number, max: number) {
 
 function getPatternBounds(piece: PatternPiece | undefined) {
   const points = piece ? Object.values(piece.points) : []
-  if (!points.length) return { width: 280, depth: 280 }
+  if (!points.length) return { minX: -140, minY: -140, width: 280, depth: 280 }
 
   let minX = Infinity
   let minY = Infinity
@@ -123,37 +126,36 @@ function getPatternBounds(piece: PatternPiece | undefined) {
   }
 
   return {
-    width: maxX - minX || 280,
-    depth: maxY - minY || 280,
+    minX,
+    minY,
+    width: maxX - minX || 1,
+    depth: maxY - minY || 1,
   }
 }
 
 function getWorldPatternBounds(piece: PatternPiece | undefined): ShapeBounds {
   const bounds = getPatternBounds(piece)
-  const unitScale = 0.004
   return {
-    width: clamp(bounds.width * unitScale, 0.6, 1.25),
-    depth: clamp(bounds.depth * unitScale, 0.6, 1.25),
+    width: Math.max(bounds.width * PATTERN_UNIT_SCALE, 0.08),
+    depth: Math.max(bounds.depth * PATTERN_UNIT_SCALE, 0.08),
   }
 }
 
 function makeClothSpec(piece: PatternPiece | undefined, quality: ClothSimQuality): ClothSpec {
-  const bounds = getPatternBounds(piece)
+  const bounds = getWorldPatternBounds(piece)
   const settings = QUALITY_SETTINGS[quality]
-  const unitScale = 0.004
-  const width = clamp(bounds.width * unitScale, 0.6, 1.25)
-  const depth = clamp(bounds.depth * unitScale, 0.6, 1.25)
-  const targetSpacing = clamp((piece?.particleDistance ?? 22) * unitScale * settings.spacingScale, 0.028, 0.12)
-  const cols = Math.round(clamp(Math.round(width / targetSpacing) + 1, settings.minParticles, settings.maxParticles))
-  const rows = Math.round(clamp(Math.round(depth / targetSpacing) + 1, settings.minParticles, settings.maxParticles))
+  const baseParticleDistance = (piece?.particleDistance ?? 22) * PATTERN_UNIT_SCALE
+  const targetSpacing = clamp(baseParticleDistance * settings.spacingScale, 0.012, 0.12)
+  const cols = Math.round(clamp(Math.round(bounds.width / targetSpacing) + 1, settings.minParticles, settings.maxParticles))
+  const rows = Math.round(clamp(Math.round(bounds.depth / targetSpacing) + 1, settings.minParticles, settings.maxParticles))
 
   return {
     cols,
     rows,
-    width,
-    depth,
-    spacingX: width / (cols - 1),
-    spacingZ: depth / (rows - 1),
+    width: bounds.width,
+    depth: bounds.depth,
+    spacingX: bounds.width / (cols - 1),
+    spacingZ: bounds.depth / (rows - 1),
   }
 }
 
@@ -164,11 +166,7 @@ function makeInitialPosition(spec: ClothSpec, col: number, row: number) {
   const z = (v - 0.48) * spec.depth
   const ripple = Math.sin(u * Math.PI * 2.0) * Math.sin(v * Math.PI) * 0.015
 
-  return {
-    x,
-    y: 0.72 + ripple,
-    z,
-  }
+  return { x, y: 0.72 + ripple, z }
 }
 
 function bodyAt(bodies: RapierRigidBody[], spec: ClothSpec, col: number, row: number) {
@@ -199,36 +197,21 @@ function createSimulation(spec: ClothSpec, quality: ClothSimQuality): ClothSimul
   world.numInternalPgsIterations = settings.internalPgsIterations
   world.maxCcdSubsteps = 2
 
-  const headBody = world.createRigidBody(
-    RAPIER.RigidBodyDesc.fixed().setTranslation(HEAD_CENTER.x, HEAD_CENTER.y, HEAD_CENTER.z),
-  )
+  const headBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(HEAD_CENTER.x, HEAD_CENTER.y, HEAD_CENTER.z))
   world.createCollider(
-    RAPIER.ColliderDesc.ball(HEAD_RADIUS)
-      .setFriction(1.25)
-      .setRestitution(0.02)
-      .setContactSkin(0.012),
+    RAPIER.ColliderDesc.ball(HEAD_RADIUS).setFriction(1.25).setRestitution(0.02).setContactSkin(0.012),
     headBody,
   )
 
-  const shoulderBody = world.createRigidBody(
-    RAPIER.RigidBodyDesc.fixed().setTranslation(0, -0.39, -0.01),
-  )
+  const shoulderBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -0.39, -0.01))
   world.createCollider(
-    RAPIER.ColliderDesc.cuboid(0.48, 0.12, 0.22)
-      .setFriction(1.1)
-      .setRestitution(0.01)
-      .setContactSkin(0.01),
+    RAPIER.ColliderDesc.cuboid(0.48, 0.12, 0.22).setFriction(1.1).setRestitution(0.01).setContactSkin(0.01),
     shoulderBody,
   )
 
-  const chestBody = world.createRigidBody(
-    RAPIER.RigidBodyDesc.fixed().setTranslation(0, -0.82, -0.02),
-  )
+  const chestBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -0.82, -0.02))
   world.createCollider(
-    RAPIER.ColliderDesc.cuboid(0.31, 0.38, 0.17)
-      .setFriction(1.05)
-      .setRestitution(0.01)
-      .setContactSkin(0.01),
+    RAPIER.ColliderDesc.cuboid(0.31, 0.38, 0.17).setFriction(1.05).setRestitution(0.01).setContactSkin(0.01),
     chestBody,
   )
 
@@ -248,10 +231,7 @@ function createSimulation(spec: ClothSpec, quality: ClothSimQuality): ClothSimul
       )
       body.setAdditionalSolverIterations(8)
       world.createCollider(
-        RAPIER.ColliderDesc.ball(PARTICLE_RADIUS)
-          .setFriction(0.95)
-          .setRestitution(0.0)
-          .setContactSkin(0.004),
+        RAPIER.ColliderDesc.ball(PARTICLE_RADIUS).setFriction(0.95).setRestitution(0.0).setContactSkin(0.004),
         body,
       )
       bodies.push(body)
@@ -262,24 +242,16 @@ function createSimulation(spec: ClothSpec, quality: ClothSimQuality): ClothSimul
     for (let col = 0; col < spec.cols; col += 1) {
       const current = bodyAt(bodies, spec, col, row)
 
-      if (col + 1 < spec.cols) {
-        addSpring(world, current, bodyAt(bodies, spec, col + 1, row), spec.spacingX, 52, 4.2)
-      }
-      if (row + 1 < spec.rows) {
-        addSpring(world, current, bodyAt(bodies, spec, col, row + 1), spec.spacingZ, 52, 4.2)
-      }
+      if (col + 1 < spec.cols) addSpring(world, current, bodyAt(bodies, spec, col + 1, row), spec.spacingX, 52, 4.2)
+      if (row + 1 < spec.rows) addSpring(world, current, bodyAt(bodies, spec, col, row + 1), spec.spacingZ, 52, 4.2)
       if (col + 1 < spec.cols && row + 1 < spec.rows) {
         addSpring(world, current, bodyAt(bodies, spec, col + 1, row + 1), Math.hypot(spec.spacingX, spec.spacingZ), 34, 3.4)
       }
       if (col > 0 && row + 1 < spec.rows) {
         addSpring(world, current, bodyAt(bodies, spec, col - 1, row + 1), Math.hypot(spec.spacingX, spec.spacingZ), 34, 3.4)
       }
-      if (col + 2 < spec.cols) {
-        addSpring(world, current, bodyAt(bodies, spec, col + 2, row), spec.spacingX * 2, settings.bendStiffness, 2.2)
-      }
-      if (row + 2 < spec.rows) {
-        addSpring(world, current, bodyAt(bodies, spec, col, row + 2), spec.spacingZ * 2, settings.bendStiffness, 2.2)
-      }
+      if (col + 2 < spec.cols) addSpring(world, current, bodyAt(bodies, spec, col + 2, row), spec.spacingX * 2, settings.bendStiffness, 2.2)
+      if (row + 2 < spec.rows) addSpring(world, current, bodyAt(bodies, spec, col, row + 2), spec.spacingZ * 2, settings.bendStiffness, 2.2)
     }
   }
 
@@ -290,34 +262,22 @@ function createClothGeometry(spec: ClothSpec) {
   const geometry = new THREE.BufferGeometry()
   const positions = new Float32Array(spec.cols * spec.rows * 3)
   const uvs = new Float32Array(spec.cols * spec.rows * 2)
-  const indices: number[] = []
 
   for (let row = 0; row < spec.rows; row += 1) {
     for (let col = 0; col < spec.cols; col += 1) {
       const vertexIndex = row * spec.cols + col
       const p = makeInitialPosition(spec, col, row)
-
       positions[vertexIndex * 3 + 0] = p.x
       positions[vertexIndex * 3 + 1] = p.y
       positions[vertexIndex * 3 + 2] = p.z
       uvs[vertexIndex * 2 + 0] = col / (spec.cols - 1)
       uvs[vertexIndex * 2 + 1] = 1 - row / (spec.rows - 1)
-
-      if (col + 1 < spec.cols && row + 1 < spec.rows) {
-        const a = vertexIndex
-        const b = vertexIndex + 1
-        const c = vertexIndex + spec.cols
-        const d = c + 1
-        indices.push(a, c, b, b, c, d)
-      }
     }
   }
 
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
   geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2))
-  geometry.setIndex(indices)
   geometry.computeVertexNormals()
-
   return geometry
 }
 
@@ -351,15 +311,13 @@ function pointInPatternPiece(point: { x: number; y: number }, piece: PatternPiec
 function updateClothTopologyFromPattern(geometry: THREE.BufferGeometry, spec: ClothSpec, piece: PatternPiece | undefined) {
   if (!piece?.closed) return
   const bounds = getPatternBounds(piece)
-  const minX = Math.min(...Object.values(piece.points).map((point) => point.x))
-  const minY = Math.min(...Object.values(piece.points).map((point) => point.y))
   const indices: number[] = []
 
   for (let row = 0; row < spec.rows - 1; row += 1) {
     for (let col = 0; col < spec.cols - 1; col += 1) {
       const center = {
-        x: minX + ((col + 0.5) / (spec.cols - 1)) * bounds.width,
-        y: minY + ((row + 0.5) / (spec.rows - 1)) * bounds.depth,
+        x: bounds.minX + ((col + 0.5) / (spec.cols - 1)) * bounds.width,
+        y: bounds.minY + ((row + 0.5) / (spec.rows - 1)) * bounds.depth,
       }
       if (!pointInPatternPiece(center, piece)) continue
 
@@ -377,8 +335,8 @@ function updateClothTopologyFromPattern(geometry: THREE.BufferGeometry, spec: Cl
 
 function warpSimulationToPattern(sim: ClothSimulation | null, previous: ShapeBounds, next: ShapeBounds) {
   if (!sim || sim.disposed) return
-  const scaleX = clamp(next.width / previous.width, 0.72, 1.38)
-  const scaleZ = clamp(next.depth / previous.depth, 0.72, 1.38)
+  const scaleX = clamp(next.width / previous.width, 0.35, 2.85)
+  const scaleZ = clamp(next.depth / previous.depth, 0.35, 2.85)
   if (Math.abs(scaleX - 1) < 0.01 && Math.abs(scaleZ - 1) < 0.01) return
 
   for (const body of sim.bodies) {
@@ -417,26 +375,56 @@ function vectorFromBody(body: RapierRigidBody) {
   return new THREE.Vector3(p.x, p.y, p.z)
 }
 
-export default function RapierClothDemo() {
+function defaultPlacement(index: number, count: number): PatternPlacement {
+  return {
+    position: { x: (index - (count - 1) / 2) * 0.08, y: 0, z: index * 0.018 },
+    rotation: { x: 0, y: 0, z: 0 },
+  }
+}
+
+type ClothPieceProps = {
+  piece: PatternPiece
+  index: number
+  count: number
+  selected: boolean
+  placement?: PatternPlacement
+  simRunning: boolean
+  simResetKey: number
+  simQuality: ClothSimQuality
+  transformMode: 'translate' | 'rotate'
+  showWireframe: boolean
+  showTriangulation: boolean
+}
+
+function ClothPiece({
+  piece,
+  index,
+  count,
+  selected,
+  placement,
+  simRunning,
+  simResetKey,
+  simQuality,
+  transformMode,
+  showWireframe,
+  showTriangulation,
+}: ClothPieceProps) {
   const { camera } = useThree()
-  const { garment, previewOptions, simRunning, simResetKey, simQuality } = useSnapshot(clothingStore)
-  const selectedPattern = garment.selectedPatternId ? garment.patterns[garment.selectedPatternId] as PatternPiece | undefined : undefined
-  const selectedPatternId = garment.selectedPatternId ?? 'none'
-  const documentId = garment.id
-  const simKey = `${documentId}:${selectedPatternId}:${simResetKey}:${simQuality}`
-  const patternRevision = selectedPattern
-    ? JSON.stringify({
-      points: Object.values(selectedPattern.points).map((point) => [point.id, point.x, point.y, point.in, point.out]),
-      edges: selectedPattern.edges.map((edge) => [edge.id, edge.from, edge.to, edge.curve]),
-      holes: selectedPattern.holes?.map((loop) => loop.map((edge) => [edge.id, edge.from, edge.to, edge.curve])),
-    })
-    : 'none'
-  const spec = useMemo(() => makeClothSpec(selectedPattern, simQuality), [simKey])
-  const geometry = useMemo(() => createClothGeometry(spec), [simKey])
+  const groupRef = useRef<THREE.Group>(null)
   const simRef = useRef<ClothSimulation | null>(null)
   const shapeBoundsRef = useRef<ShapeBounds | null>(null)
   const dragRef = useRef<ClothDragState | null>(null)
   const [rapierReady, setRapierReady] = useState(false)
+
+  const simKey = `${piece.id}:${simResetKey}:${simQuality}`
+  const spec = useMemo(() => makeClothSpec(piece, simQuality), [piece.id, simKey])
+  const geometry = useMemo(() => createClothGeometry(spec), [simKey, spec])
+  const currentPlacement = placement ?? defaultPlacement(index, count)
+  const patternRevision = JSON.stringify({
+    points: Object.values(piece.points).map((point) => [point.id, point.x, point.y, point.in, point.out]),
+    edges: piece.edges.map((edge) => [edge.id, edge.from, edge.to, edge.curve]),
+    holes: piece.holes?.map((loop) => loop.map((edge) => [edge.id, edge.from, edge.to, edge.curve])),
+  })
 
   useEffect(() => {
     let cancelled = false
@@ -444,15 +432,14 @@ export default function RapierClothDemo() {
 
     initRapierOnce().then(() => {
       if (cancelled) return
-
       const previous = simRef.current
       simRef.current = null
       disposeSimulation(previous)
 
       const next = createSimulation(spec, simQuality)
       simRef.current = next
-      shapeBoundsRef.current = getWorldPatternBounds(selectedPattern)
-      updateClothTopologyFromPattern(geometry, spec, selectedPattern)
+      shapeBoundsRef.current = getWorldPatternBounds(piece)
+      updateClothTopologyFromPattern(geometry, spec, piece)
       writeBodiesToGeometry(next, geometry)
       setRapierReady(true)
     })
@@ -465,37 +452,41 @@ export default function RapierClothDemo() {
       simRef.current = null
       disposeSimulation(previous)
     }
-  }, [geometry, selectedPattern, simKey, simQuality, spec])
+  }, [geometry, piece.id, simKey, simQuality, spec])
+
+  useEffect(() => () => geometry.dispose(), [geometry])
 
   useEffect(() => {
-    return () => geometry.dispose()
-  }, [geometry])
-
-  useEffect(() => {
-    const nextBounds = getWorldPatternBounds(selectedPattern)
+    const nextBounds = getWorldPatternBounds(piece)
     const previousBounds = shapeBoundsRef.current ?? nextBounds
-    updateClothTopologyFromPattern(geometry, spec, selectedPattern)
+    updateClothTopologyFromPattern(geometry, spec, piece)
     warpSimulationToPattern(simRef.current, previousBounds, nextBounds)
     shapeBoundsRef.current = nextBounds
-  }, [geometry, patternRevision, selectedPattern, spec])
+  }, [geometry, patternRevision, piece, spec])
 
-  function getDragParticles(point: THREE.Vector3): DragParticle[] {
+  function worldToLocalPoint(point: THREE.Vector3) {
+    const group = groupRef.current
+    return group ? group.worldToLocal(point.clone()) : point.clone()
+  }
+
+  function localToWorldPoint(point: THREE.Vector3) {
+    const group = groupRef.current
+    return group ? group.localToWorld(point.clone()) : point.clone()
+  }
+
+  function getDragParticles(localPoint: THREE.Vector3): DragParticle[] {
     const sim = simRef.current
     if (!sim || sim.disposed) return []
 
     let nearestIndex = -1
     let nearestDistanceSq = Infinity
-    const radius = clamp(Math.max(spec.spacingX, spec.spacingZ) * 4.8, 0.18, 0.36)
+    const radius = clamp(Math.max(spec.spacingX, spec.spacingZ) * 4.8, 0.16, 0.42)
     const radiusSq = radius * radius
     const particles: Array<DragParticle & { distanceSq: number }> = []
 
     for (let i = 0; i < sim.bodies.length; i += 1) {
       const bodyPoint = vectorFromBody(sim.bodies[i])
-      const dx = bodyPoint.x - point.x
-      const dy = bodyPoint.y - point.y
-      const dz = bodyPoint.z - point.z
-      const dSq = dx * dx + dy * dy + dz * dz
-
+      const dSq = bodyPoint.distanceToSquared(localPoint)
       if (dSq < nearestDistanceSq) {
         nearestDistanceSq = dSq
         nearestIndex = i
@@ -504,7 +495,7 @@ export default function RapierClothDemo() {
         const normalized = Math.sqrt(dSq) / radius
         particles.push({
           index: i,
-          offset: bodyPoint.sub(point),
+          offset: bodyPoint.sub(localPoint),
           weight: clamp(1 - normalized * 0.75, 0.25, 1),
           distanceSq: dSq,
         })
@@ -514,7 +505,7 @@ export default function RapierClothDemo() {
     if (!particles.length && nearestIndex >= 0) {
       particles.push({
         index: nearestIndex,
-        offset: vectorFromBody(sim.bodies[nearestIndex]).sub(point),
+        offset: vectorFromBody(sim.bodies[nearestIndex]).sub(localPoint),
         weight: 1,
         distanceSq: nearestDistanceSq,
       })
@@ -522,12 +513,13 @@ export default function RapierClothDemo() {
 
     return particles
       .sort((a, b) => a.distanceSq - b.distanceSq)
-      .slice(0, 72)
+      .slice(0, 96)
       .map(({ distanceSq: _distanceSq, ...particle }) => particle)
   }
 
   function intersectDragPlane(event: ThreeEvent<PointerEvent>, plane: THREE.Plane) {
-    return event.ray.intersectPlane(plane, new THREE.Vector3())
+    const worldPoint = event.ray.intersectPlane(plane, new THREE.Vector3())
+    return worldPoint ? worldToLocalPoint(worldPoint) : null
   }
 
   function applyDragPull(drag: ClothDragState) {
@@ -540,15 +532,11 @@ export default function RapierClothDemo() {
 
       const current = vectorFromBody(body)
       const target = drag.point.clone().add(particle.offset)
-      const error = target.sub(current)
       const linvel = body.linvel()
-      const desiredVelocity = error.multiplyScalar(18).add(drag.velocity.clone().multiplyScalar(0.95))
+      const desiredVelocity = target.sub(current).multiplyScalar(18).add(drag.velocity.clone().multiplyScalar(0.95))
       const velocityDelta = desiredVelocity.sub(new THREE.Vector3(linvel.x, linvel.y, linvel.z))
       const maxDelta = 14
-
-      if (velocityDelta.lengthSq() > maxDelta * maxDelta) {
-        velocityDelta.normalize().multiplyScalar(maxDelta)
-      }
+      if (velocityDelta.lengthSq() > maxDelta * maxDelta) velocityDelta.normalize().multiplyScalar(maxDelta)
 
       const impulse = velocityDelta.multiplyScalar(0.018 * particle.weight)
       body.wakeUp()
@@ -564,9 +552,7 @@ export default function RapierClothDemo() {
 
     const flick = drag.velocity.clone()
     const maxFlick = 10
-    if (flick.lengthSq() > maxFlick * maxFlick) {
-      flick.normalize().multiplyScalar(maxFlick)
-    }
+    if (flick.lengthSq() > maxFlick * maxFlick) flick.normalize().multiplyScalar(maxFlick)
 
     for (const particle of drag.particles) {
       const body = sim.bodies[particle.index]
@@ -581,19 +567,22 @@ export default function RapierClothDemo() {
 
   function handlePointerDown(event: ThreeEvent<PointerEvent>) {
     event.stopPropagation()
-    const point = event.point.clone()
-    const particles = getDragParticles(point)
+    selectPattern(piece.id)
+
+    if (!simRunning) return
+
+    const localPoint = worldToLocalPoint(event.point)
+    const particles = getDragParticles(localPoint)
     if (!particles.length) return
 
     const normal = new THREE.Vector3()
     camera.getWorldDirection(normal)
-    const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(normal, point)
+    const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(normal, localToWorldPoint(localPoint))
 
     dragRef.current = {
       particles,
       plane,
-      point,
-      previousPoint: point.clone(),
+      point: localPoint,
       velocity: new THREE.Vector3(),
       lastTime: performance.now(),
     }
@@ -611,8 +600,6 @@ export default function RapierClothDemo() {
     const now = performance.now()
     const dt = Math.max((now - drag.lastTime) / 1000, 1 / 240)
     const instantaneousVelocity = nextPoint.clone().sub(drag.point).divideScalar(dt)
-
-    drag.previousPoint.copy(drag.point)
     drag.point.copy(nextPoint)
     drag.velocity.lerp(instantaneousVelocity, 0.55)
     drag.lastTime = now
@@ -633,9 +620,7 @@ export default function RapierClothDemo() {
     if (!sim || sim.disposed || !rapierReady) return
 
     try {
-      if (dragRef.current) {
-        applyDragPull(dragRef.current)
-      }
+      if (dragRef.current) applyDragPull(dragRef.current)
 
       if (simRunning || dragRef.current) {
         sim.accumulator += Math.min(delta, 1 / 20)
@@ -657,8 +642,21 @@ export default function RapierClothDemo() {
     }
   })
 
-  return (
-    <group>
+  function updatePlacementFromGroup() {
+    const group = groupRef.current
+    if (!group) return
+    setPatternPlacement(piece.id, {
+      position: { x: group.position.x, y: group.position.y, z: group.position.z },
+      rotation: { x: group.rotation.x, y: group.rotation.y, z: group.rotation.z },
+    })
+  }
+
+  const group = (
+    <group
+      ref={groupRef}
+      position={[currentPlacement.position.x, currentPlacement.position.y, currentPlacement.position.z]}
+      rotation={[currentPlacement.rotation.x, currentPlacement.rotation.y, currentPlacement.rotation.z]}
+    >
       <mesh
         geometry={geometry}
         frustumCulled={false}
@@ -669,17 +667,62 @@ export default function RapierClothDemo() {
         onLostPointerCapture={handlePointerUp}
       >
         <meshStandardMaterial
-          color="#5f8cff"
+          color={selected ? '#75a4ff' : '#5f8cff'}
           roughness={0.82}
           metalness={0}
           side={THREE.DoubleSide}
         />
       </mesh>
-      {(previewOptions.showWireframe || previewOptions.showTriangulation) && (
+      {(showWireframe || showTriangulation) && (
         <mesh geometry={geometry} frustumCulled={false}>
           <meshBasicMaterial color="#ffffff" wireframe transparent opacity={0.24} depthWrite={false} />
         </mesh>
       )}
+    </group>
+  )
+
+  if (selected && !simRunning) {
+    return (
+      <TransformControls
+        mode={transformMode}
+        size={0.72}
+        onMouseDown={() => setIsTransforming(true)}
+        onMouseUp={() => {
+          updatePlacementFromGroup()
+          setIsTransforming(false)
+        }}
+        onObjectChange={updatePlacementFromGroup}
+      >
+        {group}
+      </TransformControls>
+    )
+  }
+
+  return group
+}
+
+export default function RapierClothDemo() {
+  const { garment, placements, previewOptions, simRunning, simResetKey, simQuality, transformMode } = useSnapshot(clothingStore)
+  const pieces = Object.values(garment.patterns) as PatternPiece[]
+
+  return (
+    <group>
+      {pieces.map((piece, index) => (
+        <ClothPiece
+          key={piece.id}
+          piece={piece}
+          index={index}
+          count={pieces.length}
+          selected={piece.id === garment.selectedPatternId}
+          placement={placements[piece.id] as PatternPlacement | undefined}
+          simRunning={simRunning}
+          simResetKey={simResetKey}
+          simQuality={simQuality}
+          transformMode={transformMode}
+          showWireframe={previewOptions.showWireframe}
+          showTriangulation={previewOptions.showTriangulation}
+        />
+      ))}
       {previewOptions.showTriangulation && (
         <group>
           <mesh position={[HEAD_CENTER.x, HEAD_CENTER.y, HEAD_CENTER.z]}>

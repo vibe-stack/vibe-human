@@ -80,6 +80,7 @@ export default function PatternCanvas() {
         | { type: 'handle'; patternId: string; pointId: string; handleKind: 'in' | 'out' }
         | null = null
       let pendingSeam: { patternId: string; edgeId: string } | null = null
+      let drawingRect: { start: { x: number; y: number }; current: { x: number; y: number } } | null = null
 
       const canvas = app.canvas as HTMLCanvasElement
 
@@ -128,8 +129,8 @@ export default function PatternCanvas() {
         }
 
         if (tool === 'draw') {
-          const id = createRectanglePattern(world, 160, 120)
-          selectPattern(id)
+          drawingRect = { start: world, current: world }
+          canvas.setPointerCapture(e.pointerId)
           return
         }
 
@@ -207,6 +208,11 @@ export default function PatternCanvas() {
           return
         }
 
+        if (drawingRect) {
+          drawingRect.current = worldPt
+          return
+        }
+
         // Hover
         const pick = pickAt(clothingStore.garment, worldPt, clothingStore.viewport2D.zoom)
         if (!pick) {
@@ -221,8 +227,24 @@ export default function PatternCanvas() {
       })
 
       canvas.addEventListener('pointerup', (e) => {
+        if (drawingRect) {
+          const width = Math.abs(drawingRect.current.x - drawingRect.start.x)
+          const height = Math.abs(drawingRect.current.y - drawingRect.start.y)
+          if (width >= 8 && height >= 8) {
+            const id = createRectanglePattern(
+              {
+                x: (drawingRect.start.x + drawingRect.current.x) / 2,
+                y: (drawingRect.start.y + drawingRect.current.y) / 2,
+              },
+              width,
+              height,
+            )
+            selectPattern(id)
+          }
+        }
         isPanning = false
         dragging  = null
+        drawingRect = null
         canvas.releasePointerCapture(e.pointerId)
       })
 

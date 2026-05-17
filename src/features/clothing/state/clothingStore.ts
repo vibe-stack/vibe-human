@@ -1,5 +1,5 @@
 import { proxy } from 'valtio'
-import type { ClothSimQuality, GarmentDocument, ClothingTool } from './clothingTypes'
+import type { ClothSimQuality, ClothingTransformMode, GarmentDocument, ClothingTool, PatternPlacement } from './clothingTypes'
 
 // ---------------------------------------------------------------------------
 // Clothing feature state
@@ -33,6 +33,8 @@ type ClothingState = {
   simRunning: boolean
   simResetKey: number
   simQuality: ClothSimQuality
+  transformMode: ClothingTransformMode
+  placements: Record<string, PatternPlacement>
 }
 
 const EMPTY_GARMENT: GarmentDocument = {
@@ -64,4 +66,6 @@ export const clothingStore = proxy<ClothingState>({
   simRunning: false,
   simResetKey: 0,
   simQuality: 'medium',
+  transformMode: 'translate',
+  placements: {},
 })

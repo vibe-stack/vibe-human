@@ -1,13 +1,18 @@
 import { useSnapshot } from 'valtio'
 import { clothingStore } from '../state/clothingStore'
-import { resetSim, setSimQuality, toggleSimRunning } from '../state/clothingActions'
-import type { ClothSimQuality } from '../state/clothingTypes'
+import { resetSim, setSimQuality, setTransformMode, toggleSimRunning } from '../state/clothingActions'
+import type { ClothSimQuality, ClothingTransformMode } from '../state/clothingTypes'
 
 const QUALITY_OPTIONS: Array<{ id: ClothSimQuality; label: string }> = [
   { id: 'low', label: 'Low' },
   { id: 'medium', label: 'Medium' },
   { id: 'high', label: 'High' },
   { id: 'ultra', label: 'Ultra' },
+]
+
+const TRANSFORM_OPTIONS: Array<{ id: ClothingTransformMode; label: string }> = [
+  { id: 'translate', label: 'Move' },
+  { id: 'rotate', label: 'Rotate' },
 ]
 
 // ---------------------------------------------------------------------------
@@ -17,7 +22,7 @@ const QUALITY_OPTIONS: Array<{ id: ClothSimQuality; label: string }> = [
 
 export default function ClothingInspector() {
   const snap = useSnapshot(clothingStore)
-  const { garment, previewOptions, activeClothingTool, simRunning, simQuality } = snap
+  const { garment, previewOptions, activeClothingTool, simRunning, simQuality, transformMode } = snap
 
   const selectedPattern = garment.selectedPatternId
     ? garment.patterns[garment.selectedPatternId]
@@ -73,6 +78,12 @@ export default function ClothingInspector() {
             value={simQuality}
             options={QUALITY_OPTIONS}
             onChange={setSimQuality}
+          />
+          <Row label="Placement" value={transformMode.toUpperCase()} />
+          <SegmentedControl
+            value={transformMode}
+            options={TRANSFORM_OPTIONS}
+            onChange={setTransformMode}
           />
           <ButtonRow>
             <SmallButton label={simRunning ? 'PAUSE' : 'RUN'} onClick={toggleSimRunning} />

@@ -75,3 +75,10 @@ export type GarmentDocument = {
 export type ClothingTool = 'select' | 'draw' | 'edit-points' | 'seam' | 'pan'
 
 export type ClothSimQuality = 'low' | 'medium' | 'high' | 'ultra'
+
+export type ClothingTransformMode = 'translate' | 'rotate'
+
+export type PatternPlacement = {
+  position: Vec3
+  rotation: Vec3
+}

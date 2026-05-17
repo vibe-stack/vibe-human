@@ -1,6 +1,6 @@
 import { nanoid } from '../../../utils/nanoid'
 import { clothingStore } from './clothingStore'
-import type { ClothSimQuality, ClothingTool, GarmentDocument, PatternEdge, PatternPiece, PatternPoint, Seam, Vec2 } from './clothingTypes'
+import type { ClothSimQuality, ClothingTool, ClothingTransformMode, GarmentDocument, PatternEdge, PatternPiece, PatternPoint, PatternPlacement, Seam, Vec2 } from './clothingTypes'
 
 // ---------------------------------------------------------------------------
 // Helper: generate a short id without external dep
@@ -135,6 +135,33 @@ export function createRectanglePattern(center: Vec2, width = 180, height = 140):
   return id
 }
 
+export function setRectanglePatternBounds(patternId: string, a: Vec2, b: Vec2) {
+  const pattern = clothingStore.garment.patterns[patternId]
+  if (!pattern || pattern.edges.length < 4) return
+
+  const minX = Math.min(a.x, b.x)
+  const maxX = Math.max(a.x, b.x)
+  const minY = Math.min(a.y, b.y)
+  const maxY = Math.max(a.y, b.y)
+  if (maxX - minX < 4 || maxY - minY < 4) return
+
+  const topLeft = pattern.points[pattern.edges[0].from]
+  const topRight = pattern.points[pattern.edges[0].to]
+  const bottomRight = pattern.points[pattern.edges[1].to]
+  const bottomLeft = pattern.points[pattern.edges[2].to]
+  if (!topLeft || !topRight || !bottomRight || !bottomLeft) return
+
+  topLeft.x = minX
+  topLeft.y = minY
+  topRight.x = maxX
+  topRight.y = minY
+  bottomRight.x = maxX
+  bottomRight.y = maxY
+  bottomLeft.x = minX
+  bottomLeft.y = maxY
+  markPreviewDirty()
+}
+
 export function deletePoint(patternId: string, pointId: string) {
   const pattern = clothingStore.garment.patterns[patternId]
   if (!pattern) return
@@ -242,6 +269,14 @@ export function setSimQuality(quality: ClothSimQuality) {
   clothingStore.simQuality = quality
   clothingStore.simResetKey += 1
   clothingStore.simRunning = false
+}
+
+export function setTransformMode(mode: ClothingTransformMode) {
+  clothingStore.transformMode = mode
+}
+
+export function setPatternPlacement(patternId: string, placement: PatternPlacement) {
+  clothingStore.placements[patternId] = placement
 }
 
 // ---------------------------------------------------------------------------
