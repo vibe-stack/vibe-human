@@ -42,7 +42,7 @@ export type BoneDebug = {
   deltaRotation: [number, number, number]
 }
 
-const MODEL_URL = `${import.meta.env.BASE_URL}human4.glb?v=identity-modeling-2026-05-10-1`
+const MODEL_URL = `${import.meta.env.BASE_URL}human5.glb?v=identity-modeling-2026-05-10-1`
 const SKIN_MESH_NAMES = new Set(['Head', 'Plane.002'])
 const HEAD_LOOK_YAW = 1.05
 const HEAD_LOOK_PITCH = 0.58

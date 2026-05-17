@@ -105,7 +105,7 @@ export default function App() {
         style={{ width: '100%', height: '100%' }}
       >
         <FovUpdater />
-        <color attach="background" args={['#252525']} />
+        <color attach="background" args={['#565656']} />
         {/* <fog attach="fog" args={['#080810', 2, 6]} /> */}
 
         {/* Key light – front-left, warm, main illumination */}
@@ -127,7 +127,7 @@ export default function App() {
           minDistance={0.2}
           maxDistance={5}
           minPolarAngle={Math.PI * 0.2}
-          maxPolarAngle={Math.PI * 0.8}
+          maxPolarAngle={Math.PI * 0.9}
           target={[0, 0, 0]}
         />
       </Canvas>
