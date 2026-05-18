@@ -27,6 +27,7 @@ export class XPBDClothSolver {
       const gravityScale = this.gravityProgress()
       const damping = this.dampingForAssembly(sewingProgress)
       this.integrate(dt, damping, this.params.gravity * gravityScale)
+      this.clampSubstepDisplacement(sewingProgress)
       for (let iteration = 0; iteration < this.params.iterations; iteration += 1) {
         solveDistanceConstraints(this.mesh, this.mesh.stretchConstraints, dt)
         solveDistanceConstraints(this.mesh, this.mesh.shearConstraints, dt)
@@ -91,6 +92,28 @@ export class XPBDClothSolver {
       velocities[offset] = vx
       velocities[offset + 1] = vy
       velocities[offset + 2] = vz
+    }
+  }
+
+  private clampSubstepDisplacement(sewingProgress: number) {
+    const skin = this.colliders?.meshColliders?.[0]?.skin ?? 0.022
+    const thickness = this.colliders?.meshColliders?.[0]?.thickness ?? 0.008
+    const baseLimit = Math.max(0.005, (skin + thickness) * 0.5)
+    const sewingTighten = 0.6 + 0.4 * sewingProgress
+    const limit = baseLimit * sewingTighten
+    const limitSq = limit * limit
+    const { positions, prevPositions, particleCount } = this.mesh
+    for (let particle = 0; particle < particleCount; particle += 1) {
+      const offset = particle * 3
+      const dx = positions[offset] - prevPositions[offset]
+      const dy = positions[offset + 1] - prevPositions[offset + 1]
+      const dz = positions[offset + 2] - prevPositions[offset + 2]
+      const distSq = dx * dx + dy * dy + dz * dz
+      if (distSq <= limitSq) continue
+      const scale = limit / Math.sqrt(distSq)
+      positions[offset] = prevPositions[offset] + dx * scale
+      positions[offset + 1] = prevPositions[offset + 1] + dy * scale
+      positions[offset + 2] = prevPositions[offset + 2] + dz * scale
     }
   }
 

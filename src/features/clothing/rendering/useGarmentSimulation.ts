@@ -15,7 +15,6 @@ import type {
 } from '../simulation/types'
 import {
   buildAvatarMeshColliderSnapshotFromSkinnedMeshes,
-  buildColliderSnapshotFromCollisionAvatar,
   buildCollisionAvatarFromSkinnedMeshes,
   clearBodyProxySnapshot,
   getBodyProxySnapshot,
@@ -30,16 +29,6 @@ const FIXED_DT = 1 / 60
 const MAX_SUBSTEPS = 4
 const CLOTH_GROUND_Y = -3.15
 const PATTERN_UNIT_SCALE = 0.004
-const HYBRID_MESH_REGIONS = new Set<CollisionRegion>([
-  'neck',
-  'chest',
-  'abdomen',
-  'pelvis',
-  'shoulder.L',
-  'shoulder.R',
-  'hip.L',
-  'hip.R',
-])
 
 const SOLVER_PRESETS: Record<CompileQuality, SolverParams> = {
   low: { gravity: -9.81, damping: 0.08, substeps: 1, iterations: 4, dt: FIXED_DT, groundY: CLOTH_GROUND_Y, maxVelocity: 6, sewingTime: 0.85, gravityDelayTime: 0.7, gravityRampTime: 0.45 },
@@ -204,11 +193,7 @@ function updateColliderSnapshotForStep(
     return
   }
 
-  if (
-    !avatarRef.current
-    || buildRequestRef.current !== collision.buildRequestId
-  ) {
-    const start = collision.debugPerf ? performance.now() : 0
+  if (!avatarRef.current || buildRequestRef.current !== collision.buildRequestId) {
     const avatar = buildCollisionAvatarFromSkinnedMeshes(bones, {
       bodyMeshes,
       headMeshes,
@@ -227,55 +212,20 @@ function updateColliderSnapshotForStep(
       meshPatchCount: avatar.lowResMeshPatches?.length ?? 0,
       sourceVertexCount: avatar.source.vertexCount,
     })
-    if (collision.debugPerf) {
-      console.debug(`[clothing] buildCollisionAvatarProxies ${(performance.now() - start).toFixed(2)}ms`)
-    }
   }
 
-  const proxySnapshot = buildColliderSnapshotFromCollisionAvatar(avatarRef.current, bones, {
-    globalInflate: collision.globalInflate,
-    normalOffset: collision.normalOffset,
-    perRegionInflate: collision.perRegionInflate,
-    skinOffset: collision.skinOffset,
-    garmentThickness: collision.garmentThickness,
-    includeLowResMesh: false,
-    showCapsules: collision.showCapsules,
-    showEllipsoids: collision.showEllipsoids,
-  })
-
-  const shouldBuildMesh =
-    collision.enableVertexTriangle &&
-    collision.mode === 'hybrid'
-
-  const meshKey = shouldBuildMesh
-    ? [
-      collision.mode,
-      collision.buildRequestId,
-      collision.skinOffset.toFixed(4),
-      collision.garmentThickness.toFixed(4),
-      collision.meshCellSize.toFixed(4),
-      collision.meshSampleStride,
-      source.getSkinnedMeshes().length,
-    ].join('|')
-    : ''
-  if (!shouldBuildMesh) {
-    meshColliderRef.current = null
-    meshColliderKeyRef.current = ''
-  } else if (!meshColliderRef.current || meshColliderKeyRef.current !== meshKey) {
-    meshColliderRef.current = timed(collision.debugPerf, 'buildAvatarMeshCollider', () => buildAvatarMeshColliderSnapshotFromSkinnedMeshes(
-      source.getSkinnedMeshes(),
-      {
-        id: collision.mode === 'hybrid' ? 'avatar.mesh.torso' : 'avatar.mesh',
-        skinOffset: collision.skinOffset,
-        garmentThickness: collision.garmentThickness,
-        cellSize: collision.meshCellSize,
-        triangleStride: collision.meshSampleStride,
-        includeRegions: collision.mode === 'hybrid' ? HYBRID_MESH_REGIONS : undefined,
-        debugPerf: collision.debugPerf,
-      },
-    ))
-    meshColliderKeyRef.current = meshKey
-  }
+  meshColliderRef.current = timed(collision.debugPerf, 'buildAvatarMeshCollider', () => buildAvatarMeshColliderSnapshotFromSkinnedMeshes(
+    source.getSkinnedMeshes(),
+    {
+      id: 'avatar.mesh',
+      skinOffset: collision.skinOffset,
+      garmentThickness: collision.garmentThickness,
+      cellSize: collision.meshCellSize,
+      triangleStride: collision.meshSampleStride,
+      debugPerf: collision.debugPerf,
+    },
+  ))
+  meshColliderKeyRef.current = ''
   const meshCollider = meshColliderRef.current
   setCollisionRuntimeStats({
     meshColliderVertexCount: meshCollider ? meshCollider.vertices.length / 3 : 0,
@@ -284,7 +234,7 @@ function updateColliderSnapshotForStep(
   })
 
   setBodyProxySnapshot({
-    proxies: proxySnapshot.proxies,
+    proxies: [],
     meshColliders: meshCollider ? [meshCollider] : undefined,
   })
 }

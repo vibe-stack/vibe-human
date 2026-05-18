@@ -190,8 +190,10 @@ function pushOutOfMeshCollider(
   const cy = Math.floor(py / cellSize)
   const cz = Math.floor(pz / cellSize)
   const visitStamp = nextVisitStamp(collider)
-  let bestSigned = Infinity
-  let bestAbs = Infinity
+  let bestDistSq = Infinity
+  let bestX = 0
+  let bestY = 0
+  let bestZ = 0
   let bestNx = 0
   let bestNy = 1
   let bestNz = 0
@@ -208,14 +210,15 @@ function pushOutOfMeshCollider(
           if (collider.triangleVisitMarks[triangle] === visitStamp) continue
           collider.triangleVisitMarks[triangle] = visitStamp
           if (!closestPointOnTriangle(collider, triangle, px, py, pz, TRIANGLE_RESULT)) continue
-          const signed =
-            (px - TRIANGLE_RESULT[0]) * TRIANGLE_RESULT[3]
-            + (py - TRIANGLE_RESULT[1]) * TRIANGLE_RESULT[4]
-            + (pz - TRIANGLE_RESULT[2]) * TRIANGLE_RESULT[5]
-          const abs = Math.abs(signed)
-          if (abs < bestAbs) {
-            bestSigned = signed
-            bestAbs = abs
+          const deltaX = px - TRIANGLE_RESULT[0]
+          const deltaY = py - TRIANGLE_RESULT[1]
+          const deltaZ = pz - TRIANGLE_RESULT[2]
+          const distSq = deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ
+          if (distSq < bestDistSq) {
+            bestDistSq = distSq
+            bestX = TRIANGLE_RESULT[0]
+            bestY = TRIANGLE_RESULT[1]
+            bestZ = TRIANGLE_RESULT[2]
             bestNx = TRIANGLE_RESULT[3]
             bestNy = TRIANGLE_RESULT[4]
             bestNz = TRIANGLE_RESULT[5]
@@ -225,14 +228,42 @@ function pushOutOfMeshCollider(
     }
   }
 
-  if (bestAbs === Infinity || bestSigned >= target || bestAbs > cellSize * (searchRadius + 1.5)) return false
-  const correction = target - bestSigned
-  out[0] = px + bestNx * correction
-  out[1] = py + bestNy * correction
-  out[2] = pz + bestNz * correction
-  out[3] = bestNx
-  out[4] = bestNy
-  out[5] = bestNz
+  if (bestDistSq === Infinity) return false
+  const dx = px - bestX
+  const dy = py - bestY
+  const dz = pz - bestZ
+  const signed = dx * bestNx + dy * bestNy + dz * bestNz
+  const dist = Math.sqrt(bestDistSq)
+  if (signed >= 0 && dist >= target) return false
+
+  let nx: number
+  let ny: number
+  let nz: number
+  let correction: number
+  if (signed >= 0) {
+    if (dist > 1e-6) {
+      const inv = 1 / dist
+      nx = dx * inv
+      ny = dy * inv
+      nz = dz * inv
+    } else {
+      nx = bestNx
+      ny = bestNy
+      nz = bestNz
+    }
+    correction = target - dist
+  } else {
+    nx = bestNx
+    ny = bestNy
+    nz = bestNz
+    correction = target + dist
+  }
+  out[0] = px + nx * correction
+  out[1] = py + ny * correction
+  out[2] = pz + nz * correction
+  out[3] = nx
+  out[4] = ny
+  out[5] = nz
   return true
 }
 
@@ -436,7 +467,7 @@ function pushOutOfEllipsoid(proxy: EllipsoidProxy, px: number, py: number, pz: n
   const sy = ROTATED_LOCAL[1] / proxy.ry
   const sz = ROTATED_LOCAL[2] / proxy.rz
   const scaledLength = Math.sqrt(sx * sx + sy * sy + sz * sz) || 1e-6
-  if (scaledLength >= 1 + proxy.skin / Math.min(proxy.rx, proxy.ry, proxy.rz)) return null
+  if (scaledLength >= 1 + proxy.skin / Math.min(proxy.rx, proxy.ry, proxy.rz)) return false
 
   const surfScale = 1 / scaledLength
   const surfaceLocalX = ROTATED_LOCAL[0] * surfScale
