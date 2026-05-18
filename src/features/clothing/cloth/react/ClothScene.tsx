@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSnapshot } from 'valtio'
 import * as THREE from 'three/webgpu'
 import { TransformControls } from '@react-three/drei'
+import { useThree } from '@react-three/fiber'
 import { setIsTransforming } from '../../../../appState'
 import { clothingStore } from '../../state/clothingStore'
 import { ClothingDebugView } from '../../debug/ClothingDebugView'
@@ -10,6 +11,10 @@ import { useGarmentSimulation } from '../../rendering/useGarmentSimulation'
 import { selectPattern, setPatternPlacement } from '../../state/clothingActions'
 import type { GarmentDocument, PatternPlacement } from '../../state/clothingTypes'
 
+const _raycaster = new THREE.Raycaster()
+const _ndc = new THREE.Vector2()
+const _hitScratch = new THREE.Vector3()
+
 /** Renders all cloth pieces + optional collision-surface debug viz. */
 export default function ClothScene() {
   const { garment, placements, previewOptions, simRunning, simResetKey, simQuality, transformMode, collisionAvatar } = useSnapshot(clothingStore)
@@ -17,6 +22,7 @@ export default function ClothScene() {
     () => toPatternDocument(garment as unknown as GarmentDocument, placements),
     [garment, placements],
   )
+  const { camera, gl } = useThree()
   const grabRef = useRef<{
     panelId: string
     particle: number
@@ -26,6 +32,8 @@ export default function ClothScene() {
     lastTime: number
     velocity: THREE.Vector3
     pointerId: number
+    onMove: (event: PointerEvent) => void
+    onRelease: (event: PointerEvent) => void
   } | null>(null)
 
   const { runtime, renderPanels, colliderSnapshot, grab } = useGarmentSimulation({
@@ -52,6 +60,20 @@ export default function ClothScene() {
     },
   })
 
+  useEffect(() => {
+    if (simRunning) return
+    const state = grabRef.current
+    if (!state) return
+    const canvas = gl.domElement
+    canvas.removeEventListener('pointermove', state.onMove)
+    canvas.removeEventListener('pointerup', state.onRelease)
+    canvas.removeEventListener('pointercancel', state.onRelease)
+    canvas.removeEventListener('lostpointercapture', state.onRelease)
+    if (canvas.hasPointerCapture(state.pointerId)) canvas.releasePointerCapture(state.pointerId)
+    grab.release()
+    grabRef.current = null
+  }, [simRunning, gl, grab])
+
   return (
     <group>
       {renderPanels.map((panel) => {
@@ -68,64 +90,64 @@ export default function ClothScene() {
               frustumCulled={false}
               onPointerDown={(event) => {
                 event.stopPropagation()
-                if (simRunning) {
-                  const pointer = event.nativeEvent.target as Element | null
-                  pointer?.setPointerCapture?.(event.pointerId)
-                  const cameraForward = event.camera.getWorldDirection(new THREE.Vector3())
-                  const grabPoint = event.point.clone()
-                  const particle = grab.nearestParticleInPanel(panel.panelId, grabPoint.x, grabPoint.y, grabPoint.z)
-                  if (particle < 0) return
-                  const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(cameraForward, grabPoint)
-                  grabRef.current = {
-                    panelId: panel.panelId,
-                    particle,
-                    plane,
-                    target: grabPoint.clone(),
-                    lastTarget: grabPoint.clone(),
-                    lastTime: performance.now(),
-                    velocity: new THREE.Vector3(),
-                    pointerId: event.pointerId,
-                  }
-                  grab.start(particle, grabPoint.x, grabPoint.y, grabPoint.z)
+                if (!simRunning) {
+                  selectPattern(panel.panelId)
                   return
                 }
-                selectPattern(panel.panelId)
-              }}
-              onPointerMove={(event) => {
-                const state = grabRef.current
-                if (!state || state.pointerId !== event.pointerId) return
-                event.stopPropagation()
-                const hit = event.ray.intersectPlane(state.plane, new THREE.Vector3())
-                if (!hit) return
-                const now = performance.now()
-                const dtMs = Math.max(1, now - state.lastTime)
-                const invDt = 1000 / dtMs
-                state.velocity.set(
-                  (hit.x - state.lastTarget.x) * invDt,
-                  (hit.y - state.lastTarget.y) * invDt,
-                  (hit.z - state.lastTarget.z) * invDt,
-                )
-                state.lastTarget.copy(state.target)
-                state.target.copy(hit)
-                state.lastTime = now
-                grab.update(state.particle, hit.x, hit.y, hit.z, state.velocity.x, state.velocity.y, state.velocity.z)
-              }}
-              onPointerUp={(event) => {
-                const state = grabRef.current
-                if (!state || state.pointerId !== event.pointerId) return
-                event.stopPropagation()
-                grab.release()
-                grabRef.current = null
-              }}
-              onPointerCancel={() => {
-                if (!grabRef.current) return
-                grab.release()
-                grabRef.current = null
-              }}
-              onLostPointerCapture={() => {
-                if (!grabRef.current) return
-                grab.release()
-                grabRef.current = null
+                if (grabRef.current) return
+                const grabPoint = event.point.clone()
+                const particle = grab.nearestParticleInPanel(panel.panelId, grabPoint.x, grabPoint.y, grabPoint.z)
+                if (particle < 0) return
+                const cameraForward = event.camera.getWorldDirection(new THREE.Vector3())
+                const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(cameraForward, grabPoint)
+                const canvas = gl.domElement
+                canvas.setPointerCapture(event.pointerId)
+                const state = {
+                  panelId: panel.panelId,
+                  particle,
+                  plane,
+                  target: grabPoint.clone(),
+                  lastTarget: grabPoint.clone(),
+                  lastTime: performance.now(),
+                  velocity: new THREE.Vector3(),
+                  pointerId: event.pointerId,
+                  onMove: (nativeEvent: PointerEvent) => {
+                    if (nativeEvent.pointerId !== state.pointerId) return
+                    const rect = canvas.getBoundingClientRect()
+                    const ndcX = ((nativeEvent.clientX - rect.left) / rect.width) * 2 - 1
+                    const ndcY = -((nativeEvent.clientY - rect.top) / rect.height) * 2 + 1
+                    _raycaster.setFromCamera(_ndc.set(ndcX, ndcY), camera)
+                    const hit = _raycaster.ray.intersectPlane(state.plane, _hitScratch)
+                    if (!hit) return
+                    const now = performance.now()
+                    const dtMs = Math.max(1, now - state.lastTime)
+                    const invDt = 1000 / dtMs
+                    state.velocity.set(
+                      (hit.x - state.lastTarget.x) * invDt,
+                      (hit.y - state.lastTarget.y) * invDt,
+                      (hit.z - state.lastTarget.z) * invDt,
+                    )
+                    state.lastTarget.copy(state.target)
+                    state.target.copy(hit)
+                    state.lastTime = now
+                    grab.update(state.particle, hit.x, hit.y, hit.z, state.velocity.x, state.velocity.y, state.velocity.z)
+                  },
+                  onRelease: (nativeEvent: PointerEvent) => {
+                    if (nativeEvent.pointerId !== state.pointerId) return
+                    canvas.removeEventListener('pointermove', state.onMove)
+                    canvas.removeEventListener('pointerup', state.onRelease)
+                    canvas.removeEventListener('pointercancel', state.onRelease)
+                    canvas.removeEventListener('lostpointercapture', state.onRelease)
+                    grab.release()
+                    grabRef.current = null
+                  },
+                }
+                canvas.addEventListener('pointermove', state.onMove)
+                canvas.addEventListener('pointerup', state.onRelease)
+                canvas.addEventListener('pointercancel', state.onRelease)
+                canvas.addEventListener('lostpointercapture', state.onRelease)
+                grabRef.current = state
+                grab.start(particle, grabPoint.x, grabPoint.y, grabPoint.z)
               }}
             >
               <meshStandardMaterial
