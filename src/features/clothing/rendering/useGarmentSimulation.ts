@@ -174,11 +174,50 @@ export function useGarmentSimulation(args: {
     updateRenderPanels(runtime, renderPanelsRef.current, frameRef.current?.positions ?? runtime.simMesh.positions)
   })
 
+  const grab = useMemo(() => ({
+    start(particle: number, x: number, y: number, z: number) {
+      const solver = solverRef.current
+      if (!solver) return
+      solver.setGrab(particle, x, y, z, 0, 0, 0)
+    },
+    update(particle: number, x: number, y: number, z: number, vx: number, vy: number, vz: number) {
+      const solver = solverRef.current
+      if (!solver) return
+      solver.setGrab(particle, x, y, z, vx, vy, vz)
+    },
+    release() {
+      solverRef.current?.releaseGrab()
+    },
+    nearestParticleInPanel(panelId: string, worldX: number, worldY: number, worldZ: number) {
+      const runtime = runtimeRef.current
+      if (!runtime) return -1
+      const positions = frameRef.current?.positions ?? runtime.simMesh.positions
+      const panelIds = runtime.simMesh.panelIds
+      const count = runtime.simMesh.particleCount
+      let best = -1
+      let bestDistSq = Infinity
+      for (let i = 0; i < count; i += 1) {
+        if (panelIds[i] !== panelId) continue
+        const offset = i * 3
+        const dx = positions[offset] - worldX
+        const dy = positions[offset + 1] - worldY
+        const dz = positions[offset + 2] - worldZ
+        const distSq = dx * dx + dy * dy + dz * dz
+        if (distSq < bestDistSq) {
+          bestDistSq = distSq
+          best = i
+        }
+      }
+      return best
+    },
+  }), [])
+
   return {
     runtime: compileResult.value,
     issues: compileResult.issues,
     renderPanels,
     colliderSnapshot: getBodyProxySnapshot(),
+    grab,
   }
 }
 

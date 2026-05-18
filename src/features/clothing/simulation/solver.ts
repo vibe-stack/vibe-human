@@ -32,6 +32,13 @@ export class XPBDClothSolver {
   private shearFlat: DistanceSet
   private seamFlat: DistanceSet
   private bendFlat: BendSet
+  private grabParticle = -1
+  private grabTargetX = 0
+  private grabTargetY = 0
+  private grabTargetZ = 0
+  private grabVelocityX = 0
+  private grabVelocityY = 0
+  private grabVelocityZ = 0
 
   constructor(
     mesh: ClothSimMesh,
@@ -43,6 +50,20 @@ export class XPBDClothSolver {
     this.shearFlat = flattenDistanceConstraints(mesh.shearConstraints)
     this.seamFlat = flattenDistanceConstraints(mesh.seamConstraints)
     this.bendFlat = flattenBendConstraints(mesh.bendConstraints)
+  }
+
+  setGrab(particle: number, x: number, y: number, z: number, vx: number, vy: number, vz: number) {
+    this.grabParticle = particle
+    this.grabTargetX = x
+    this.grabTargetY = y
+    this.grabTargetZ = z
+    this.grabVelocityX = vx
+    this.grabVelocityY = vy
+    this.grabVelocityZ = vz
+  }
+
+  releaseGrab() {
+    this.grabParticle = -1
   }
 
   step(snapshot?: ColliderSnapshot | null): ClothFrame {
@@ -62,6 +83,7 @@ export class XPBDClothSolver {
         solveDistanceConstraintsFlat(this.mesh.positions, this.mesh.invMass, this.seamFlat, dt, seamRestScale)
         solveBendConstraintsFlat(this.mesh.positions, this.mesh.invMass, this.bendFlat, dt)
         solvePinConstraints(this.mesh)
+        this.applyGrabPin(dt)
       }
       solveCollisionConstraints(this.mesh, this.colliders)
       if (sewingProgress >= 1) this.weldSeamPairs()
@@ -130,6 +152,18 @@ export class XPBDClothSolver {
       velocities[offset + 1] = vy
       velocities[offset + 2] = vz
     }
+  }
+
+  private applyGrabPin(dt: number) {
+    if (this.grabParticle < 0) return
+    const offset = this.grabParticle * 3
+    const { positions, prevPositions } = this.mesh
+    positions[offset] = this.grabTargetX
+    positions[offset + 1] = this.grabTargetY
+    positions[offset + 2] = this.grabTargetZ
+    prevPositions[offset] = this.grabTargetX - this.grabVelocityX * dt
+    prevPositions[offset + 1] = this.grabTargetY - this.grabVelocityY * dt
+    prevPositions[offset + 2] = this.grabTargetZ - this.grabVelocityZ * dt
   }
 
   private weldSeamPairs() {

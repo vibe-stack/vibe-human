@@ -17,7 +17,18 @@ export default function ClothScene() {
     () => toPatternDocument(garment as unknown as GarmentDocument, placements),
     [garment, placements],
   )
-  const { runtime, renderPanels, colliderSnapshot } = useGarmentSimulation({
+  const grabRef = useRef<{
+    panelId: string
+    particle: number
+    plane: THREE.Plane
+    target: THREE.Vector3
+    lastTarget: THREE.Vector3
+    lastTime: number
+    velocity: THREE.Vector3
+    pointerId: number
+  } | null>(null)
+
+  const { runtime, renderPanels, colliderSnapshot, grab } = useGarmentSimulation({
     document,
     quality: simQuality,
     resetKey: simResetKey,
@@ -57,7 +68,64 @@ export default function ClothScene() {
               frustumCulled={false}
               onPointerDown={(event) => {
                 event.stopPropagation()
+                if (simRunning) {
+                  const pointer = event.nativeEvent.target as Element | null
+                  pointer?.setPointerCapture?.(event.pointerId)
+                  const cameraForward = event.camera.getWorldDirection(new THREE.Vector3())
+                  const grabPoint = event.point.clone()
+                  const particle = grab.nearestParticleInPanel(panel.panelId, grabPoint.x, grabPoint.y, grabPoint.z)
+                  if (particle < 0) return
+                  const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(cameraForward, grabPoint)
+                  grabRef.current = {
+                    panelId: panel.panelId,
+                    particle,
+                    plane,
+                    target: grabPoint.clone(),
+                    lastTarget: grabPoint.clone(),
+                    lastTime: performance.now(),
+                    velocity: new THREE.Vector3(),
+                    pointerId: event.pointerId,
+                  }
+                  grab.start(particle, grabPoint.x, grabPoint.y, grabPoint.z)
+                  return
+                }
                 selectPattern(panel.panelId)
+              }}
+              onPointerMove={(event) => {
+                const state = grabRef.current
+                if (!state || state.pointerId !== event.pointerId) return
+                event.stopPropagation()
+                const hit = event.ray.intersectPlane(state.plane, new THREE.Vector3())
+                if (!hit) return
+                const now = performance.now()
+                const dtMs = Math.max(1, now - state.lastTime)
+                const invDt = 1000 / dtMs
+                state.velocity.set(
+                  (hit.x - state.lastTarget.x) * invDt,
+                  (hit.y - state.lastTarget.y) * invDt,
+                  (hit.z - state.lastTarget.z) * invDt,
+                )
+                state.lastTarget.copy(state.target)
+                state.target.copy(hit)
+                state.lastTime = now
+                grab.update(state.particle, hit.x, hit.y, hit.z, state.velocity.x, state.velocity.y, state.velocity.z)
+              }}
+              onPointerUp={(event) => {
+                const state = grabRef.current
+                if (!state || state.pointerId !== event.pointerId) return
+                event.stopPropagation()
+                grab.release()
+                grabRef.current = null
+              }}
+              onPointerCancel={() => {
+                if (!grabRef.current) return
+                grab.release()
+                grabRef.current = null
+              }}
+              onLostPointerCapture={() => {
+                if (!grabRef.current) return
+                grab.release()
+                grabRef.current = null
               }}
             >
               <meshStandardMaterial
