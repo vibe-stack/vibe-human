@@ -126,15 +126,20 @@ export function useGarmentSimulation(args: {
     accumRef.current = 0
   }, [compileResult, document, quality, renderPanels])
 
+  const runningRef = useRef(running)
+  useEffect(() => {
+    runningRef.current = running
+  }, [running])
+
   useEffect(() => {
     const runtime = runtimeRef.current
-    if (!runtime || running) return
+    if (!runtime || runningRef.current) return
     applyDocumentPlacements(runtime.simMesh, document)
     refreshSeamPlacementRest(runtime.simMesh)
     solverRef.current = new XPBDClothSolver(runtime.simMesh, SOLVER_PRESETS[quality])
     frameRef.current = { positions: runtime.simMesh.positions }
     updateRenderPanels(runtime, renderPanelsRef.current, runtime.simMesh.positions)
-  }, [document, quality, running])
+  }, [document, quality])
 
   useFrame((_, delta) => {
     if (!enabledRef.current) return

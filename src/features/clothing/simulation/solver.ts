@@ -36,6 +36,7 @@ export class XPBDClothSolver {
         solvePinConstraints(this.mesh)
         solveCollisionConstraints(this.mesh, this.colliders)
       }
+      if (sewingProgress >= 1) this.weldSeamPairs()
       this.deriveVelocities(dt, this.velocityRetentionForAssembly(sewingProgress))
       this.applyGround()
       this.elapsed += dt
@@ -92,6 +93,42 @@ export class XPBDClothSolver {
       velocities[offset] = vx
       velocities[offset + 1] = vy
       velocities[offset + 2] = vz
+    }
+  }
+
+  private weldSeamPairs() {
+    const { positions, prevPositions, invMass } = this.mesh
+    for (const seam of this.mesh.seamConstraints) {
+      const ia = seam.a * 3
+      const ib = seam.b * 3
+      const wa = invMass[seam.a]
+      const wb = invMass[seam.b]
+      const wsum = wa + wb
+      if (wsum < 1e-9) continue
+      const tA = wa / wsum
+      const tB = wb / wsum
+      const mx = positions[ia] * tB + positions[ib] * tA
+      const my = positions[ia + 1] * tB + positions[ib + 1] * tA
+      const mz = positions[ia + 2] * tB + positions[ib + 2] * tA
+      const px = prevPositions[ia] * tB + prevPositions[ib] * tA
+      const py = prevPositions[ia + 1] * tB + prevPositions[ib + 1] * tA
+      const pz = prevPositions[ia + 2] * tB + prevPositions[ib + 2] * tA
+      if (wa > 0) {
+        positions[ia] = mx
+        positions[ia + 1] = my
+        positions[ia + 2] = mz
+        prevPositions[ia] = px
+        prevPositions[ia + 1] = py
+        prevPositions[ia + 2] = pz
+      }
+      if (wb > 0) {
+        positions[ib] = mx
+        positions[ib + 1] = my
+        positions[ib + 2] = mz
+        prevPositions[ib] = px
+        prevPositions[ib + 1] = py
+        prevPositions[ib + 2] = pz
+      }
     }
   }
 

@@ -22,8 +22,9 @@ export function solveBendConstraints(mesh: ClothSimMesh, dt: number) {
     const wsum = wb + 0.25 * (wa + wc)
     if (wsum < 1e-9) continue
 
+    const C = length - constraint.rest
     const alpha = constraint.compliance / dtSq
-    const lambda = -length / (wsum + alpha)
+    const lambda = -C / (wsum + alpha)
     const invLength = 1 / length
     const gx = dx * invLength
     const gy = dy * invLength

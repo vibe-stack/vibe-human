@@ -18,10 +18,10 @@ const QUALITY_PRESETS: Record<CompilerOptions['quality'], {
   minDim: number
   maxDim: number
 }> = {
-  low: { spacing: 0.060, bendCompliance: 0.020, stretchCompliance: 0.0002, shearCompliance: 0.00028, minDim: 8, maxDim: 16 },
-  medium: { spacing: 0.040, bendCompliance: 0.012, stretchCompliance: 0.0002, shearCompliance: 0.00028, minDim: 12, maxDim: 24 },
-  high: { spacing: 0.028, bendCompliance: 0.006, stretchCompliance: 0.00014, shearCompliance: 0.0002, minDim: 16, maxDim: 32 },
-  ultra: { spacing: 0.020, bendCompliance: 0.002, stretchCompliance: 0.00008, shearCompliance: 0.00014, minDim: 20, maxDim: 40 },
+  low: { spacing: 0.060, bendCompliance: 0.4, stretchCompliance: 0.0002, shearCompliance: 0.00028, minDim: 8, maxDim: 16 },
+  medium: { spacing: 0.040, bendCompliance: 0.25, stretchCompliance: 0.0002, shearCompliance: 0.00028, minDim: 12, maxDim: 24 },
+  high: { spacing: 0.028, bendCompliance: 0.15, stretchCompliance: 0.00014, shearCompliance: 0.0002, minDim: 16, maxDim: 32 },
+  ultra: { spacing: 0.020, bendCompliance: 0.08, stretchCompliance: 0.00008, shearCompliance: 0.00014, minDim: 20, maxDim: 40 },
 }
 
 export type CompiledPanelSimMesh = {
@@ -119,10 +119,10 @@ export function buildPanelSimMesh(
         shearConstraints.push({ a, b: map(col + 1, row - 1), rest: diag, compliance: preset.shearCompliance, kind: 'shear' })
       }
       if (has(col - 1, row) && has(col + 1, row)) {
-        bendConstraints.push({ a: map(col - 1, row), b: a, c: map(col + 1, row), rest: spacingX * 2, compliance: preset.bendCompliance, kind: 'bend' })
+        bendConstraints.push({ a: map(col - 1, row), b: a, c: map(col + 1, row), rest: 0, compliance: preset.bendCompliance, kind: 'bend' })
       }
       if (has(col, row - 1) && has(col, row + 1)) {
-        bendConstraints.push({ a: map(col, row - 1), b: a, c: map(col, row + 1), rest: spacingY * 2, compliance: preset.bendCompliance, kind: 'bend' })
+        bendConstraints.push({ a: map(col, row - 1), b: a, c: map(col, row + 1), rest: 0, compliance: preset.bendCompliance, kind: 'bend' })
       }
 
       if (has(col + 1, row) && has(col, row + 1) && has(col + 1, row + 1)) {
