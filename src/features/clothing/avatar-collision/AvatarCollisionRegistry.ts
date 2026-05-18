@@ -39,6 +39,26 @@ type AvatarMeshColliderOptions = {
   debugPerf?: boolean
 }
 
+export type AvatarMeshColliderTopology = {
+  meshes: THREE.SkinnedMesh[]
+  vertexSources: Uint32Array
+  vertices: Float32Array
+  indices: Uint32Array
+  triangleNormals: Float32Array
+  triangleCentroids: Float32Array
+  triangleRadii: Float32Array
+  triangleVisitMarks: Uint32Array
+  cellSize: number
+  optionsKey: string
+  lastPoseHash: number
+  lastSnapshot: MeshSurfaceColliderSnapshot | null
+}
+
+export type AvatarMeshColliderRebuild = {
+  snapshot: MeshSurfaceColliderSnapshot
+  topology: AvatarMeshColliderTopology
+}
+
 const DEFAULT_SKIN = 0.012
 const TORSO_FRICTION = 0.68
 const LIMB_FRICTION = 0.56
@@ -323,6 +343,360 @@ export function buildAvatarMeshColliderSnapshotFromSkinnedMeshes(
     skin: options.skinOffset ?? 0.022,
     thickness: options.garmentThickness ?? 0.008,
     friction: 0.74,
+  }
+}
+
+export function rebuildAvatarMeshCollider(
+  meshes: THREE.SkinnedMesh[],
+  cached: AvatarMeshColliderTopology | null,
+  options: AvatarMeshColliderOptions = {},
+): AvatarMeshColliderRebuild | null {
+  const cellSize = options.cellSize ?? 0.09
+  const triangleStride = Math.max(1, Math.floor(options.triangleStride ?? 1))
+  const optionsKey = `${triangleStride}|${meshes.length}|${meshes.map((m) => m.geometry.uuid).join(',')}|${options.includeRegions ? [...options.includeRegions].sort().join(',') : ''}`
+  let topology = cached && cached.optionsKey === optionsKey && cached.meshes.length === meshes.length ? cached : null
+  if (topology) {
+    for (let i = 0; i < meshes.length; i += 1) {
+      if (topology.meshes[i] !== meshes[i]) { topology = null; break }
+    }
+  }
+  if (!topology) {
+    topology = extractMeshColliderTopology(meshes, triangleStride, options.includeRegions, optionsKey)
+    if (!topology) return null
+  }
+
+  const poseHash = computePoseHash(meshes)
+  if (topology.lastSnapshot && topology.lastPoseHash === poseHash) {
+    const reused = topology.lastSnapshot
+    reused.skin = options.skinOffset ?? reused.skin
+    reused.thickness = options.garmentThickness ?? reused.thickness
+    return { snapshot: reused, topology }
+  }
+
+  reskinTopologyVertices(topology)
+  const hash = buildSpatialHashFast(
+    topology.vertices,
+    topology.indices,
+    cellSize,
+    topology.triangleNormals,
+    topology.triangleCentroids,
+    topology.triangleRadii,
+    topology.triangleVisitMarks,
+  )
+
+  const snapshot: MeshSurfaceColliderSnapshot = {
+    kind: 'mesh',
+    id: options.id ?? 'avatar.mesh',
+    vertices: topology.vertices,
+    indices: topology.indices,
+    triangleNormals: hash.triangleNormals,
+    triangleCentroids: topology.triangleCentroids,
+    triangleRadii: topology.triangleRadii,
+    cellSize: hash.cellSize,
+    cellKeys: hash.cellKeys,
+    cellStarts: hash.cellStarts,
+    cellCounts: hash.cellCounts,
+    cellTriangleIndices: hash.cellTriangleIndices,
+    cellIndexLookup: hash.cellIndexLookup,
+    triangleVisitMarks: hash.triangleVisitMarks,
+    triangleVisitStamp: 0,
+    bounds: hash.bounds,
+    skin: options.skinOffset ?? 0.022,
+    thickness: options.garmentThickness ?? 0.008,
+    friction: 0.74,
+  }
+  topology.cellSize = hash.cellSize
+  topology.lastPoseHash = poseHash
+  topology.lastSnapshot = snapshot
+  return { snapshot, topology }
+}
+
+function computePoseHash(meshes: THREE.SkinnedMesh[]) {
+  let hash = 0x811c9dc5
+  for (let i = 0; i < meshes.length; i += 1) {
+    const skeleton = meshes[i].skeleton
+    if (!skeleton) continue
+    const bones = skeleton.bones
+    for (let b = 0; b < bones.length; b += 1) {
+      const m = bones[b].matrixWorld.elements
+      hash = mix32(hash, floatBits(m[12]))
+      hash = mix32(hash, floatBits(m[13]))
+      hash = mix32(hash, floatBits(m[14]))
+      hash = mix32(hash, floatBits(m[0]))
+      hash = mix32(hash, floatBits(m[5]))
+      hash = mix32(hash, floatBits(m[10]))
+    }
+  }
+  return hash | 0
+}
+
+const _floatBits = new Float32Array(1)
+const _intBits = new Int32Array(_floatBits.buffer)
+function floatBits(value: number) {
+  _floatBits[0] = value
+  return _intBits[0]
+}
+
+function mix32(hash: number, value: number) {
+  hash ^= value
+  hash = Math.imul(hash, 0x01000193)
+  return hash | 0
+}
+
+function extractMeshColliderTopology(
+  meshes: THREE.SkinnedMesh[],
+  triangleStride: number,
+  includeRegions: Set<CollisionRegion> | undefined,
+  optionsKey: string,
+): AvatarMeshColliderTopology | null {
+  const sources: number[] = []
+  const indices: number[] = []
+  const vertexMap = new Map<number, number>()
+  let triangleOrdinal = 0
+  for (let meshIndex = 0; meshIndex < meshes.length; meshIndex += 1) {
+    const mesh = meshes[meshIndex]
+    const position = mesh.geometry.getAttribute('position') as THREE.BufferAttribute | undefined
+    if (!position) continue
+    const index = mesh.geometry.index
+    const triangleCount = index ? Math.floor(index.count / 3) : Math.floor(position.count / 3)
+    for (let triangle = 0; triangle < triangleCount; triangle += 1) {
+      const ia = index ? index.getX(triangle * 3) : triangle * 3
+      const ib = index ? index.getX(triangle * 3 + 1) : triangle * 3 + 1
+      const ic = index ? index.getX(triangle * 3 + 2) : triangle * 3 + 2
+      if (includeRegions && !triangleMatchesRegions(mesh, ia, ib, ic, includeRegions)) continue
+      if (triangleOrdinal % triangleStride !== 0) { triangleOrdinal += 1; continue }
+      triangleOrdinal += 1
+      indices.push(
+        getOrAddSource(vertexMap, sources, meshIndex, ia),
+        getOrAddSource(vertexMap, sources, meshIndex, ib),
+        getOrAddSource(vertexMap, sources, meshIndex, ic),
+      )
+    }
+  }
+  if (indices.length === 0) return null
+  const vertexCount = sources.length / 2
+  const triangleCount = indices.length / 3
+  return {
+    meshes: meshes.slice(),
+    vertexSources: new Uint32Array(sources),
+    vertices: new Float32Array(vertexCount * 3),
+    indices: new Uint32Array(indices),
+    triangleNormals: new Float32Array(triangleCount * 3),
+    triangleCentroids: new Float32Array(triangleCount * 3),
+    triangleRadii: new Float32Array(triangleCount),
+    triangleVisitMarks: new Uint32Array(triangleCount),
+    cellSize: 0,
+    optionsKey,
+    lastPoseHash: 0,
+    lastSnapshot: null,
+  }
+}
+
+function getOrAddSource(map: Map<number, number>, sources: number[], meshIndex: number, vertexIndex: number) {
+  const key = (meshIndex << 24) | (vertexIndex & 0xffffff)
+  const existing = map.get(key)
+  if (existing !== undefined) return existing
+  const nextIndex = sources.length / 2
+  sources.push(meshIndex, vertexIndex)
+  map.set(key, nextIndex)
+  return nextIndex
+}
+
+function reskinTopologyVertices(topology: AvatarMeshColliderTopology) {
+  const { meshes, vertexSources, vertices } = topology
+  const vertexCount = vertexSources.length / 2
+  const positionAttrs: Array<THREE.BufferAttribute | null> = meshes.map(
+    (mesh) => (mesh.geometry.getAttribute('position') as THREE.BufferAttribute | undefined) ?? null,
+  )
+  for (let vertex = 0; vertex < vertexCount; vertex += 1) {
+    const meshIndex = vertexSources[vertex * 2]
+    const vertexIndex = vertexSources[vertex * 2 + 1]
+    const mesh = meshes[meshIndex]
+    const position = positionAttrs[meshIndex]
+    if (!mesh || !position) continue
+    _samplePoint.fromBufferAttribute(position, vertexIndex)
+    mesh.applyBoneTransform(vertexIndex, _samplePoint)
+    _samplePoint.applyMatrix4(mesh.matrixWorld)
+    const offset = vertex * 3
+    vertices[offset] = _samplePoint.x
+    vertices[offset + 1] = _samplePoint.y
+    vertices[offset + 2] = _samplePoint.z
+  }
+}
+
+function buildSpatialHashFast(
+  vertices: Float32Array,
+  indices: Uint32Array,
+  cellSize: number,
+  triangleNormals: Float32Array,
+  triangleCentroids: Float32Array,
+  triangleRadii: Float32Array,
+  triangleVisitMarks: Uint32Array,
+) {
+  const safeCellSize = Math.max(MIN_COLLIDER_CELL_SIZE, cellSize)
+  const triangleCount = indices.length / 3
+  let minX = Infinity, minY = Infinity, minZ = Infinity
+  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity
+
+  const triCellMinX = new Int32Array(triangleCount)
+  const triCellMinY = new Int32Array(triangleCount)
+  const triCellMinZ = new Int32Array(triangleCount)
+  const triCellMaxX = new Int32Array(triangleCount)
+  const triCellMaxY = new Int32Array(triangleCount)
+  const triCellMaxZ = new Int32Array(triangleCount)
+  const triSkip = new Uint8Array(triangleCount)
+  let totalRefs = 0
+
+  for (let triangle = 0; triangle < triangleCount; triangle += 1) {
+    const ia = indices[triangle * 3] * 3
+    const ib = indices[triangle * 3 + 1] * 3
+    const ic = indices[triangle * 3 + 2] * 3
+    const ax = vertices[ia], ay = vertices[ia + 1], az = vertices[ia + 2]
+    const bx = vertices[ib], by = vertices[ib + 1], bz = vertices[ib + 2]
+    const cx = vertices[ic], cy = vertices[ic + 1], cz = vertices[ic + 2]
+    if (ax < minX) minX = ax
+    if (bx < minX) minX = bx
+    if (cx < minX) minX = cx
+    if (ay < minY) minY = ay
+    if (by < minY) minY = by
+    if (cy < minY) minY = cy
+    if (az < minZ) minZ = az
+    if (bz < minZ) minZ = bz
+    if (cz < minZ) minZ = cz
+    if (ax > maxX) maxX = ax
+    if (bx > maxX) maxX = bx
+    if (cx > maxX) maxX = cx
+    if (ay > maxY) maxY = ay
+    if (by > maxY) maxY = by
+    if (cy > maxY) maxY = cy
+    if (az > maxZ) maxZ = az
+    if (bz > maxZ) maxZ = bz
+    if (cz > maxZ) maxZ = cz
+
+    const abx = bx - ax, aby = by - ay, abz = bz - az
+    const acx = cx - ax, acy = cy - ay, acz = cz - az
+    const nx = aby * acz - abz * acy
+    const ny = abz * acx - abx * acz
+    const nz = abx * acy - aby * acx
+    const normalLength = Math.sqrt(nx * nx + ny * ny + nz * nz)
+    const normalOffset = triangle * 3
+    if (normalLength > 1e-9) {
+      const inv = 1 / normalLength
+      triangleNormals[normalOffset] = nx * inv
+      triangleNormals[normalOffset + 1] = ny * inv
+      triangleNormals[normalOffset + 2] = nz * inv
+    } else {
+      triangleNormals[normalOffset] = 0
+      triangleNormals[normalOffset + 1] = 0
+      triangleNormals[normalOffset + 2] = 0
+    }
+
+    const centroidX = (ax + bx + cx) / 3
+    const centroidY = (ay + by + cy) / 3
+    const centroidZ = (az + bz + cz) / 3
+    triangleCentroids[normalOffset] = centroidX
+    triangleCentroids[normalOffset + 1] = centroidY
+    triangleCentroids[normalOffset + 2] = centroidZ
+    const dax = ax - centroidX, day = ay - centroidY, daz = az - centroidZ
+    const dbx = bx - centroidX, dby = by - centroidY, dbz = bz - centroidZ
+    const dcx = cx - centroidX, dcy = cy - centroidY, dcz = cz - centroidZ
+    const rA = dax * dax + day * day + daz * daz
+    const rB = dbx * dbx + dby * dby + dbz * dbz
+    const rC = dcx * dcx + dcy * dcy + dcz * dcz
+    const maxRSq = rA > rB ? (rA > rC ? rA : rC) : (rB > rC ? rB : rC)
+    triangleRadii[triangle] = Math.sqrt(maxRSq)
+
+    const triMinX = ax < bx ? (ax < cx ? ax : cx) : (bx < cx ? bx : cx)
+    const triMinY = ay < by ? (ay < cy ? ay : cy) : (by < cy ? by : cy)
+    const triMinZ = az < bz ? (az < cz ? az : cz) : (bz < cz ? bz : cz)
+    const triMaxX = ax > bx ? (ax > cx ? ax : cx) : (bx > cx ? bx : cx)
+    const triMaxY = ay > by ? (ay > cy ? ay : cy) : (by > cy ? by : cy)
+    const triMaxZ = az > bz ? (az > cz ? az : cz) : (bz > cz ? bz : cz)
+    const cMinX = Math.floor(triMinX / safeCellSize)
+    const cMinY = Math.floor(triMinY / safeCellSize)
+    const cMinZ = Math.floor(triMinZ / safeCellSize)
+    const cMaxX = Math.floor(triMaxX / safeCellSize)
+    const cMaxY = Math.floor(triMaxY / safeCellSize)
+    const cMaxZ = Math.floor(triMaxZ / safeCellSize)
+    const span = (cMaxX - cMinX + 1) * (cMaxY - cMinY + 1) * (cMaxZ - cMinZ + 1)
+    if (!Number.isFinite(span) || span > MAX_HASH_CELLS_PER_TRIANGLE) {
+      triSkip[triangle] = 1
+      continue
+    }
+    triCellMinX[triangle] = cMinX
+    triCellMinY[triangle] = cMinY
+    triCellMinZ[triangle] = cMinZ
+    triCellMaxX[triangle] = cMaxX
+    triCellMaxY[triangle] = cMaxY
+    triCellMaxZ[triangle] = cMaxZ
+    totalRefs += span
+  }
+
+  const cellEntries = new Int32Array(totalRefs)
+  const cellTriangles = new Uint32Array(totalRefs)
+  let cursor = 0
+  for (let triangle = 0; triangle < triangleCount; triangle += 1) {
+    if (triSkip[triangle]) continue
+    const cMinX = triCellMinX[triangle], cMaxX = triCellMaxX[triangle]
+    const cMinY = triCellMinY[triangle], cMaxY = triCellMaxY[triangle]
+    const cMinZ = triCellMinZ[triangle], cMaxZ = triCellMaxZ[triangle]
+    for (let cx = cMinX; cx <= cMaxX; cx += 1) {
+      for (let cy = cMinY; cy <= cMaxY; cy += 1) {
+        for (let cz = cMinZ; cz <= cMaxZ; cz += 1) {
+          cellEntries[cursor] = hashCell(cx, cy, cz)
+          cellTriangles[cursor] = triangle
+          cursor += 1
+        }
+      }
+    }
+  }
+
+  const order = new Uint32Array(cursor)
+  for (let i = 0; i < cursor; i += 1) order[i] = i
+  const sorted = Array.from(order).sort((a, b) => cellEntries[a] - cellEntries[b])
+
+  let uniqueCells = 0
+  for (let i = 0; i < cursor; i += 1) {
+    if (i === 0 || cellEntries[sorted[i]] !== cellEntries[sorted[i - 1]]) uniqueCells += 1
+  }
+
+  const cellKeys = new Int32Array(uniqueCells)
+  const cellStarts = new Uint32Array(uniqueCells)
+  const cellCounts = new Uint32Array(uniqueCells)
+  const cellTriangleIndices = new Uint32Array(cursor)
+  const cellIndexLookup = new Map<number, number>()
+
+  let writeIdx = -1
+  let lastKey = 0
+  for (let i = 0; i < cursor; i += 1) {
+    const sortedIndex = sorted[i]
+    const key = cellEntries[sortedIndex]
+    if (writeIdx === -1 || key !== lastKey) {
+      writeIdx += 1
+      cellKeys[writeIdx] = key
+      cellStarts[writeIdx] = i
+      cellIndexLookup.set(key, writeIdx)
+      lastKey = key
+    }
+    cellTriangleIndices[i] = cellTriangles[sortedIndex]
+    cellCounts[writeIdx] += 1
+  }
+
+  if (!Number.isFinite(minX)) { minX = minY = minZ = maxX = maxY = maxZ = 0 }
+
+  triangleVisitMarks.fill(0)
+
+  return {
+    cellSize: safeCellSize,
+    triangleNormals,
+    cellKeys,
+    cellStarts,
+    cellCounts,
+    cellTriangleIndices,
+    cellIndexLookup,
+    triangleVisitMarks,
+    triangleVisitStamp: 0,
+    bounds: { minX, minY, minZ, maxX, maxY, maxZ },
   }
 }
 

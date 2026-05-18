@@ -34,8 +34,8 @@ export class XPBDClothSolver {
         solveDistanceConstraints(this.mesh, this.mesh.seamConstraints, dt, { seamRestScale: 1 - sewingProgress })
         solveBendConstraints(this.mesh, dt)
         solvePinConstraints(this.mesh)
-        solveCollisionConstraints(this.mesh, this.colliders)
       }
+      solveCollisionConstraints(this.mesh, this.colliders)
       if (sewingProgress >= 1) this.weldSeamPairs()
       this.deriveVelocities(dt, this.velocityRetentionForAssembly(sewingProgress))
       this.applyGround()

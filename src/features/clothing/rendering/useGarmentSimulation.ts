@@ -14,12 +14,13 @@ import type {
   SolverParams,
 } from '../simulation/types'
 import {
-  buildAvatarMeshColliderSnapshotFromSkinnedMeshes,
   buildCollisionAvatarFromSkinnedMeshes,
   clearBodyProxySnapshot,
   getBodyProxySnapshot,
+  rebuildAvatarMeshCollider,
   setBodyProxySnapshot,
   setCollisionAvatar,
+  type AvatarMeshColliderTopology,
 } from '../avatar-collision/AvatarCollisionRegistry'
 import { getAvatarCollisionSource } from '../avatar-collision/AvatarCollisionSource'
 import type { AvatarCollisionMode } from '../state/clothingTypes'
@@ -83,7 +84,7 @@ export function useGarmentSimulation(args: {
   const avatarRef = useRef<CollisionAvatar | null>(null)
   const avatarBuildRequestRef = useRef(-1)
   const meshColliderRef = useRef<MeshSurfaceColliderSnapshot | null>(null)
-  const meshColliderKeyRef = useRef('')
+  const meshColliderTopologyRef = useRef<AvatarMeshColliderTopology | null>(null)
   const collisionRef = useRef(collision)
   const enabledRef = useRef(enabled)
 
@@ -102,7 +103,7 @@ export function useGarmentSimulation(args: {
       avatarRef.current = null
       avatarBuildRequestRef.current = -1
       meshColliderRef.current = null
-      meshColliderKeyRef.current = ''
+      meshColliderTopologyRef.current = null
     }
   }, [])
 
@@ -116,30 +117,25 @@ export function useGarmentSimulation(args: {
     }
   }, [renderPanels])
 
+  const documentRef = useRef(document)
+  useEffect(() => {
+    documentRef.current = document
+  }, [document])
+
   useEffect(() => {
     runtimeRef.current = compileResult.value
     frameRef.current = { positions: compileResult.value.simMesh.positions }
-    applyDocumentPlacements(compileResult.value.simMesh, document)
+    applyDocumentPlacements(compileResult.value.simMesh, documentRef.current)
     refreshSeamPlacementRest(compileResult.value.simMesh)
     solverRef.current = new XPBDClothSolver(compileResult.value.simMesh, SOLVER_PRESETS[quality])
     updateRenderPanels(compileResult.value, renderPanels, compileResult.value.simMesh.positions)
     accumRef.current = 0
-  }, [compileResult, document, quality, renderPanels])
+  }, [compileResult, quality, renderPanels])
 
   const runningRef = useRef(running)
   useEffect(() => {
     runningRef.current = running
   }, [running])
-
-  useEffect(() => {
-    const runtime = runtimeRef.current
-    if (!runtime || runningRef.current) return
-    applyDocumentPlacements(runtime.simMesh, document)
-    refreshSeamPlacementRest(runtime.simMesh)
-    solverRef.current = new XPBDClothSolver(runtime.simMesh, SOLVER_PRESETS[quality])
-    frameRef.current = { positions: runtime.simMesh.positions }
-    updateRenderPanels(runtime, renderPanelsRef.current, runtime.simMesh.positions)
-  }, [document, quality])
 
   useFrame((_, delta) => {
     if (!enabledRef.current) return
@@ -155,7 +151,7 @@ export function useGarmentSimulation(args: {
           avatarRef,
           avatarBuildRequestRef,
           meshColliderRef,
-          meshColliderKeyRef,
+          meshColliderTopologyRef,
           collisionRef.current,
         )
         const start = collisionRef.current.debugPerf ? performance.now() : 0
@@ -183,7 +179,7 @@ function updateColliderSnapshotForStep(
   avatarRef: MutableRefObject<CollisionAvatar | null>,
   buildRequestRef: MutableRefObject<number>,
   meshColliderRef: MutableRefObject<MeshSurfaceColliderSnapshot | null>,
-  meshColliderKeyRef: MutableRefObject<string>,
+  meshColliderTopologyRef: MutableRefObject<AvatarMeshColliderTopology | null>,
   collision: Parameters<typeof useGarmentSimulation>[0]['collision'],
 ) {
   if (!hasActiveGarment) return
@@ -210,6 +206,7 @@ function updateColliderSnapshotForStep(
     })
     avatarRef.current = avatar
     buildRequestRef.current = collision.buildRequestId
+    meshColliderTopologyRef.current = null
     setCollisionAvatar(avatar)
     setCollisionAvatarStats({
       generatedAt: avatar.createdAt,
@@ -219,8 +216,9 @@ function updateColliderSnapshotForStep(
     })
   }
 
-  meshColliderRef.current = timed(collision.debugPerf, 'buildAvatarMeshCollider', () => buildAvatarMeshColliderSnapshotFromSkinnedMeshes(
+  const rebuild = timed(collision.debugPerf, 'rebuildAvatarMeshCollider', () => rebuildAvatarMeshCollider(
     source.getSkinnedMeshes(),
+    meshColliderTopologyRef.current,
     {
       id: 'avatar.mesh',
       skinOffset: collision.skinOffset,
@@ -230,7 +228,8 @@ function updateColliderSnapshotForStep(
       debugPerf: collision.debugPerf,
     },
   ))
-  meshColliderKeyRef.current = ''
+  meshColliderRef.current = rebuild?.snapshot ?? null
+  meshColliderTopologyRef.current = rebuild?.topology ?? null
   const meshCollider = meshColliderRef.current
   setCollisionRuntimeStats({
     meshColliderVertexCount: meshCollider ? meshCollider.vertices.length / 3 : 0,

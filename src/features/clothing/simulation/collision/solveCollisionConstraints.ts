@@ -131,7 +131,7 @@ function pushOutOfLowResPatch(
           const triangle = patch.cellTriangleIndices[start + item]
           if (patch.triangleVisitMarks[triangle] === visitStamp) continue
           patch.triangleVisitMarks[triangle] = visitStamp
-          if (!closestPointOnTriangle(patch, triangle, px, py, pz, TRIANGLE_RESULT)) continue
+          if (!closestPointOnTriangle(patch, triangle, px, py, pz, TRIANGLE_RESULT, target)) continue
           const deltaX = px - TRIANGLE_RESULT[0]
           const deltaY = py - TRIANGLE_RESULT[1]
           const deltaZ = pz - TRIANGLE_RESULT[2]
@@ -209,7 +209,7 @@ function pushOutOfMeshCollider(
           const triangle = collider.cellTriangleIndices[start + item]
           if (collider.triangleVisitMarks[triangle] === visitStamp) continue
           collider.triangleVisitMarks[triangle] = visitStamp
-          if (!closestPointOnTriangle(collider, triangle, px, py, pz, TRIANGLE_RESULT)) continue
+          if (!closestPointOnTriangle(collider, triangle, px, py, pz, TRIANGLE_RESULT, target)) continue
           const deltaX = px - TRIANGLE_RESULT[0]
           const deltaY = py - TRIANGLE_RESULT[1]
           const deltaZ = pz - TRIANGLE_RESULT[2]
@@ -274,12 +274,23 @@ function closestPointOnTriangle(
   py: number,
   pz: number,
   out: Float32Array,
+  target?: number,
 ) {
   const normalOffset = triangle * 3
   const nx = collider.triangleNormals[normalOffset]
   const ny = collider.triangleNormals[normalOffset + 1]
   const nz = collider.triangleNormals[normalOffset + 2]
   if (nx === 0 && ny === 0 && nz === 0) return false
+  const centroids = collider.triangleCentroids
+  const radii = collider.triangleRadii
+  if (centroids && radii && target !== undefined) {
+    const cdx = px - centroids[normalOffset]
+    const cdy = py - centroids[normalOffset + 1]
+    const cdz = pz - centroids[normalOffset + 2]
+    const centerDistSq = cdx * cdx + cdy * cdy + cdz * cdz
+    const reachable = target + radii[triangle]
+    if (centerDistSq > reachable * reachable) return false
+  }
   const ia = collider.indices[triangle * 3] * 3
   const ib = collider.indices[triangle * 3 + 1] * 3
   const ic = collider.indices[triangle * 3 + 2] * 3

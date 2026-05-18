@@ -181,6 +181,8 @@ export type CollisionBounds = {
 
 type TriangleColliderAcceleration = {
   triangleNormals: Float32Array
+  triangleCentroids?: Float32Array
+  triangleRadii?: Float32Array
   cellSize: number
   cellKeys: Int32Array
   cellStarts: Uint32Array
