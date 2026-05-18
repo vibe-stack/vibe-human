@@ -45,8 +45,11 @@ export default function ClothScene() {
     <group>
       {renderPanels.map((panel) => {
         const selected = panel.panelId === garment.selectedPatternId
-        const placement = document.panels[panel.panelId]?.placement
+        const docPanel = document.panels[panel.panelId]
+        const placement = docPanel?.placement
         if (!placement) return null
+        const baseColor = docPanel?.color ?? '#5f8cff'
+        const displayColor = selected ? tintForSelection(baseColor) : baseColor
         return (
           <group key={panel.panelId}>
             <mesh
@@ -58,7 +61,7 @@ export default function ClothScene() {
               }}
             >
               <meshStandardMaterial
-                color={selected ? '#75a4ff' : '#5f8cff'}
+                color={displayColor}
                 roughness={0.82}
                 metalness={0}
                 side={THREE.DoubleSide}
@@ -90,6 +93,19 @@ export default function ClothScene() {
       )}
     </group>
   )
+}
+
+const _tintColor = new THREE.Color()
+function tintForSelection(hex: string) {
+  try {
+    _tintColor.set(hex)
+    const hsl = { h: 0, s: 0, l: 0 }
+    _tintColor.getHSL(hsl)
+    _tintColor.setHSL(hsl.h, Math.min(1, hsl.s * 1.1), Math.min(1, hsl.l + 0.12))
+    return `#${_tintColor.getHexString()}`
+  } catch {
+    return hex
+  }
 }
 
 function PanelTransformHandle({

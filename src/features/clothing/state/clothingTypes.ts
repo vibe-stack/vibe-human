@@ -35,6 +35,7 @@ export type PatternPiece = {
   holes?: PatternEdge[][]
   closed: boolean
   fabricId?: string
+  color?: string
   /** Target triangle size for simulation grid (mm-scale in pattern space). */
   particleDistance: number
 }

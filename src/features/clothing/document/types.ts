@@ -51,6 +51,7 @@ export type PatternPanel = {
   holes?: PatternEdge[][]
   closed: boolean
   fabricId?: string
+  color?: string
   particleDistance: number
   placement: PatternPlacement
   pins?: PanelPin[]

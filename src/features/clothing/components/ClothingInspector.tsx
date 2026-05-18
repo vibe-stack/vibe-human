@@ -72,6 +72,13 @@ export default function ClothingInspector() {
             <Row label="Pattern" value={selectedPattern.name} />
             <Row label="Points"  value={String(Object.keys(selectedPattern.points).length)} />
             <Row label="Edges"   value={String(selectedPattern.edges.length)} />
+            <ColorRow
+              label="Color"
+              value={selectedPattern.color ?? '#5f8cff'}
+              onChange={(value) => {
+                clothingStore.garment.patterns[selectedPattern.id].color = value
+              }}
+            />
             {selectedPoint && (
               <>
                 <Row label="Point X" value={selectedPoint.x.toFixed(1)} />
@@ -246,6 +253,30 @@ function Row({ label, value }: { label: string; value: string }) {
       <span style={{ color: 'rgba(255,255,255,0.9)', textAlign: 'right', maxWidth: 120, wordBreak: 'break-all' }}>
         {value}
       </span>
+    </div>
+  )
+}
+
+function ColorRow({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+      <span style={{ opacity: 0.45 }}>{label}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ color: 'rgba(255,255,255,0.9)' }}>{value.toUpperCase()}</span>
+        <input
+          type="color"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          style={{
+            width: 22,
+            height: 18,
+            padding: 0,
+            border: '1px solid rgba(255,255,255,0.15)',
+            background: 'transparent',
+            cursor: 'pointer',
+          }}
+        />
+      </div>
     </div>
   )
 }

@@ -14,18 +14,18 @@ function makeEdge(id: string, from: string, to: string, curve: PatternEdge['curv
 }
 
 function createTShirtPanel(id: string, name: string, neckDepth: number): PatternPiece {
-  const neckLeft = makePoint(`${id}-neck-left`, -38, -158, { out: { x: 20, y: neckDepth } })
-  const neckRight = makePoint(`${id}-neck-right`, 38, -158, { in: { x: -20, y: neckDepth } })
-  const rightShoulder = makePoint(`${id}-right-shoulder`, 78, -146)
-  const rightSleeveTop = makePoint(`${id}-right-sleeve-top`, 164, -104)
-  const rightSleeveBottom = makePoint(`${id}-right-sleeve-bottom`, 142, -38)
-  const rightUnderarm = makePoint(`${id}-right-underarm`, 84, -56)
-  const rightHem = makePoint(`${id}-right-hem`, 76, 168)
-  const leftHem = makePoint(`${id}-left-hem`, -76, 168)
-  const leftUnderarm = makePoint(`${id}-left-underarm`, -84, -56)
-  const leftSleeveBottom = makePoint(`${id}-left-sleeve-bottom`, -142, -38)
-  const leftSleeveTop = makePoint(`${id}-left-sleeve-top`, -164, -104)
-  const leftShoulder = makePoint(`${id}-left-shoulder`, -78, -146)
+  const neckLeft = makePoint(`${id}-neck-left`, -44, -182, { out: { x: 22, y: neckDepth } })
+  const neckRight = makePoint(`${id}-neck-right`, 44, -182, { in: { x: -22, y: neckDepth } })
+  const rightShoulder = makePoint(`${id}-right-shoulder`, 96, -168)
+  const rightSleeveTop = makePoint(`${id}-right-sleeve-top`, 196, -120)
+  const rightSleeveBottom = makePoint(`${id}-right-sleeve-bottom`, 172, -44)
+  const rightUnderarm = makePoint(`${id}-right-underarm`, 104, -64)
+  const rightHem = makePoint(`${id}-right-hem`, 96, 196)
+  const leftHem = makePoint(`${id}-left-hem`, -96, 196)
+  const leftUnderarm = makePoint(`${id}-left-underarm`, -104, -64)
+  const leftSleeveBottom = makePoint(`${id}-left-sleeve-bottom`, -172, -44)
+  const leftSleeveTop = makePoint(`${id}-left-sleeve-top`, -196, -120)
+  const leftShoulder = makePoint(`${id}-left-shoulder`, -96, -168)
 
   return {
     id,
@@ -71,6 +71,8 @@ export function createDemoGarment(): GarmentDocument {
   const seams: Record<string, Seam> = {
     'right-shoulder': stitch('right-shoulder', 'Right Shoulder', front, 'right-shoulder', back, 'left-shoulder', true),
     'left-shoulder': stitch('left-shoulder', 'Left Shoulder', front, 'left-shoulder', back, 'right-shoulder', true),
+    'right-sleeve-top': stitch('right-sleeve-top', 'Right Sleeve Top', front, 'right-sleeve-top', back, 'left-sleeve-top', true),
+    'left-sleeve-top': stitch('left-sleeve-top', 'Left Sleeve Top', front, 'left-sleeve-top', back, 'right-sleeve-top', true),
     'right-sleeve-underarm': stitch('right-sleeve-underarm', 'Right Sleeve Underarm', front, 'right-sleeve-underarm', back, 'left-sleeve-underarm', true),
     'left-sleeve-underarm': stitch('left-sleeve-underarm', 'Left Sleeve Underarm', front, 'left-sleeve-underarm', back, 'right-sleeve-underarm', true),
     'right-side': stitch('right-side', 'Right Side Seam', front, 'right-side', back, 'left-side', true),

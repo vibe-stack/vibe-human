@@ -72,7 +72,8 @@ export class PatternRenderer {
     if (outline.length < 3) return
 
     const alpha = selected ? 0.28 : hovered ? 0.22 : COLORS.patternFillAlpha
-    this.fillGfx.setFillStyle({ color: COLORS.patternFill, alpha })
+    const fillColor = piece.color ? hexStringToInt(piece.color, COLORS.patternFill) : COLORS.patternFill
+    this.fillGfx.setFillStyle({ color: fillColor, alpha })
     this.fillGfx.moveTo(outline[0].x, outline[0].y)
     for (let i = 1; i < outline.length; i++) {
       this.fillGfx.lineTo(outline[i].x, outline[i].y)
@@ -212,4 +213,14 @@ export class PatternRenderer {
     drawPolyline(this.seamGfx, ptsB)
     this.seamGfx.stroke()
   }
+}
+
+function hexStringToInt(hex: string, fallback: number) {
+  const trimmed = hex.startsWith('#') ? hex.slice(1) : hex
+  if (trimmed.length !== 6 && trimmed.length !== 3) return fallback
+  const expanded = trimmed.length === 3
+    ? trimmed.split('').map((c) => c + c).join('')
+    : trimmed
+  const value = Number.parseInt(expanded, 16)
+  return Number.isFinite(value) ? value : fallback
 }
