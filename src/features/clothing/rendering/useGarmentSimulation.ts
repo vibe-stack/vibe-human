@@ -194,6 +194,7 @@ function updateColliderSnapshotForStep(
 ) {
   if (!hasActiveGarment) return
   const source = getAvatarCollisionSource()
+  source.getRootObject()?.updateMatrixWorld(true)
   const bones = source.getBones()
   const bodyMeshes = source.getBodyMeshes()
   const headMeshes = source.getHeadMeshes()
@@ -204,18 +205,13 @@ function updateColliderSnapshotForStep(
   }
 
   if (
-    collision.mode !== 'authoring' &&
-    (
-      !avatarRef.current
-      || buildRequestRef.current !== collision.buildRequestId
-      || (collision.includeLowResMesh && (avatarRef.current.lowResMeshPatches?.length ?? 0) === 0)
-    )
+    !avatarRef.current
+    || buildRequestRef.current !== collision.buildRequestId
   ) {
     const start = collision.debugPerf ? performance.now() : 0
     const avatar = buildCollisionAvatarFromSkinnedMeshes(bones, {
       bodyMeshes,
       headMeshes,
-      includeLowResMesh: collision.includeLowResMesh,
       settings: {
         globalInflate: collision.globalInflate,
         normalOffset: collision.normalOffset,
@@ -236,23 +232,20 @@ function updateColliderSnapshotForStep(
     }
   }
 
-  const proxySnapshot = collision.mode === 'authoring'
-    ? { proxies: [] }
-    : buildColliderSnapshotFromCollisionAvatar(avatarRef.current, bones, {
-      globalInflate: collision.globalInflate,
-      normalOffset: collision.normalOffset,
-      perRegionInflate: collision.perRegionInflate,
-      skinOffset: collision.skinOffset,
-      garmentThickness: collision.garmentThickness,
-      includeLowResMesh: collision.includeLowResMesh,
-      showCapsules: collision.showCapsules,
-      showEllipsoids: collision.showEllipsoids,
-    })
+  const proxySnapshot = buildColliderSnapshotFromCollisionAvatar(avatarRef.current, bones, {
+    globalInflate: collision.globalInflate,
+    normalOffset: collision.normalOffset,
+    perRegionInflate: collision.perRegionInflate,
+    skinOffset: collision.skinOffset,
+    garmentThickness: collision.garmentThickness,
+    includeLowResMesh: false,
+    showCapsules: collision.showCapsules,
+    showEllipsoids: collision.showEllipsoids,
+  })
 
   const shouldBuildMesh =
     collision.enableVertexTriangle &&
-    collision.mode !== 'preview' &&
-    (collision.mode === 'authoring' || collision.mode === 'hybrid')
+    collision.mode === 'hybrid'
 
   const meshKey = shouldBuildMesh
     ? [
@@ -293,7 +286,6 @@ function updateColliderSnapshotForStep(
   setBodyProxySnapshot({
     proxies: proxySnapshot.proxies,
     meshColliders: meshCollider ? [meshCollider] : undefined,
-    lowResMeshPatches: proxySnapshot.lowResMeshPatches,
   })
 }
 

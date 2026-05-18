@@ -27,7 +27,7 @@ const TRANSFORM_OPTIONS: Array<{ id: ClothingTransformMode; label: string }> = [
 ]
 
 const COLLISION_MODE_OPTIONS: Array<{ id: AvatarCollisionMode; label: string }> = [
-  { id: 'authoring', label: 'Author' },
+  { id: 'authoring', label: 'Live' },
   { id: 'hybrid', label: 'Hybrid' },
   { id: 'preview', label: 'Proxy' },
 ]
@@ -164,12 +164,12 @@ export default function ClothingInspector() {
           onChange={setAvatarCollisionMode}
         />
         <ButtonRow>
-          <SmallButton label="BUILD MESH" onClick={() => {
+          <SmallButton label="LIVE" onClick={() => {
             setAvatarCollisionMode('authoring')
             requestCollisionAvatarBuild()
           }} />
-          <SmallButton label="FAST PROXIES" onClick={() => {
-            setAvatarCollisionMode('preview')
+          <SmallButton label="TORSO MESH" onClick={() => {
+            setAvatarCollisionMode('hybrid')
             requestCollisionAvatarBuild()
           }} />
         </ButtonRow>
@@ -193,11 +193,6 @@ export default function ClothingInspector() {
           onChange={(v) => { clothingStore.previewOptions.showCollisionEllipsoids = v }}
         />
         <Toggle
-          label="Low-res Mesh"
-          value={previewOptions.showCollisionLowResMesh}
-          onChange={(v) => { clothingStore.previewOptions.showCollisionLowResMesh = v }}
-        />
-        <Toggle
           label="Vertex-Triangle"
           value={collisionAvatar.enableVertexTriangle}
           onChange={(v) => { clothingStore.collisionAvatar.enableVertexTriangle = v }}
@@ -207,7 +202,7 @@ export default function ClothingInspector() {
           value={collisionAvatar.debugPerf}
           onChange={(v) => { clothingStore.collisionAvatar.debugPerf = v }}
         />
-        <Row label="Low-res Patches" value={String(collisionAvatar.meshPatchCount)} />
+        <Row label="Low-res Patches" value="0" />
       </Section>
 
       {/* Document info */}

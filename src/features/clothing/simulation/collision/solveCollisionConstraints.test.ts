@@ -5,6 +5,10 @@ import { describe, test } from 'node:test'
 import { solveCollisionConstraints } from './solveCollisionConstraints'
 import type { ClothSimMesh, ColliderSnapshot } from '../types'
 
+function hashCell(x: number, y: number, z: number) {
+  return ((x * 73856093) ^ (y * 19349663) ^ (z * 83492791)) | 0
+}
+
 describe('solveCollisionConstraints', () => {
   test('pushes particles out of low-res mesh patches', () => {
     const mesh: ClothSimMesh = {
@@ -36,6 +40,23 @@ describe('solveCollisionConstraints', () => {
             0, 0, 1,
           ]),
           indices: new Uint32Array([0, 1, 2]),
+          triangleNormals: new Float32Array([0, -1, 0]),
+          cellSize: 4,
+          cellKeys: new Int32Array([hashCell(0, 0, 0)]),
+          cellStarts: new Uint32Array([0]),
+          cellCounts: new Uint32Array([1]),
+          cellTriangleIndices: new Uint32Array([0]),
+          cellIndexLookup: new Map([[hashCell(0, 0, 0), 0]]),
+          triangleVisitMarks: new Uint32Array([0]),
+          triangleVisitStamp: 0,
+          bounds: {
+            minX: -1,
+            minY: 0,
+            minZ: -1,
+            maxX: 1,
+            maxY: 0,
+            maxZ: 1,
+          },
           skin: 0.04,
           thickness: 0.01,
           friction: 0.5,

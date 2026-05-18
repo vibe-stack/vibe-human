@@ -170,6 +170,28 @@ export type CollisionAvatar = {
   lowResMeshPatches?: CollisionMeshPatch[]
 }
 
+export type CollisionBounds = {
+  minX: number
+  minY: number
+  minZ: number
+  maxX: number
+  maxY: number
+  maxZ: number
+}
+
+type TriangleColliderAcceleration = {
+  triangleNormals: Float32Array
+  cellSize: number
+  cellKeys: Int32Array
+  cellStarts: Uint32Array
+  cellCounts: Uint32Array
+  cellTriangleIndices: Uint32Array
+  cellIndexLookup: ReadonlyMap<number, number>
+  triangleVisitMarks: Uint32Array
+  triangleVisitStamp: number
+  bounds: CollisionBounds
+}
+
 export type CollisionMeshPatchSnapshot = {
   id: string
   region: CollisionRegion
@@ -178,22 +200,17 @@ export type CollisionMeshPatchSnapshot = {
   skin: number
   thickness: number
   friction: number
-}
+} & TriangleColliderAcceleration
 
 export type MeshSurfaceColliderSnapshot = {
   kind: 'mesh'
   id: string
   vertices: Float32Array
   indices: Uint32Array
-  cellSize: number
-  cellKeys: Int32Array
-  cellStarts: Uint32Array
-  cellCounts: Uint32Array
-  cellTriangleIndices: Uint32Array
   skin: number
   thickness: number
   friction: number
-}
+} & TriangleColliderAcceleration
 
 export type ColliderSnapshot = {
   version: number

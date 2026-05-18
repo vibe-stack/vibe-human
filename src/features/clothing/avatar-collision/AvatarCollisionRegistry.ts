@@ -3,7 +3,6 @@ import type {
   ColliderSnapshot,
   CollisionAvatar,
   CollisionAvatarProxy,
-  CollisionMeshPatch,
   CollisionRegion,
   MeshSurfaceColliderSnapshot,
 } from '../simulation/types'
@@ -45,8 +44,8 @@ const TORSO_FRICTION = 0.68
 const LIMB_FRICTION = 0.56
 const HEAD_FRICTION = 0.52
 const BUILD_SAMPLE_STRIDE = 3
-const LOW_RES_VERTEX_STRIDE = 24
 const MAX_HASH_CELLS_PER_TRIANGLE = 128
+const MIN_COLLIDER_CELL_SIZE = 0.04
 
 export const COLLISION_REGIONS: CollisionRegion[] = [
   'head',
@@ -193,7 +192,6 @@ export function buildCollisionAvatarFromSkinnedMeshes(
     },
     settings,
     proxies,
-    lowResMeshPatches: options.includeLowResMesh ? buildLowResMeshPatches(meshes, bones) : undefined,
   }
 }
 
@@ -258,15 +256,6 @@ export function buildColliderSnapshotFromCollisionAvatar(
 
   return {
     proxies,
-    lowResMeshPatches: options.includeLowResMesh
-      ? snapshotLowResMeshPatches(avatar, bones, {
-        globalInflate,
-        normalOffset,
-        perRegionInflate,
-        skinOffset: options.skinOffset ?? DEFAULT_SKIN,
-        garmentThickness: options.garmentThickness ?? 0.008,
-      })
-      : undefined,
   }
 }
 
@@ -321,11 +310,16 @@ export function buildAvatarMeshColliderSnapshotFromSkinnedMeshes(
     id: options.id ?? 'avatar.mesh',
     vertices: vertexArray,
     indices: indexArray,
+    triangleNormals: hash.triangleNormals,
     cellSize: hash.cellSize,
     cellKeys: hash.cellKeys,
     cellStarts: hash.cellStarts,
     cellCounts: hash.cellCounts,
     cellTriangleIndices: hash.cellTriangleIndices,
+    cellIndexLookup: hash.cellIndexLookup,
+    triangleVisitMarks: hash.triangleVisitMarks,
+    triangleVisitStamp: hash.triangleVisitStamp,
+    bounds: hash.bounds,
     skin: options.skinOffset ?? 0.022,
     thickness: options.garmentThickness ?? 0.008,
     friction: 0.74,
@@ -502,14 +496,20 @@ function addCapsuleFromWorldSegment(
 
 function fitCapsuleRadius(samples: THREE.Vector3[], start: THREE.Vector3, end: THREE.Vector3, fallbackRadius: number) {
   if (samples.length < 8) return fallbackRadius
-  const axis = end.clone().sub(start)
-  const lengthSq = axis.lengthSq()
+  const axisX = end.x - start.x
+  const axisY = end.y - start.y
+  const axisZ = end.z - start.z
+  const lengthSq = axisX * axisX + axisY * axisY + axisZ * axisZ
   if (lengthSq < 1e-8) return fallbackRadius
-  const distances = samples.map((point) => {
-    const t = Math.max(0, Math.min(1, point.clone().sub(start).dot(axis) / lengthSq))
-    const closest = start.clone().addScaledVector(axis, t)
-    return point.distanceTo(closest)
-  })
+  const distances = new Array<number>(samples.length)
+  for (let index = 0; index < samples.length; index += 1) {
+    const point = samples[index]
+    const t = Math.max(0, Math.min(1, ((point.x - start.x) * axisX + (point.y - start.y) * axisY + (point.z - start.z) * axisZ) / lengthSq))
+    const closestX = start.x + axisX * t
+    const closestY = start.y + axisY * t
+    const closestZ = start.z + axisZ * t
+    distances[index] = Math.hypot(point.x - closestX, point.y - closestY, point.z - closestZ)
+  }
   return Math.max(fallbackRadius * 0.75, Math.min(fallbackRadius * 1.5, quantile(distances, 0.84) + 0.012))
 }
 
@@ -573,114 +573,8 @@ function fitEllipsoid(points: THREE.Vector3[], min: [number, number, number], ma
   }
 }
 
-function buildLowResMeshPatches(meshes: THREE.SkinnedMesh[], bones: Record<string, THREE.Bone>) {
-  const patches = new Map<CollisionRegion, CollisionMeshPatch>()
-  for (const mesh of meshes) {
-    const position = mesh.geometry.getAttribute('position') as THREE.BufferAttribute | undefined
-    if (!position) continue
-    for (let index = 0; index < position.count; index += LOW_RES_VERTEX_STRIDE) {
-      const region = classifySkinnedVertex(mesh, index)
-      if (!region) continue
-      const anchor = getBoneByName(bones, anchorBoneNameForRegion(region, bones))
-      if (!anchor) continue
-      const patch = getOrCreatePatch(patches, region, anchor.name)
-      copySkinnedWorldVertex(mesh, position, index, _samplePoint)
-      _samplePoint.applyMatrix4(mesh.matrixWorld)
-      const local = anchor.worldToLocal(_samplePoint.clone())
-      patch.vertices.push(local.x, local.y, local.z)
-    }
-  }
-  for (const patch of patches.values()) {
-    const vertexCount = Math.floor(patch.vertices.length / 3)
-    for (let index = 2; index < vertexCount; index += 3) {
-      patch.indices.push(index - 2, index - 1, index)
-    }
-  }
-  return [...patches.values()].filter((patch) => patch.indices.length > 0)
-}
-
-function getOrCreatePatch(patches: Map<CollisionRegion, CollisionMeshPatch>, region: CollisionRegion, anchorBone: string) {
-  let patch = patches.get(region)
-  if (!patch) {
-    patch = { id: `${region}.lowRes`, region, anchorBone, vertices: [], indices: [] }
-    patches.set(region, patch)
-  }
-  return patch
-}
-
-function snapshotLowResMeshPatches(
-  avatar: CollisionAvatar,
-  bones: Record<string, THREE.Bone>,
-  options: {
-    globalInflate: number
-    normalOffset: number
-    perRegionInflate: Partial<Record<CollisionRegion, number>>
-    skinOffset: number
-    garmentThickness: number
-  },
-) {
-  return (avatar.lowResMeshPatches ?? []).map((patch) => {
-    const bone = getBoneByName(bones, patch.anchorBone)
-    const vertices = new Float32Array(patch.vertices.length)
-    if (bone) {
-      for (let index = 0; index < patch.vertices.length; index += 3) {
-        const world = localPointToWorld(bone, patch.vertices[index], patch.vertices[index + 1], patch.vertices[index + 2], _scratchA)
-        vertices[index] = world.x
-        vertices[index + 1] = world.y
-        vertices[index + 2] = world.z
-      }
-    }
-    return {
-      id: patch.id,
-      region: patch.region,
-      vertices,
-      indices: new Uint32Array(patch.indices),
-      skin: Math.max(
-        0,
-        options.skinOffset
-          + Math.max(0, options.globalInflate)
-          + Math.max(0, options.perRegionInflate[patch.region] ?? 0)
-          + options.normalOffset,
-      ),
-      thickness: Math.max(0, options.garmentThickness),
-      friction: frictionForRegion(avatar, patch.region),
-    }
-  })
-}
-
-function frictionForRegion(avatar: CollisionAvatar, region: CollisionRegion) {
-  return avatar.proxies.find((proxy) => proxy.region === region)?.friction ?? TORSO_FRICTION
-}
-
-function anchorBoneNameForRegion(region: CollisionRegion, bones: Record<string, THREE.Bone>) {
-  const proxyAnchor = {
-    head: ['head', 'rt_head', 'spine006'],
-    neck: ['neck', 'spine006'],
-    chest: ['spine004', 'spine005', 'chest'],
-    abdomen: ['spine002', 'spine003', 'abdomen'],
-    pelvis: ['pelvis', 'hips', 'spine'],
-    'shoulder.L': ['shoulderl', 'leftshoulder', 'claviclel'],
-    'shoulder.R': ['shoulderr', 'rightshoulder', 'clavicler'],
-    'upperArm.L': ['upperarml', 'leftupperarm'],
-    'upperArm.R': ['upperarmr', 'rightupperarm'],
-    'forearm.L': ['forearml001', 'forearml', 'leftforearm'],
-    'forearm.R': ['forearmr001', 'forearmr', 'rightforearm'],
-    'hand.L': ['handl', 'lefthand'],
-    'hand.R': ['handr', 'righthand'],
-    'hip.L': ['pelvis', 'hips', 'spine'],
-    'hip.R': ['pelvis', 'hips', 'spine'],
-    'thigh.L': ['thighl', 'leftupleg'],
-    'thigh.R': ['thighr', 'rightupleg'],
-    'calf.L': ['thighl001', 'shinl', 'calfl', 'leftleg'],
-    'calf.R': ['thighr001', 'shinr', 'calfr', 'rightleg'],
-    'foot.L': ['footl', 'leftfoot'],
-    'foot.R': ['footr', 'rightfoot'],
-  } satisfies Record<CollisionRegion, string[]>
-  return getBone(bones, proxyAnchor[region])?.name ?? ''
-}
-
 function localPointToWorld(bone: THREE.Bone, x: number, y: number, z: number, target: THREE.Vector3) {
-  return target.set(x, y, z).applyMatrix4(bone.matrixWorld).clone()
+  return target.set(x, y, z).applyMatrix4(bone.matrixWorld)
 }
 
 function getAttrComponent(attribute: THREE.BufferAttribute, index: number, component: number) {
@@ -752,25 +646,66 @@ function clampRadius(value: number, min: number, max?: number) {
 }
 
 function buildTriangleSpatialHash(vertices: Float32Array, indices: Uint32Array, cellSize: number) {
-  const safeCellSize = Math.max(0.025, cellSize)
+  const safeCellSize = Math.max(MIN_COLLIDER_CELL_SIZE, cellSize)
   const cells = new Map<number, number[]>()
   const triangleCount = indices.length / 3
+  const triangleNormals = new Float32Array(triangleCount * 3)
+  let minX = Infinity
+  let minY = Infinity
+  let minZ = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  let maxZ = -Infinity
   for (let triangle = 0; triangle < triangleCount; triangle += 1) {
     const ia = indices[triangle * 3] * 3
     const ib = indices[triangle * 3 + 1] * 3
     const ic = indices[triangle * 3 + 2] * 3
-    const minX = Math.min(vertices[ia], vertices[ib], vertices[ic])
-    const minY = Math.min(vertices[ia + 1], vertices[ib + 1], vertices[ic + 1])
-    const minZ = Math.min(vertices[ia + 2], vertices[ib + 2], vertices[ic + 2])
-    const maxX = Math.max(vertices[ia], vertices[ib], vertices[ic])
-    const maxY = Math.max(vertices[ia + 1], vertices[ib + 1], vertices[ic + 1])
-    const maxZ = Math.max(vertices[ia + 2], vertices[ib + 2], vertices[ic + 2])
-    const minCx = Math.floor(minX / safeCellSize)
-    const minCy = Math.floor(minY / safeCellSize)
-    const minCz = Math.floor(minZ / safeCellSize)
-    const maxCx = Math.floor(maxX / safeCellSize)
-    const maxCy = Math.floor(maxY / safeCellSize)
-    const maxCz = Math.floor(maxZ / safeCellSize)
+    const ax = vertices[ia]
+    const ay = vertices[ia + 1]
+    const az = vertices[ia + 2]
+    const bx = vertices[ib]
+    const by = vertices[ib + 1]
+    const bz = vertices[ib + 2]
+    const cx = vertices[ic]
+    const cy = vertices[ic + 1]
+    const cz = vertices[ic + 2]
+    minX = Math.min(minX, ax, bx, cx)
+    minY = Math.min(minY, ay, by, cy)
+    minZ = Math.min(minZ, az, bz, cz)
+    maxX = Math.max(maxX, ax, bx, cx)
+    maxY = Math.max(maxY, ay, by, cy)
+    maxZ = Math.max(maxZ, az, bz, cz)
+
+    const abx = bx - ax
+    const aby = by - ay
+    const abz = bz - az
+    const acx = cx - ax
+    const acy = cy - ay
+    const acz = cz - az
+    const nx = aby * acz - abz * acy
+    const ny = abz * acx - abx * acz
+    const nz = abx * acy - aby * acx
+    const normalLength = Math.hypot(nx, ny, nz)
+    const normalOffset = triangle * 3
+    if (normalLength > 1e-9) {
+      const invNormalLength = 1 / normalLength
+      triangleNormals[normalOffset] = nx * invNormalLength
+      triangleNormals[normalOffset + 1] = ny * invNormalLength
+      triangleNormals[normalOffset + 2] = nz * invNormalLength
+    }
+
+    const triMinX = Math.min(ax, bx, cx)
+    const triMinY = Math.min(ay, by, cy)
+    const triMinZ = Math.min(az, bz, cz)
+    const triMaxX = Math.max(ax, bx, cx)
+    const triMaxY = Math.max(ay, by, cy)
+    const triMaxZ = Math.max(az, bz, cz)
+    const minCx = Math.floor(triMinX / safeCellSize)
+    const minCy = Math.floor(triMinY / safeCellSize)
+    const minCz = Math.floor(triMinZ / safeCellSize)
+    const maxCx = Math.floor(triMaxX / safeCellSize)
+    const maxCy = Math.floor(triMaxY / safeCellSize)
+    const maxCz = Math.floor(triMaxZ / safeCellSize)
     const cellSpan =
       (maxCx - minCx + 1) *
       (maxCy - minCy + 1) *
@@ -792,19 +727,43 @@ function buildTriangleSpatialHash(vertices: Float32Array, indices: Uint32Array, 
   const cellKeys = new Int32Array(sorted.length)
   const cellStarts = new Uint32Array(sorted.length)
   const cellCounts = new Uint32Array(sorted.length)
+  const cellIndexLookup = new Map<number, number>()
   const triangleRefs: number[] = []
   sorted.forEach(([key, triangles], index) => {
     cellKeys[index] = key
     cellStarts[index] = triangleRefs.length
     cellCounts[index] = triangles.length
+    cellIndexLookup.set(key, index)
     triangleRefs.push(...triangles)
   })
+
+  if (!Number.isFinite(minX)) {
+    minX = 0
+    minY = 0
+    minZ = 0
+    maxX = 0
+    maxY = 0
+    maxZ = 0
+  }
+
   return {
     cellSize: safeCellSize,
+    triangleNormals,
     cellKeys,
     cellStarts,
     cellCounts,
     cellTriangleIndices: new Uint32Array(triangleRefs),
+    cellIndexLookup,
+    triangleVisitMarks: new Uint32Array(triangleCount),
+    triangleVisitStamp: 0,
+    bounds: {
+      minX,
+      minY,
+      minZ,
+      maxX,
+      maxY,
+      maxZ,
+    },
   }
 }
 

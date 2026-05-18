@@ -7,6 +7,7 @@ import { XPBDClothSolver } from '../simulation/solver'
 import { samplePanelEdge } from './buildPanelSimMesh'
 import { compileGarmentRuntime } from './compileGarmentRuntime'
 import { validatePatternDocument } from './validatePatternDocument'
+import type { PatternDocument, PatternPanel } from '../document/types'
 
 describe('clothing compiler architecture', () => {
   test('invalid seam references are rejected', () => {
@@ -88,6 +89,13 @@ describe('clothing compiler architecture', () => {
       assert.equal(Number.isFinite(value), true)
     }
   })
+
+  test('horizontal seams auto-orient to avoid crossed pairing', () => {
+    const runtime = compileGarmentRuntime(buildHorizontalSeamDocument(), { quality: 'medium', seamSamples: 12 }).value
+    const rests = runtime.simMesh.seamConstraints.map((constraint) => constraint.rest)
+    assert.equal(rests.length > 0, true)
+    assert.equal(Math.max(...rests) < 0.75, true)
+  })
 })
 
 function buildDocument() {
@@ -103,6 +111,50 @@ function buildDocument() {
     },
   }
   return toPatternDocument(garment, placements)
+}
+
+function buildHorizontalSeamDocument(): PatternDocument {
+  const front = createRectPanel('front', { x: 0, y: -0.5, z: 0.25 }, { x: 0, y: 0, z: 0 })
+  const back = createRectPanel('back', { x: 0, y: -0.5, z: -0.25 }, { x: 0, y: Math.PI, z: 0 })
+  return {
+    id: 'horizontal-seam-doc',
+    name: 'Horizontal Seam Orientation',
+    panels: {
+      [front.id]: front,
+      [back.id]: back,
+    },
+    seams: {
+      shoulder: {
+        id: 'shoulder',
+        name: 'Shoulder',
+        a: { panelId: front.id, edgeId: 'top' },
+        b: { panelId: back.id, edgeId: 'top', reversed: false },
+        strength: 1,
+      },
+    },
+  }
+}
+
+function createRectPanel(id: string, position: { x: number; y: number; z: number }, rotation: { x: number; y: number; z: number }): PatternPanel {
+  return {
+    id,
+    name: id,
+    points: {
+      tl: { id: 'tl', x: -120, y: -60, kind: 'corner' },
+      tr: { id: 'tr', x: 120, y: -60, kind: 'corner' },
+      br: { id: 'br', x: 120, y: 60, kind: 'corner' },
+      bl: { id: 'bl', x: -120, y: 60, kind: 'corner' },
+    },
+    edges: [
+      { id: 'top', from: 'tl', to: 'tr', curve: 'line' },
+      { id: 'right', from: 'tr', to: 'br', curve: 'line' },
+      { id: 'bottom', from: 'br', to: 'bl', curve: 'line' },
+      { id: 'left', from: 'bl', to: 'tl', curve: 'line' },
+    ],
+    closed: true,
+    particleDistance: 16,
+    placement: { position, rotation },
+  }
 }
 
 function cloneMesh(mesh: ReturnType<typeof compileGarmentRuntime>['value']['simMesh']) {
