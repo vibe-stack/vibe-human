@@ -686,6 +686,8 @@ function buildSpatialHashFast(
 
   triangleVisitMarks.fill(0)
 
+  const { cellHashKeys, cellHashValues, cellHashMask } = buildOpenAddressedCellHash(cellKeys)
+
   return {
     cellSize: safeCellSize,
     triangleNormals,
@@ -694,10 +696,43 @@ function buildSpatialHashFast(
     cellCounts,
     cellTriangleIndices,
     cellIndexLookup,
+    cellHashKeys,
+    cellHashValues,
+    cellHashMask,
     triangleVisitMarks,
     triangleVisitStamp: 0,
     bounds: { minX, minY, minZ, maxX, maxY, maxZ },
   }
+}
+
+function buildOpenAddressedCellHash(cellKeys: Int32Array) {
+  const n = cellKeys.length
+  if (n === 0) {
+    return { cellHashKeys: new Int32Array(1), cellHashValues: new Int32Array(1).fill(-1), cellHashMask: 0 }
+  }
+  let capacity = 1
+  while (capacity < n * 2) capacity *= 2
+  const mask = capacity - 1
+  const keys = new Int32Array(capacity)
+  const values = new Int32Array(capacity).fill(-1)
+  for (let i = 0; i < n; i += 1) {
+    const key = cellKeys[i]
+    let slot = scrambleKey(key) & mask
+    while (values[slot] !== -1) slot = (slot + 1) & mask
+    keys[slot] = key
+    values[slot] = i
+  }
+  return { cellHashKeys: keys, cellHashValues: values, cellHashMask: mask }
+}
+
+function scrambleKey(key: number) {
+  let x = key | 0
+  x ^= x >>> 16
+  x = Math.imul(x, 0x7feb352d)
+  x ^= x >>> 15
+  x = Math.imul(x, 0x846ca68b)
+  x ^= x >>> 16
+  return x
 }
 
 export function buildBodyProxySnapshotFromBones(

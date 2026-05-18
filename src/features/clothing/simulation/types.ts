@@ -189,6 +189,9 @@ type TriangleColliderAcceleration = {
   cellCounts: Uint32Array
   cellTriangleIndices: Uint32Array
   cellIndexLookup: ReadonlyMap<number, number>
+  cellHashKeys?: Int32Array
+  cellHashValues?: Int32Array
+  cellHashMask?: number
   triangleVisitMarks: Uint32Array
   triangleVisitStamp: number
   bounds: CollisionBounds

@@ -185,11 +185,26 @@ function pushOutOfMeshCollider(
   const target = collider.skin + collider.thickness
   if (target <= 0 || isOutsideBounds(collider.bounds, target, px, py, pz)) return false
   const cellSize = collider.cellSize
+  const invCellSize = 1 / cellSize
   const searchRadius = colliderSearchRadius(target, cellSize)
-  const cx = Math.floor(px / cellSize)
-  const cy = Math.floor(py / cellSize)
-  const cz = Math.floor(pz / cellSize)
+  const cx = Math.floor(px * invCellSize)
+  const cy = Math.floor(py * invCellSize)
+  const cz = Math.floor(pz * invCellSize)
   const visitStamp = nextVisitStamp(collider)
+  const hashKeys = collider.cellHashKeys
+  const hashValues = collider.cellHashValues
+  const hashMask = collider.cellHashMask ?? -1
+  const useOA = hashKeys !== undefined && hashValues !== undefined && hashMask >= 0
+  const triangleVisitMarks = collider.triangleVisitMarks
+  const cellStarts = collider.cellStarts
+  const cellCounts = collider.cellCounts
+  const cellTriangleIndices = collider.cellTriangleIndices
+  const triangleCentroids = collider.triangleCentroids
+  const triangleRadii = collider.triangleRadii
+  const triangleNormals = collider.triangleNormals
+  const vertices = collider.vertices
+  const indices = collider.indices
+
   let bestDistSq = Infinity
   let bestX = 0
   let bestY = 0
@@ -197,19 +212,53 @@ function pushOutOfMeshCollider(
   let bestNx = 0
   let bestNy = 1
   let bestNz = 0
+  let currentTargetDist = target
 
   for (let dx = -searchRadius; dx <= searchRadius; dx += 1) {
     for (let dy = -searchRadius; dy <= searchRadius; dy += 1) {
       for (let dz = -searchRadius; dz <= searchRadius; dz += 1) {
-        const cellIndex = collider.cellIndexLookup.get(hashCell(cx + dx, cy + dy, cz + dz))
-        if (cellIndex === undefined) continue
-        const start = collider.cellStarts[cellIndex]
-        const count = collider.cellCounts[cellIndex]
+        const key = hashCell(cx + dx, cy + dy, cz + dz)
+        let cellIndex: number
+        if (useOA) {
+          cellIndex = lookupOA(hashKeys!, hashValues!, hashMask, key)
+          if (cellIndex < 0) continue
+        } else {
+          const found = collider.cellIndexLookup.get(key)
+          if (found === undefined) continue
+          cellIndex = found
+        }
+        const start = cellStarts[cellIndex]
+        const count = cellCounts[cellIndex]
         for (let item = 0; item < count; item += 1) {
-          const triangle = collider.cellTriangleIndices[start + item]
-          if (collider.triangleVisitMarks[triangle] === visitStamp) continue
-          collider.triangleVisitMarks[triangle] = visitStamp
-          if (!closestPointOnTriangle(collider, triangle, px, py, pz, TRIANGLE_RESULT, target)) continue
+          const triangle = cellTriangleIndices[start + item]
+          if (triangleVisitMarks[triangle] === visitStamp) continue
+          triangleVisitMarks[triangle] = visitStamp
+          if (triangleCentroids && triangleRadii) {
+            const normalOffset = triangle * 3
+            const cdx = px - triangleCentroids[normalOffset]
+            const cdy = py - triangleCentroids[normalOffset + 1]
+            const cdz = pz - triangleCentroids[normalOffset + 2]
+            const centerDistSq = cdx * cdx + cdy * cdy + cdz * cdz
+            const reachable = currentTargetDist + triangleRadii[triangle]
+            if (centerDistSq > reachable * reachable) continue
+          }
+          const nx = triangleNormals[triangle * 3]
+          const ny = triangleNormals[triangle * 3 + 1]
+          const nz = triangleNormals[triangle * 3 + 2]
+          if (nx === 0 && ny === 0 && nz === 0) continue
+          const ia = indices[triangle * 3] * 3
+          const ib = indices[triangle * 3 + 1] * 3
+          const ic = indices[triangle * 3 + 2] * 3
+          closestPointTriangleRaw(
+            px, py, pz,
+            vertices[ia], vertices[ia + 1], vertices[ia + 2],
+            vertices[ib], vertices[ib + 1], vertices[ib + 2],
+            vertices[ic], vertices[ic + 1], vertices[ic + 2],
+            TRIANGLE_RESULT,
+          )
+          TRIANGLE_RESULT[3] = nx
+          TRIANGLE_RESULT[4] = ny
+          TRIANGLE_RESULT[5] = nz
           const deltaX = px - TRIANGLE_RESULT[0]
           const deltaY = py - TRIANGLE_RESULT[1]
           const deltaZ = pz - TRIANGLE_RESULT[2]
@@ -219,9 +268,10 @@ function pushOutOfMeshCollider(
             bestX = TRIANGLE_RESULT[0]
             bestY = TRIANGLE_RESULT[1]
             bestZ = TRIANGLE_RESULT[2]
-            bestNx = TRIANGLE_RESULT[3]
-            bestNy = TRIANGLE_RESULT[4]
-            bestNz = TRIANGLE_RESULT[5]
+            bestNx = nx
+            bestNy = ny
+            bestNz = nz
+            currentTargetDist = Math.sqrt(distSq)
           }
         }
       }
@@ -549,4 +599,20 @@ function isOutsideBounds(bounds: CollisionBounds, margin: number, x: number, y: 
 
 function hashCell(x: number, y: number, z: number) {
   return ((x * 73856093) ^ (y * 19349663) ^ (z * 83492791)) | 0
+}
+
+function lookupOA(keys: Int32Array, values: Int32Array, mask: number, key: number) {
+  let x = key | 0
+  x ^= x >>> 16
+  x = Math.imul(x, 0x7feb352d)
+  x ^= x >>> 15
+  x = Math.imul(x, 0x846ca68b)
+  x ^= x >>> 16
+  let slot = x & mask
+  while (true) {
+    const value = values[slot]
+    if (value < 0) return -1
+    if (keys[slot] === key) return value
+    slot = (slot + 1) & mask
+  }
 }

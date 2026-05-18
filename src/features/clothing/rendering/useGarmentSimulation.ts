@@ -137,6 +137,14 @@ export function useGarmentSimulation(args: {
     runningRef.current = running
   }, [running])
 
+  useEffect(() => {
+    if (runningRef.current) return
+    const runtime = runtimeRef.current
+    if (!runtime) return
+    applyDocumentPlacements(runtime.simMesh, document)
+    updateRenderPanels(runtime, renderPanelsRef.current, runtime.simMesh.positions)
+  }, [document])
+
   useFrame((_, delta) => {
     if (!enabledRef.current) return
     const runtime = runtimeRef.current
