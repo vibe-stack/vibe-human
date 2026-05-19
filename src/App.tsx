@@ -1,4 +1,4 @@
-import { Suspense, useEffect } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { Canvas, extend, useThree, type ThreeToJSXElements } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import * as THREE from 'three/webgpu'
@@ -126,6 +126,7 @@ function CharacterRenderModeTabs() {
 
 export default function App() {
   const { fov, isTransforming, showExpressions, showHair, showModeling, showSkinning, showTest, showClothing } = useSnapshot(appState)
+  const [isMobile, setIsMobile] = useState(false)
 
   const anyPanelActive = showExpressions || showHair || showModeling || showSkinning || showTest || showClothing
 
@@ -138,23 +139,34 @@ export default function App() {
     { key: 'clothing', label: 'Clothing', Icon: Shirt, active: showClothing, toggle: toggleShowClothing },
   ]
 
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 960px)')
+    const update = () => setIsMobile(media.matches)
+    update()
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [])
+
   return (
     <div style={{ width: '100vw', height: '100vh', background: '#080810', display: 'flex', flexDirection: 'column' }}>
-      {/* Top navbar — left-aligned so it doesn't obstruct viewport tools */}
       <nav style={{
         position: 'fixed',
-        top: 0,
-        left: 0,
+        top: isMobile ? 'auto' : 0,
+        bottom: isMobile ? 0 : 'auto',
+        left: isMobile ? 0 : 0,
+        right: isMobile ? 0 : 'auto',
         display: 'flex',
+        justifyContent: isMobile ? 'space-around' : 'flex-start',
         gap: 2,
-        padding: '6px 8px',
-        background: 'rgba(8, 8, 16, 0.72)',
+        padding: isMobile ? '7px 10px calc(7px + env(safe-area-inset-bottom, 0px))' : '6px 8px',
+        background: 'rgba(8, 8, 16, 0.84)',
         backdropFilter: 'blur(14px)',
         WebkitBackdropFilter: 'blur(14px)',
         border: '1px solid rgba(255,255,255,0.08)',
-        borderTop: 'none',
-        borderLeft: 'none',
-        borderRadius: '0 0 10px 0',
+        borderTop: isMobile ? '1px solid rgba(255,255,255,0.08)' : 'none',
+        borderLeft: isMobile ? 'none' : 'none',
+        borderRight: isMobile ? 'none' : '1px solid rgba(255,255,255,0.08)',
+        borderRadius: isMobile ? 0 : '0 0 10px 0',
         zIndex: 30,
       }}>
         {panels.map(({ key, label, Icon, active, toggle }) => (
@@ -166,13 +178,14 @@ export default function App() {
               flexDirection: 'column',
               alignItems: 'center',
               gap: 3,
-              padding: '5px 14px',
+              padding: isMobile ? '4px 6px' : '5px 14px',
               background: active ? 'rgba(255,255,255,0.09)' : 'transparent',
               border: 'none',
               borderRadius: 6,
               cursor: 'pointer',
               color: active ? 'rgba(255,255,255,0.88)' : 'rgba(255,255,255,0.32)',
               transition: 'background 0.15s, color 0.15s',
+              flex: isMobile ? 1 : 'none',
             }}
           >
             <Icon size={15} strokeWidth={1.6} />
@@ -188,7 +201,94 @@ export default function App() {
         ))}
       </nav>
 
-      {/* Main content — canvas + sidebar */}
+      {isMobile ? (
+        <div style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          paddingBottom: '74px',
+          minHeight: 0,
+        }}>
+          <div style={{ position: 'relative', flex: '0 0 42vh', minHeight: 240 }}>
+            <Canvas
+              camera={{ position: [0, 0, 2.0], fov }}
+              gl={async (props) => {
+                const renderer = new THREE.WebGPURenderer({ antialias: true, alpha: false, ...props } as never)
+                await renderer.init()
+                renderer.outputColorSpace = THREE.SRGBColorSpace
+                renderer.toneMapping = THREE.ACESFilmicToneMapping
+                renderer.toneMappingExposure = 1.05
+                return renderer as never
+              }}
+              style={{ width: '100%', height: '100%' }}
+            >
+              <FovUpdater />
+              <CanvasResizeUpdater watch={showClothing} />
+              <color attach="background" args={['#565656']} />
+              <spotLight position={[-0.6, 0.8, 9.0]} target-position={[0, 0, 0]} intensity={16.0} color="#fff5e8" angle={0.45} penumbra={0.4} distance={12} decay={1} castShadow />
+              <spotLight position={[0.8, 0.2, 0.9]} target-position={[0, 0, 0]} intensity={2.0} color="#ccd8ff" angle={0.5} penumbra={0.6} distance={5} decay={2} />
+              <directionalLight position={[-0.3, 0.2, -1]} intensity={1.5} color="#ffd9b0" />
+              <directionalLight position={[0.3, 0.2, -1]} intensity={1.5} color="#ffd9b0" />
+              <Suspense fallback={null}>
+                <HumanModel />
+              </Suspense>
+              {showClothing && (
+                <Suspense fallback={null}>
+                  <GarmentPreviewMesh />
+                </Suspense>
+              )}
+              <OrbitControls
+                enabled={!isTransforming}
+                mouseButtons={{ MIDDLE: 0, RIGHT: 2 }}
+                minDistance={0.2}
+                maxDistance={25}
+                minPolarAngle={Math.PI * 0.2}
+                maxPolarAngle={Math.PI * 0.9}
+                target={[0, 0, 0]}
+              />
+            </Canvas>
+            {showClothing && <ClothingBootstrapper />}
+            <CharacterRenderModeTabs />
+            {showHair && <BrushToolbar />}
+          </div>
+          <div style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+            background: 'rgba(10, 10, 16, 0.97)',
+            borderTop: '1px solid rgba(255,255,255,0.07)',
+          }}>
+            {showClothing && (
+              <div style={{ minHeight: 320, borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                <ClothingPatternEditor2D />
+              </div>
+            )}
+            {showExpressions && <ControlPanel />}
+            {showTest && <TestPanel />}
+            {showModeling && <CharacterModelingPanel />}
+            {showSkinning && <SkinningPanel />}
+            {showHair && <GroomPanel />}
+            {showClothing && <ClothingInspector />}
+            {!anyPanelActive && (
+              <div style={{
+                minHeight: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                opacity: 0.2,
+                userSelect: 'none',
+              }}>
+                <span style={{ fontSize: 18 }}>◧</span>
+                <span style={{ fontSize: 9, fontFamily: "'Courier New', monospace", letterSpacing: '0.12em', fontWeight: 700 }}>
+                  SELECT A PANEL
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
       <Group orientation="horizontal" style={{ flex: 1 }}>
         {/* Canvas panel — always the same R3F canvas; clothing 2D editor sits alongside it */}
         <Panel defaultSize="70%" minSize="30%" style={{ position: 'relative', display: 'flex' }}>
@@ -322,6 +422,7 @@ export default function App() {
           </div>
         </Panel>
       </Group>
+      )}
     </div>
   )
 }
