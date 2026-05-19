@@ -471,7 +471,7 @@ function MainPanel() {
       viewBox={`0 0 ${MW} ${MH}`} width="100%" height="100%"
       preserveAspectRatio="xMidYMid meet"
       onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp}
-      style={{ display:'block', touchAction:'none', cursor: activeKey ? 'crosshair' : 'default' }}
+      style={{ display:'block', touchAction:'pan-y pinch-zoom', cursor: activeKey ? 'crosshair' : 'default' }}
     >
       <MainFaceSilhouette />
 
@@ -622,7 +622,7 @@ function TweakersPanel() {
       viewBox={`0 0 ${TW} ${TH}`} width="100%" height="100%"
       preserveAspectRatio="xMidYMid meet"
       onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp}
-      style={{ display:'block', touchAction:'none', cursor: activeKey ? 'crosshair' : 'default' }}
+      style={{ display:'block', touchAction:'pan-y pinch-zoom', cursor: activeKey ? 'crosshair' : 'default' }}
     >
       <TweakerFaceSilhouette />
 

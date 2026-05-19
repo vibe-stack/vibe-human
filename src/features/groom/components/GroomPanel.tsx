@@ -275,15 +275,26 @@ export function BrushToolbar() {
         left: '50%',
         transform: 'translateX(-50%)',
         zIndex: 20,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 3,
-        padding: '6px 10px',
-        borderRadius: 12,
+        width: 'min(calc(100vw - 16px), 980px)',
+        maxWidth: 'calc(100vw - 16px)',
+        overflowX: 'auto',
+        overflowY: 'hidden',
+        padding: 2,
+        borderRadius: 14,
         userSelect: 'none',
         ...glassBg,
       }}
     >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 3,
+          width: 'max-content',
+          minWidth: '100%',
+          padding: '6px 10px',
+        }}
+      >
       {/* Power toggle */}
       <button
         onClick={handleToggle}
@@ -372,6 +383,7 @@ export function BrushToolbar() {
         <span style={{ fontSize: 9, fontFamily: 'monospace', color: 'rgba(255,255,255,0.22)', width: 22 }}>
           {brushStrength.toFixed(2)}
         </span>
+      </div>
       </div>
     </div>
   )
