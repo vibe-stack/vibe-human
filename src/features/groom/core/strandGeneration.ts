@@ -77,8 +77,6 @@ function randomPointInTriangle(
 // inverse-distance weights (same approach as XGen / Houdini Groom).
 // ---------------------------------------------------------------------------
 
-const K_NEAREST = 4
-
 type WeightedGuide = { guide: GuideCurve; weight: number }
 
 type ClumpData = {
@@ -102,30 +100,77 @@ type TriangleMapValues = {
   flow: THREE.Vector3 | null
 }
 
+type GuideRuntime = {
+  guide: GuideCurve
+  rootX: number
+  rootY: number
+  rootZ: number
+  guideHash: number
+  points: THREE.Vector3[]
+}
+
 function findInfluenceGuides(
   rootPoint: THREE.Vector3,
-  guides: GuideCurve[],
+  guides: GuideRuntime[],
 ): WeightedGuide[] {
-  // Collect distances to all guides
-  const dists: { guide: GuideCurve; distSq: number }[] = []
+  let g0: GuideRuntime | null = null
+  let g1: GuideRuntime | null = null
+  let g2: GuideRuntime | null = null
+  let g3: GuideRuntime | null = null
+  let d0 = Number.POSITIVE_INFINITY
+  let d1 = Number.POSITIVE_INFINITY
+  let d2 = Number.POSITIVE_INFINITY
+  let d3 = Number.POSITIVE_INFINITY
   for (const guide of guides) {
-    const guideRoot = tupleToVector(guide.points[0] ?? [0, 0, 0])
-    dists.push({ guide, distSq: rootPoint.distanceToSquared(guideRoot) })
+    const dx = rootPoint.x - guide.rootX
+    const dy = rootPoint.y - guide.rootY
+    const dz = rootPoint.z - guide.rootZ
+    const distSq = dx * dx + dy * dy + dz * dz
+    if (distSq < d0) {
+      d3 = d2; g3 = g2
+      d2 = d1; g2 = g1
+      d1 = d0; g1 = g0
+      d0 = distSq; g0 = guide
+    } else if (distSq < d1) {
+      d3 = d2; g3 = g2
+      d2 = d1; g2 = g1
+      d1 = distSq; g1 = guide
+    } else if (distSq < d2) {
+      d3 = d2; g3 = g2
+      d2 = distSq; g2 = guide
+    } else if (distSq < d3) {
+      d3 = distSq; g3 = guide
+    }
   }
-
-  // Partial sort — keep K nearest
-  dists.sort((a, b) => a.distSq - b.distSq)
-  const nearest = dists.slice(0, K_NEAREST)
+  const nearest: { guide: GuideRuntime; distSq: number }[] = []
+  if (g0) nearest.push({ guide: g0, distSq: d0 })
+  if (g1) nearest.push({ guide: g1, distSq: d1 })
+  if (g2) nearest.push({ guide: g2, distSq: d2 })
+  if (g3) nearest.push({ guide: g3, distSq: d3 })
 
   // If the closest guide is exactly on the point, return it with full weight
   if (nearest[0]?.distSq === 0) {
-    return [{ guide: nearest[0].guide, weight: 1 }]
+    return [{ guide: nearest[0].guide.guide, weight: 1 }]
   }
 
   // Inverse-distance weighting (IDW, power=2)
-  const weighted = nearest.map((d) => ({ guide: d.guide, weight: 1 / d.distSq }))
+  const weighted = nearest.map((d) => ({ guide: d.guide.guide, weight: 1 / d.distSq }))
   const totalWeight = weighted.reduce((sum, w) => sum + w.weight, 0)
   return weighted.map((w) => ({ ...w, weight: w.weight / totalWeight }))
+}
+
+function buildGuideRuntime(guides: GuideCurve[]): GuideRuntime[] {
+  return guides.map((guide) => {
+    const rootTuple = guide.points[0] ?? [0, 0, 0]
+    return {
+      guide,
+      rootX: rootTuple[0],
+      rootY: rootTuple[1],
+      rootZ: rootTuple[2],
+      guideHash: hashStringU32(guide.id),
+      points: guide.points.length > 0 ? guide.points.map(tupleToVector) : [new THREE.Vector3(0, 0, 0)],
+    }
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -137,6 +182,7 @@ function interpolateStrandPoints(
   influences: WeightedGuide[],
   rootPoint: THREE.Vector3,
   segmentCount: number,
+  runtimeByGuideId: Map<string, GuideRuntime>,
 ): THREE.Vector3[] {
   const points: THREE.Vector3[] = []
 
@@ -145,17 +191,23 @@ function interpolateStrandPoints(
     const blended = new THREE.Vector3()
 
     for (const { guide, weight } of influences) {
-      const guidePoints = guide.points
-      const guideRoot = tupleToVector(guidePoints[0] ?? [0, 0, 0])
+      const runtime = runtimeByGuideId.get(guide.id)
+      if (!runtime) continue
+      const guidePoints = runtime.points
+      const guideRoot = guidePoints[0]
 
       // Sample guide at parameter t (linear interpolation along its points)
       const rawIndex = t * (guidePoints.length - 1)
       const lo = Math.floor(rawIndex)
       const hi = Math.min(lo + 1, guidePoints.length - 1)
       const frac = rawIndex - lo
-      const pA = tupleToVector(guidePoints[lo] ?? [0, 0, 0])
-      const pB = tupleToVector(guidePoints[hi] ?? [0, 0, 0])
-      const guidePoint = pA.lerp(pB, frac)
+      const pA = guidePoints[lo]
+      const pB = guidePoints[hi]
+      const guidePoint = new THREE.Vector3(
+        pA.x + (pB.x - pA.x) * frac,
+        pA.y + (pB.y - pA.y) * frac,
+        pA.z + (pB.z - pA.z) * frac,
+      )
 
       // Express guide point as an offset from the guide root, apply to our root
       const offset = guidePoint.sub(guideRoot)
@@ -182,6 +234,7 @@ function guideRootFrame(guide: GuideCurve) {
 function resolveClumpData(
   rootPoint: THREE.Vector3,
   nearestGuide: GuideCurve | undefined,
+  nearestGuideRuntime: GuideRuntime | undefined,
   settings: GroomAsset['settings'],
 ): ClumpData | null {
   if (!nearestGuide || settings.clumpStrength <= 0 || settings.clumpRadius <= 0.0001) return null
@@ -193,7 +246,7 @@ function resolveClumpData(
   const y = offset.dot(bitangent)
   const cellX = Math.floor(x / radius)
   const cellY = Math.floor(y / radius)
-  const guideHash = hashStringU32(nearestGuide.id)
+  const guideHash = nearestGuideRuntime?.guideHash ?? hashStringU32(nearestGuide.id)
   const id = hashU32(guideHash ^ hashU32((cellX + 8192) * 73856093) ^ hashU32((cellY + 8192) * 19349663))
   const rng = mulberry32(id)
   const jitterX = (rng() - 0.5) * radius * 0.42
@@ -381,9 +434,14 @@ function applyRootOcclusion(strands: GeneratedStrand[], settings: GroomAsset['se
   )
   const radiusSq = radius * radius
   const invRadius = 1 / radius
-  const buckets = new Map<string, number[]>()
+  const buckets: Record<number, number[]> = {}
   const roots = new Float32Array(strands.length * 3)
-  const bucketKey = (x: number, y: number, z: number) => `${x}:${y}:${z}`
+  const bucketKey = (x: number, y: number, z: number) => {
+    const ox = x + 4096
+    const oy = y + 4096
+    const oz = z + 4096
+    return ox * 67_108_864 + oy * 8192 + oz
+  }
 
   for (let i = 0; i < strands.length; i += 1) {
     const root = strands[i].points[0]
@@ -395,9 +453,9 @@ function applyRootOcclusion(strands: GeneratedStrand[], settings: GroomAsset['se
     const by = Math.floor(root[1] * invRadius)
     const bz = Math.floor(root[2] * invRadius)
     const key = bucketKey(bx, by, bz)
-    const bucket = buckets.get(key)
+    const bucket = buckets[key]
     if (bucket) bucket.push(i)
-    else buckets.set(key, [i])
+    else buckets[key] = [i]
   }
 
   // A linear radial kernel has roughly one third the full disk/sphere count.
@@ -417,7 +475,7 @@ function applyRootOcclusion(strands: GeneratedStrand[], settings: GroomAsset['se
     for (let dz = -1; dz <= 1; dz += 1) {
       for (let dy = -1; dy <= 1; dy += 1) {
         for (let dx = -1; dx <= 1; dx += 1) {
-          const bucket = buckets.get(bucketKey(bx + dx, by + dy, bz + dz))
+          const bucket = buckets[bucketKey(bx + dx, by + dy, bz + dz)]
           if (!bucket) continue
 
           for (const other of bucket) {
@@ -520,6 +578,8 @@ export function generateStrandsFromGuides(
   if (!geometry || !(geometry instanceof THREE.BufferGeometry)) return []
 
   const strands: GeneratedStrand[] = []
+  const guideRuntime = buildGuideRuntime(guides)
+  const guideRuntimeById = new Map<string, GuideRuntime>(guideRuntime.map((runtime) => [runtime.guide.id, runtime]))
   const densityData = buildScalpDensityData(geometry, scalpMask.selectedTriangleIndices)
   // strandDensity is strands/cm² — triangles are in metres, 1 m² = 10000 cm²
   const strandsPerM2 = settings.strandDensity * 10_000
@@ -560,15 +620,25 @@ export function generateStrandsFromGuides(
       rootPoint.addScaledVector(surface.normal, 0.0008)
 
       // Guide interpolation
-      const influences = findInfluenceGuides(rootPoint, guides)
-      const basePoints = interpolateStrandPoints(influences, rootPoint, settings.guideSegments)
-      const clumpData = resolveClumpData(rootPoint, influences[0]?.guide, localSettings)
+      const influences = findInfluenceGuides(rootPoint, guideRuntime)
+      const basePoints = interpolateStrandPoints(influences, rootPoint, settings.guideSegments, guideRuntimeById)
+      const clumpData = resolveClumpData(
+        rootPoint,
+        influences[0]?.guide,
+        influences[0] ? guideRuntimeById.get(influences[0].guide.id) : undefined,
+        localSettings,
+      )
       let shapedPoints = basePoints
       const clumpId = clumpData?.id ?? hashStringU32(influences[0]?.guide.id ?? '')
 
       if (clumpData) {
-        const clumpInfluences = findInfluenceGuides(clumpData.rootPoint, guides)
-        const clumpBasePoints = interpolateStrandPoints(clumpInfluences, clumpData.rootPoint, settings.guideSegments)
+        const clumpInfluences = findInfluenceGuides(clumpData.rootPoint, guideRuntime)
+        const clumpBasePoints = interpolateStrandPoints(
+          clumpInfluences,
+          clumpData.rootPoint,
+          settings.guideSegments,
+          guideRuntimeById,
+        )
         const clumpRng = mulberry32(clumpData.id)
         const clumpGuidePoints = applyStrandEffects(clumpBasePoints, localSettings, clumpRng, 0.25)
         shapedPoints = applyClumpAttraction(
