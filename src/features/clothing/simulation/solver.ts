@@ -90,11 +90,12 @@ export class XPBDClothSolver {
       this.integrate(dt, damping, this.params.gravity * gravityScale)
       this.clampSubstepDisplacement(sewingProgress)
       const seamRestScale = 1 - sewingProgress
+      const seamStiffness = this.seamAssemblyStiffness(sewingProgress)
       const bendBlend = this.bendAssemblyBlend(sewingProgress)
       for (let iteration = 0; iteration < this.params.iterations; iteration += 1) {
         solveDistanceConstraintsFlat(this.mesh.positions, this.mesh.invMass, this.stretchFlat, dt, 0)
         solveDistanceConstraintsFlat(this.mesh.positions, this.mesh.invMass, this.shearFlat, dt, 0)
-        solveDistanceConstraintsFlat(this.mesh.positions, this.mesh.invMass, this.seamFlat, dt, seamRestScale)
+        solveDistanceConstraintsFlat(this.mesh.positions, this.mesh.invMass, this.seamFlat, dt, seamRestScale, seamStiffness)
         if (bendBlend > 0) {
           solveBendConstraintsFlat(this.mesh.positions, this.mesh.invMass, this.bendFlat, dt / bendBlend)
         }
@@ -321,6 +322,12 @@ export class XPBDClothSolver {
 
   private velocityRetentionForAssembly(sewingProgress: number) {
     return 0.05 + 0.95 * sewingProgress * sewingProgress
+  }
+
+  private seamAssemblyStiffness(sewingProgress: number) {
+    // Avoid violent early seam snap: start soft so panels translate toward one
+    // another first, then lock seam strength near the end of assembly.
+    return 0.2 + 0.8 * smooth01((sewingProgress - 0.2) / 0.8)
   }
 
   private bendAssemblyBlend(sewingProgress: number) {
