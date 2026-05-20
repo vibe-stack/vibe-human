@@ -4,7 +4,7 @@ import type { PatternDocument, PatternPanel } from '../document/types'
 import type { GarmentTopology } from './types'
 import type { RenderEmbedding, RenderPanelRuntime } from '../simulation/types'
 
-const SUBDIVISIONS = 6
+const SUBDIVISIONS = 18
 
 export function buildRenderEmbedding(
   document: PatternDocument,
@@ -81,9 +81,37 @@ function buildPanelVisualMesh(panel: PatternPanel) {
     }
   }
 
+  return weldUvVertices(new Float32Array(uvBuf), new Uint32Array(indexBuf))
+}
+
+type WeldBuffers = {
+  panelUvs: Float32Array
+  indices: Uint32Array
+}
+
+function weldUvVertices(panelUvs: Float32Array, indices: Uint32Array): WeldBuffers {
+  const weldedUvs: number[] = []
+  const weldedIndices = new Uint32Array(indices.length)
+  const map = new Map<string, number>()
+  const scale = 1e6
+
+  for (let i = 0; i < indices.length; i += 1) {
+    const src = indices[i]
+    const u = panelUvs[src * 2]
+    const v = panelUvs[src * 2 + 1]
+    const key = `${Math.round(u * scale)}:${Math.round(v * scale)}`
+    let dst = map.get(key)
+    if (dst === undefined) {
+      dst = weldedUvs.length / 2
+      weldedUvs.push(u, v)
+      map.set(key, dst)
+    }
+    weldedIndices[i] = dst
+  }
+
   return {
-    panelUvs: new Float32Array(uvBuf),
-    indices: new Uint32Array(indexBuf),
+    panelUvs: new Float32Array(weldedUvs),
+    indices: weldedIndices,
   }
 }
 

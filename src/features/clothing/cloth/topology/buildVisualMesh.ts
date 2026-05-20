@@ -10,7 +10,38 @@ import { samplePatternOutline, sampleEdgeLoop } from '../../geometry/patternSamp
  * [0,1]² so the sim can be sampled bilinearly at render time.
  */
 
-const SUBDIVISIONS = 6
+const SUBDIVISIONS = 18
+
+type WeldBuffers = {
+  uvs: Float32Array
+  indices: Uint32Array
+}
+
+function weldUvVertices(uvs: Float32Array, indices: Uint32Array): WeldBuffers {
+  const weldedUvs: number[] = []
+  const weldedIndices = new Uint32Array(indices.length)
+  const map = new Map<string, number>()
+  const scale = 1e6
+
+  for (let i = 0; i < indices.length; i += 1) {
+    const src = indices[i]
+    const u = uvs[src * 2]
+    const v = uvs[src * 2 + 1]
+    const key = `${Math.round(u * scale)}:${Math.round(v * scale)}`
+    let dst = map.get(key)
+    if (dst === undefined) {
+      dst = weldedUvs.length / 2
+      weldedUvs.push(u, v)
+      map.set(key, dst)
+    }
+    weldedIndices[i] = dst
+  }
+
+  return {
+    uvs: new Float32Array(weldedUvs),
+    indices: weldedIndices,
+  }
+}
 
 export type VisualMesh = {
   geometry: THREE.BufferGeometry
@@ -80,13 +111,13 @@ export function buildVisualMesh(piece: PatternPiece): VisualMesh {
     }
   }
 
-  const uvs = new Float32Array(uvBuf)
-  const positions = new Float32Array((uvs.length / 2) * 3)
+  const welded = weldUvVertices(new Float32Array(uvBuf), new Uint32Array(idxBuf))
+  const positions = new Float32Array((welded.uvs.length / 2) * 3)
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-  geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2))
-  geometry.setIndex(idxBuf)
+  geometry.setAttribute('uv', new THREE.BufferAttribute(welded.uvs, 2))
+  geometry.setIndex(new THREE.BufferAttribute(welded.indices, 1))
   geometry.computeVertexNormals()
-  return { geometry, uvs }
+  return { geometry, uvs: welded.uvs }
 }
 
 function patternBounds(piece: PatternPiece) {
