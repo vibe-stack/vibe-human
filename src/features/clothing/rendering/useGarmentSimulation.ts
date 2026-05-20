@@ -32,10 +32,10 @@ const CLOTH_GROUND_Y = -3.15
 const PATTERN_UNIT_SCALE = 0.004
 
 const SOLVER_PRESETS: Record<CompileQuality, SolverParams> = {
-  low: { gravity: -9.81, damping: 0.08, substeps: 1, iterations: 4, dt: FIXED_DT, groundY: CLOTH_GROUND_Y, maxVelocity: 6, sewingTime: 0.85, gravityDelayTime: 0.7, gravityRampTime: 0.45 },
-  medium: { gravity: -9.81, damping: 0.07, substeps: 2, iterations: 6, dt: FIXED_DT, groundY: CLOTH_GROUND_Y, maxVelocity: 6, sewingTime: 0.85, gravityDelayTime: 0.7, gravityRampTime: 0.45 },
-  high: { gravity: -9.81, damping: 0.06, substeps: 3, iterations: 8, dt: FIXED_DT, groundY: CLOTH_GROUND_Y, maxVelocity: 7, sewingTime: 0.85, gravityDelayTime: 0.7, gravityRampTime: 0.45 },
-  ultra: { gravity: -9.81, damping: 0.05, substeps: 4, iterations: 10, dt: FIXED_DT, groundY: CLOTH_GROUND_Y, maxVelocity: 8, sewingTime: 0.85, gravityDelayTime: 0.7, gravityRampTime: 0.45 },
+  low: { gravity: -9.81, damping: 0.08, substeps: 1, iterations: 4, dt: FIXED_DT, groundY: CLOTH_GROUND_Y, maxVelocity: 6, sewingTime: 0.65, gravityDelayTime: 0.05, gravityRampTime: 0.2 },
+  medium: { gravity: -9.81, damping: 0.07, substeps: 2, iterations: 6, dt: FIXED_DT, groundY: CLOTH_GROUND_Y, maxVelocity: 6, sewingTime: 0.65, gravityDelayTime: 0.05, gravityRampTime: 0.2 },
+  high: { gravity: -9.81, damping: 0.06, substeps: 3, iterations: 8, dt: FIXED_DT, groundY: CLOTH_GROUND_Y, maxVelocity: 7, sewingTime: 0.65, gravityDelayTime: 0.05, gravityRampTime: 0.2 },
+  ultra: { gravity: -9.81, damping: 0.05, substeps: 4, iterations: 10, dt: FIXED_DT, groundY: CLOTH_GROUND_Y, maxVelocity: 8, sewingTime: 0.65, gravityDelayTime: 0.05, gravityRampTime: 0.2 },
 }
 
 type RenderPanelEntry = {
@@ -45,8 +45,9 @@ type RenderPanelEntry = {
   neighbors: Uint32Array
 }
 
-const VISUAL_SMOOTHING_PASSES = 2
-const VISUAL_SMOOTHING_ALPHA = 0.35
+const VISUAL_SMOOTHING_PASSES = 5
+const VISUAL_SMOOTHING_ALPHA = 0.5
+const VISUAL_SMOOTHING_SHRINK = -0.53
 
 export function useGarmentSimulation(args: {
   document: PatternDocument
@@ -445,6 +446,7 @@ function updateRenderPanels(runtime: GarmentRuntime, entries: RenderPanelEntry[]
       array[vertex * 3 + 2] = positions[ia + 2] * wa + positions[ib + 2] * wb + positions[ic + 2] * wc
     }
     smoothVisualMeshPositions(array, entry.neighborOffsets, entry.neighbors, VISUAL_SMOOTHING_PASSES, VISUAL_SMOOTHING_ALPHA)
+    smoothVisualMeshPositions(array, entry.neighborOffsets, entry.neighbors, 1, VISUAL_SMOOTHING_SHRINK)
     attr.needsUpdate = true
     entry.geometry.computeVertexNormals()
   }
