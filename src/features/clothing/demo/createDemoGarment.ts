@@ -69,14 +69,14 @@ export function createDemoGarment(): GarmentDocument {
   const back = createTShirtPanel('torso-back', 'T-Shirt Back', 12)
 
   const seams: Record<string, Seam> = {
-    'right-shoulder': stitch('right-shoulder', 'Right Shoulder', front, 'right-shoulder', back, 'right-shoulder'),
-    'left-shoulder': stitch('left-shoulder', 'Left Shoulder', front, 'left-shoulder', back, 'left-shoulder'),
-    'right-sleeve-top': stitch('right-sleeve-top', 'Right Sleeve Top', front, 'right-sleeve-top', back, 'right-sleeve-top'),
-    'left-sleeve-top': stitch('left-sleeve-top', 'Left Sleeve Top', front, 'left-sleeve-top', back, 'left-sleeve-top'),
-    'right-sleeve-underarm': stitch('right-sleeve-underarm', 'Right Sleeve Underarm', front, 'right-sleeve-underarm', back, 'right-sleeve-underarm'),
-    'left-sleeve-underarm': stitch('left-sleeve-underarm', 'Left Sleeve Underarm', front, 'left-sleeve-underarm', back, 'left-sleeve-underarm'),
-    'right-side': stitch('right-side', 'Right Side Seam', front, 'right-side', back, 'right-side'),
-    'left-side': stitch('left-side', 'Left Side Seam', front, 'left-side', back, 'left-side'),
+    'right-shoulder': stitch('right-shoulder', 'Right Shoulder', front, 'right-shoulder', back, 'right-shoulder', true),
+    'left-shoulder': stitch('left-shoulder', 'Left Shoulder', front, 'left-shoulder', back, 'left-shoulder', true),
+    'right-sleeve-top': stitch('right-sleeve-top', 'Right Sleeve Top', front, 'right-sleeve-top', back, 'right-sleeve-top', true),
+    'left-sleeve-top': stitch('left-sleeve-top', 'Left Sleeve Top', front, 'left-sleeve-top', back, 'left-sleeve-top', true),
+    'right-sleeve-underarm': stitch('right-sleeve-underarm', 'Right Sleeve Underarm', front, 'right-sleeve-underarm', back, 'right-sleeve-underarm', true),
+    'left-sleeve-underarm': stitch('left-sleeve-underarm', 'Left Sleeve Underarm', front, 'left-sleeve-underarm', back, 'left-sleeve-underarm', true),
+    'right-side': stitch('right-side', 'Right Side Seam', front, 'right-side', back, 'right-side', true),
+    'left-side': stitch('left-side', 'Left Side Seam', front, 'left-side', back, 'left-side', true),
   }
 
   return {
