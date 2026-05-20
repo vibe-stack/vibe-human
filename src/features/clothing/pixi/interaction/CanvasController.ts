@@ -140,8 +140,10 @@ export class CanvasController {
 
     const touches = [...this.activeTouches.values()]
     if (touches.length < 2) {
+      // On touch devices, reserve one-finger gestures for native page scroll.
+      // Two-finger gestures are used for canvas pan/zoom.
       this.touchGestureState = null
-      return false
+      return true
     }
 
     e.preventDefault()

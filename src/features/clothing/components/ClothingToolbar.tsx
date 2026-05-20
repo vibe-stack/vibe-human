@@ -75,6 +75,9 @@ export default function ClothingToolbar() {
       overflowX: 'auto',
       overflowY: 'hidden',
       WebkitOverflowScrolling: 'touch',
+      position: 'sticky',
+      top: 0,
+      zIndex: 20,
     }}>
       <ToolGroup>
         {TOOLS.map((tool) => (
