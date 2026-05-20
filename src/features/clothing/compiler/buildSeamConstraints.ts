@@ -28,13 +28,18 @@ export function buildSeamConstraints(
     )
     const edgeParticlesA = orderedEdgeParticles(panelA, meshA, pointsA)
     const edgeParticlesB = orderedEdgeParticles(panelB, meshB, pointsB)
-    const count = Math.min(edgeParticlesA.length, edgeParticlesB.length)
+    const count = Math.max(edgeParticlesA.length, edgeParticlesB.length)
     const seen = new Set<string>()
 
-    if (count >= 2) {
+    if (edgeParticlesA.length >= 2 && edgeParticlesB.length >= 2 && count >= 2) {
       for (let index = 0; index < count; index += 1) {
-        const particleA = sampleOrderedParticle(edgeParticlesA, index, count)
-        const particleB = sampleOrderedParticle(edgeParticlesB, index, count)
+        const aIsLonger = edgeParticlesA.length >= edgeParticlesB.length
+        const particleA = aIsLonger
+          ? sampleOrderedParticle(edgeParticlesA, index, count)
+          : sampleOrderedParticle(edgeParticlesA, index, Math.max(2, edgeParticlesA.length))
+        const particleB = aIsLonger
+          ? sampleOrderedParticle(edgeParticlesB, index, Math.max(2, edgeParticlesB.length))
+          : sampleOrderedParticle(edgeParticlesB, index, count)
         if (particleA < 0 || particleB < 0 || particleA === particleB) continue
         const key = particleA < particleB ? `${particleA}:${particleB}` : `${particleB}:${particleA}`
         if (seen.has(key)) continue
@@ -51,10 +56,12 @@ export function buildSeamConstraints(
       continue
     }
 
-    const fallbackCount = Math.min(pointsA.length, pointsB.length)
+    const fallbackCount = Math.max(pointsA.length, pointsB.length)
     for (let index = 0; index < fallbackCount; index += 1) {
-      const particleA = nearestParticle(meshA, pointsA[index].x, pointsA[index].y)
-      const particleB = nearestParticle(meshB, pointsB[index].x, pointsB[index].y)
+      const sampleA = pointsA[Math.round((index / Math.max(1, fallbackCount - 1)) * Math.max(0, pointsA.length - 1))]
+      const sampleB = pointsB[Math.round((index / Math.max(1, fallbackCount - 1)) * Math.max(0, pointsB.length - 1))]
+      const particleA = nearestParticle(meshA, sampleA.x, sampleA.y)
+      const particleB = nearestParticle(meshB, sampleB.x, sampleB.y)
       if (particleA < 0 || particleB < 0 || particleA === particleB) continue
       const key = particleA < particleB ? `${particleA}:${particleB}` : `${particleB}:${particleA}`
       if (seen.has(key)) continue

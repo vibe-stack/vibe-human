@@ -38,6 +38,10 @@ export type PatternPiece = {
   color?: string
   /** Target triangle size for simulation grid (mm-scale in pattern space). */
   particleDistance: number
+  stretchCompliance?: number
+  shearCompliance?: number
+  bendCompliance?: number
+  damping?: number
 }
 
 /** One end of a seam — references an edge in a PatternPiece. */
