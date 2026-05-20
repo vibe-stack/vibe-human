@@ -1,4 +1,4 @@
-import type { PatternDocument, PatternPanel, PatternPlacement } from './types'
+import type { PatternDocument, PatternPanel, PatternPlacement, PanelPin } from './types'
 import type { GarmentDocument } from '../state/clothingTypes'
 
 export function toPatternDocument(
@@ -12,6 +12,7 @@ export function toPatternDocument(
     panels[piece.id] = {
       ...JSON.parse(JSON.stringify(piece)),
       placement: clonePlacement(placements[piece.id] ?? defaultPlacement(index, pieces.length)),
+      pins: buildGluedEdgePins(piece),
       metadata: undefined,
     }
   }
@@ -48,4 +49,45 @@ function defaultPlacement(index: number, count: number): PatternPlacement {
     position: { x: spread * 0.18, y: 0.38, z: spread * -0.12 },
     rotation: { x: 0, y: spread * 0.22, z: 0 },
   }
+}
+
+function buildGluedEdgePins(piece: GarmentDocument['patterns'][string]): PanelPin[] | undefined {
+  const glued = piece.gluedEdgeIds ?? []
+  if (glued.length === 0) return undefined
+  const bounds = boundsOf(piece)
+  if (bounds.width <= 0 || bounds.height <= 0) return undefined
+  const pins: PanelPin[] = []
+  for (const edgeId of glued) {
+    const edge = piece.edges.find((candidate) => candidate.id === edgeId)
+    if (!edge) continue
+    const a = piece.points[edge.from]
+    const b = piece.points[edge.to]
+    if (!a || !b) continue
+    for (const t of [0.1, 0.3, 0.5, 0.7, 0.9]) {
+      const x = a.x + (b.x - a.x) * t
+      const y = a.y + (b.y - a.y) * t
+      pins.push({
+        id: `${piece.id}-${edgeId}-${Math.round(t * 10)}`,
+        u: (x - bounds.minX) / bounds.width,
+        v: (y - bounds.minY) / bounds.height,
+        weight: 1,
+      })
+    }
+  }
+  return pins.length ? pins : undefined
+}
+
+function boundsOf(piece: GarmentDocument['patterns'][string]) {
+  const pts = Object.values(piece.points)
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  for (const p of pts) {
+    if (p.x < minX) minX = p.x
+    if (p.y < minY) minY = p.y
+    if (p.x > maxX) maxX = p.x
+    if (p.y > maxY) maxY = p.y
+  }
+  return { minX, minY, width: Math.max(1e-6, maxX - minX), height: Math.max(1e-6, maxY - minY) }
 }
