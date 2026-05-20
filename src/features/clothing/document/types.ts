@@ -53,6 +53,10 @@ export type PatternPanel = {
   fabricId?: string
   color?: string
   particleDistance: number
+  stretchCompliance?: number
+  shearCompliance?: number
+  bendCompliance?: number
+  damping?: number
   placement: PatternPlacement
   pins?: PanelPin[]
   grain?: GrainDirection

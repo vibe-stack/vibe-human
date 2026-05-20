@@ -114,6 +114,58 @@ export default function ClothingInspector() {
             }}
           />
           <Slider
+            label="Stretch Compliance"
+            value={selectedPattern.stretchCompliance ?? 0.0002}
+            min={0.00001}
+            max={0.002}
+            step={0.00001}
+            onChange={(value) => {
+              clothingStore.garment.patterns[selectedPattern.id].stretchCompliance = value
+              clothingStore.dirty.previewDirty = true
+              clothingStore.simResetKey += 1
+              clothingStore.simRunning = false
+            }}
+          />
+          <Slider
+            label="Shear Compliance"
+            value={selectedPattern.shearCompliance ?? 0.00028}
+            min={0.00001}
+            max={0.002}
+            step={0.00001}
+            onChange={(value) => {
+              clothingStore.garment.patterns[selectedPattern.id].shearCompliance = value
+              clothingStore.dirty.previewDirty = true
+              clothingStore.simResetKey += 1
+              clothingStore.simRunning = false
+            }}
+          />
+          <Slider
+            label="Bend Compliance"
+            value={selectedPattern.bendCompliance ?? 0.25}
+            min={0.001}
+            max={1}
+            step={0.001}
+            onChange={(value) => {
+              clothingStore.garment.patterns[selectedPattern.id].bendCompliance = value
+              clothingStore.dirty.previewDirty = true
+              clothingStore.simResetKey += 1
+              clothingStore.simRunning = false
+            }}
+          />
+          <Slider
+            label="Damping"
+            value={selectedPattern.damping ?? 0.07}
+            min={0}
+            max={0.2}
+            step={0.001}
+            onChange={(value) => {
+              clothingStore.garment.patterns[selectedPattern.id].damping = value
+              clothingStore.dirty.previewDirty = true
+              clothingStore.simResetKey += 1
+              clothingStore.simRunning = false
+            }}
+          />
+          <Slider
             label="Substeps"
             value={simQuality === 'low' ? 1 : simQuality === 'medium' ? 2 : simQuality === 'high' ? 3 : 4}
             min={1}

@@ -133,7 +133,13 @@ export function useGarmentSimulation(args: {
     frameRef.current = { positions: compileResult.value.simMesh.positions }
     applyDocumentPlacements(compileResult.value.simMesh, documentRef.current)
     refreshSeamPlacementRest(compileResult.value.simMesh)
-    solverRef.current = new XPBDClothSolver(compileResult.value.simMesh, SOLVER_PRESETS[quality])
+    const panelDamping = Object.values(documentRef.current.panels)
+      .map((panel) => panel.damping)
+      .filter((value): value is number => Number.isFinite(value))
+    const damping = panelDamping.length
+      ? panelDamping.reduce((sum, value) => sum + value, 0) / panelDamping.length
+      : SOLVER_PRESETS[quality].damping
+    solverRef.current = new XPBDClothSolver(compileResult.value.simMesh, { ...SOLVER_PRESETS[quality], damping })
     updateRenderPanels(compileResult.value, renderPanels, compileResult.value.simMesh.positions)
     accumRef.current = 0
   }, [compileResult, quality, renderPanels])

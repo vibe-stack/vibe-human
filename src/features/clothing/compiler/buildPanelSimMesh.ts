@@ -44,6 +44,9 @@ export function buildPanelSimMesh(
   particleOffset: number,
 ): CompiledPanelSimMesh {
   const preset = QUALITY_PRESETS[options.quality]
+  const stretchCompliance = panel.stretchCompliance ?? preset.stretchCompliance
+  const shearCompliance = panel.shearCompliance ?? preset.shearCompliance
+  const bendCompliance = panel.bendCompliance ?? preset.bendCompliance
   const bounds = boundsOf(panel)
   const worldWidth = bounds.width * PATTERN_UNIT_SCALE
   const worldHeight = bounds.height * PATTERN_UNIT_SCALE
@@ -107,22 +110,22 @@ export function buildPanelSimMesh(
       if (a < 0) continue
 
       if (has(col + 1, row)) {
-        stretchConstraints.push({ a, b: map(col + 1, row), rest: spacingX, compliance: preset.stretchCompliance, kind: 'stretch' })
+        stretchConstraints.push({ a, b: map(col + 1, row), rest: spacingX, compliance: stretchCompliance, kind: 'stretch' })
       }
       if (has(col, row + 1)) {
-        stretchConstraints.push({ a, b: map(col, row + 1), rest: spacingY, compliance: preset.stretchCompliance, kind: 'stretch' })
+        stretchConstraints.push({ a, b: map(col, row + 1), rest: spacingY, compliance: stretchCompliance, kind: 'stretch' })
       }
       if (has(col + 1, row + 1)) {
-        shearConstraints.push({ a, b: map(col + 1, row + 1), rest: diag, compliance: preset.shearCompliance, kind: 'shear' })
+        shearConstraints.push({ a, b: map(col + 1, row + 1), rest: diag, compliance: shearCompliance, kind: 'shear' })
       }
       if (has(col + 1, row - 1)) {
-        shearConstraints.push({ a, b: map(col + 1, row - 1), rest: diag, compliance: preset.shearCompliance, kind: 'shear' })
+        shearConstraints.push({ a, b: map(col + 1, row - 1), rest: diag, compliance: shearCompliance, kind: 'shear' })
       }
       if (has(col - 1, row) && has(col + 1, row)) {
-        bendConstraints.push({ a: map(col - 1, row), b: a, c: map(col + 1, row), rest: 0, compliance: preset.bendCompliance, kind: 'bend' })
+        bendConstraints.push({ a: map(col - 1, row), b: a, c: map(col + 1, row), rest: 0, compliance: bendCompliance, kind: 'bend' })
       }
       if (has(col, row - 1) && has(col, row + 1)) {
-        bendConstraints.push({ a: map(col, row - 1), b: a, c: map(col, row + 1), rest: 0, compliance: preset.bendCompliance, kind: 'bend' })
+        bendConstraints.push({ a: map(col, row - 1), b: a, c: map(col, row + 1), rest: 0, compliance: bendCompliance, kind: 'bend' })
       }
 
       if (has(col + 1, row) && has(col, row + 1) && has(col + 1, row + 1)) {
