@@ -387,12 +387,24 @@ export function loadDemoGarment(doc: GarmentDocument) {
   } else if (patternIds.length >= 2) {
     const [frontId, backId] = patternIds
     clothingStore.placements[frontId] = {
-      position: { x: 0, y: -0.74, z: 0.3 },
+      position: { x: 0, y: -0.56, z: 0.26 },
       rotation: { x: 0, y: 0, z: 0 },
     }
     clothingStore.placements[backId] = {
-      position: { x: 0, y: -0.74, z: -0.3 },
+      position: { x: 0, y: -0.56, z: -0.26 },
       rotation: { x: 0, y: Math.PI, z: 0 },
+    }
+    if (patternIds.includes('pants-front')) {
+      clothingStore.placements['pants-front'] = {
+        position: { x: 0, y: -1.02, z: 0.2 },
+        rotation: { x: 0, y: 0, z: 0 },
+      }
+    }
+    if (patternIds.includes('pants-back')) {
+      clothingStore.placements['pants-back'] = {
+        position: { x: 0, y: -1.02, z: -0.2 },
+        rotation: { x: 0, y: Math.PI, z: 0 },
+      }
     }
   }
   clothingStore.viewport2D.zoom = 1.35

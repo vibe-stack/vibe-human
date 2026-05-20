@@ -47,6 +47,9 @@ export default function ClothingInspector() {
   const selectedPoint = selectedPattern && garment.selectedPointId
     ? selectedPattern.points[garment.selectedPointId]
     : null
+  const selectedEdge = selectedPattern && garment.selectedEdgeId
+    ? selectedPattern.edges.find((edge) => edge.id === garment.selectedEdgeId) ?? null
+    : null
 
   return (
     <div style={{
@@ -79,7 +82,25 @@ export default function ClothingInspector() {
                 clothingStore.garment.patterns[selectedPattern.id].color = value
               }}
             />
-            {selectedPoint && (
+            
+            {selectedEdge && (
+              <>
+                <Row label="Edge" value={selectedEdge.id} />
+                <Row label="Glued" value={selectedPattern.gluedEdgeIds?.includes(selectedEdge.id) ? 'YES' : 'NO'} />
+                <ButtonRow>
+                  <SmallButton label={selectedPattern.gluedEdgeIds?.includes(selectedEdge.id) ? 'UNGLUE EDGE' : 'GLUE EDGE'} onClick={() => {
+                    const next = new Set(selectedPattern.gluedEdgeIds ?? [])
+                    if (next.has(selectedEdge.id)) next.delete(selectedEdge.id)
+                    else next.add(selectedEdge.id)
+                    clothingStore.garment.patterns[selectedPattern.id].gluedEdgeIds = [...next]
+                    clothingStore.dirty.previewDirty = true
+                    clothingStore.simResetKey += 1
+                    clothingStore.simRunning = false
+                  }} />
+                </ButtonRow>
+              </>
+            )}
+{selectedPoint && (
               <>
                 <Row label="Point X" value={selectedPoint.x.toFixed(1)} />
                 <Row label="Point Y" value={selectedPoint.y.toFixed(1)} />

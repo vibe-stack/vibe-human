@@ -42,6 +42,7 @@ export type PatternPiece = {
   shearCompliance?: number
   bendCompliance?: number
   damping?: number
+  gluedEdgeIds?: string[]
 }
 
 /** One end of a seam — references an edge in a PatternPiece. */
