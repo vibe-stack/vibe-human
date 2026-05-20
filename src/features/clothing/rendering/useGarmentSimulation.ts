@@ -41,7 +41,12 @@ const SOLVER_PRESETS: Record<CompileQuality, SolverParams> = {
 type RenderPanelEntry = {
   panelId: string
   geometry: THREE.BufferGeometry
+  neighborOffsets: Uint32Array
+  neighbors: Uint32Array
 }
+
+const VISUAL_SMOOTHING_PASSES = 2
+const VISUAL_SMOOTHING_ALPHA = 0.35
 
 export function useGarmentSimulation(args: {
   document: PatternDocument
@@ -413,7 +418,13 @@ function createRenderPanelEntry(panel: GarmentRuntime['renderPanels'][number]): 
   geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array((panel.panelUvs.length / 2) * 3), 3))
   geometry.setAttribute('uv', new THREE.BufferAttribute(panel.panelUvs, 2))
   geometry.setIndex(new THREE.BufferAttribute(panel.indices, 1))
-  return { panelId: panel.panelId, geometry }
+  const adjacency = buildAdjacency(panel.panelUvs.length / 2, panel.indices)
+  return {
+    panelId: panel.panelId,
+    geometry,
+    neighborOffsets: adjacency.offsets,
+    neighbors: adjacency.neighbors,
+  }
 }
 
 function updateRenderPanels(runtime: GarmentRuntime, entries: RenderPanelEntry[], positions: Float32Array) {
@@ -433,7 +444,71 @@ function updateRenderPanels(runtime: GarmentRuntime, entries: RenderPanelEntry[]
       array[vertex * 3 + 1] = positions[ia + 1] * wa + positions[ib + 1] * wb + positions[ic + 1] * wc
       array[vertex * 3 + 2] = positions[ia + 2] * wa + positions[ib + 2] * wb + positions[ic + 2] * wc
     }
+    smoothVisualMeshPositions(array, entry.neighborOffsets, entry.neighbors, VISUAL_SMOOTHING_PASSES, VISUAL_SMOOTHING_ALPHA)
     attr.needsUpdate = true
     entry.geometry.computeVertexNormals()
+  }
+}
+
+function buildAdjacency(vertexCount: number, indices: Uint32Array) {
+  const neighborSets = Array.from({ length: vertexCount }, () => new Set<number>())
+  for (let i = 0; i < indices.length; i += 3) {
+    const a = indices[i]
+    const b = indices[i + 1]
+    const c = indices[i + 2]
+    neighborSets[a].add(b); neighborSets[a].add(c)
+    neighborSets[b].add(a); neighborSets[b].add(c)
+    neighborSets[c].add(a); neighborSets[c].add(b)
+  }
+  const offsets = new Uint32Array(vertexCount + 1)
+  let total = 0
+  for (let i = 0; i < vertexCount; i += 1) {
+    offsets[i] = total
+    total += neighborSets[i].size
+  }
+  offsets[vertexCount] = total
+  const neighbors = new Uint32Array(total)
+  let cursor = 0
+  for (let i = 0; i < vertexCount; i += 1) {
+    for (const n of neighborSets[i]) neighbors[cursor++] = n
+  }
+  return { offsets, neighbors }
+}
+
+function smoothVisualMeshPositions(
+  positions: Float32Array,
+  neighborOffsets: Uint32Array,
+  neighbors: Uint32Array,
+  passes: number,
+  alpha: number,
+) {
+  if (passes <= 0 || alpha <= 0) return
+  const scratch = new Float32Array(positions.length)
+  const vertexCount = neighborOffsets.length - 1
+  for (let pass = 0; pass < passes; pass += 1) {
+    scratch.set(positions)
+    for (let vertex = 0; vertex < vertexCount; vertex += 1) {
+      const start = neighborOffsets[vertex]
+      const end = neighborOffsets[vertex + 1]
+      const neighborCount = end - start
+      if (neighborCount === 0) continue
+      let avgX = 0
+      let avgY = 0
+      let avgZ = 0
+      for (let i = start; i < end; i += 1) {
+        const n = neighbors[i] * 3
+        avgX += scratch[n]
+        avgY += scratch[n + 1]
+        avgZ += scratch[n + 2]
+      }
+      const inv = 1 / neighborCount
+      avgX *= inv
+      avgY *= inv
+      avgZ *= inv
+      const base = vertex * 3
+      positions[base] = scratch[base] + (avgX - scratch[base]) * alpha
+      positions[base + 1] = scratch[base + 1] + (avgY - scratch[base + 1]) * alpha
+      positions[base + 2] = scratch[base + 2] + (avgZ - scratch[base + 2]) * alpha
+    }
   }
 }
