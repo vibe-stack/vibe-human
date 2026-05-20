@@ -90,6 +90,18 @@ describe('clothing compiler architecture', () => {
     }
   })
 
+
+  test('demo seam orientation avoids crossed horizontal pairing regression', () => {
+    const fixed = compileGarmentRuntime(buildDocument(), { quality: 'medium', seamSamples: 12 }).value
+    const regressed = compileGarmentRuntime(buildDocumentWithBackSeamsUnreversed(), { quality: 'medium', seamSamples: 12 }).value
+
+    const fixedMaxRest = Math.max(...fixed.simMesh.seamConstraints.map((constraint) => constraint.rest))
+    const regressedMaxRest = Math.max(...regressed.simMesh.seamConstraints.map((constraint) => constraint.rest))
+
+    assert.equal(fixedMaxRest < regressedMaxRest, true)
+    assert.equal(fixedMaxRest < 0.75, true)
+  })
+
   test('horizontal seams auto-orient to avoid crossed pairing', () => {
     const runtime = compileGarmentRuntime(buildHorizontalSeamDocument(), { quality: 'medium', seamSamples: 12 }).value
     const rests = runtime.simMesh.seamConstraints.map((constraint) => constraint.rest)
@@ -100,6 +112,25 @@ describe('clothing compiler architecture', () => {
 
 function buildDocument() {
   const garment = createDemoGarment()
+  const placements: Record<string, PatternPlacement> = {
+    'torso-front': {
+      position: { x: 0, y: -0.74, z: 0.3 },
+      rotation: { x: 0, y: 0, z: 0 },
+    },
+    'torso-back': {
+      position: { x: 0, y: -0.74, z: -0.3 },
+      rotation: { x: 0, y: Math.PI, z: 0 },
+    },
+  }
+  return toPatternDocument(garment, placements)
+}
+
+
+function buildDocumentWithBackSeamsUnreversed() {
+  const garment = createDemoGarment()
+  for (const seam of Object.values(garment.seams)) {
+    if (seam.b.patternId === 'torso-back') seam.b.reversed = false
+  }
   const placements: Record<string, PatternPlacement> = {
     'torso-front': {
       position: { x: 0, y: -0.74, z: 0.3 },
