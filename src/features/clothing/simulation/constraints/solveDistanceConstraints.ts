@@ -3,6 +3,7 @@ import type { DistanceSet } from '../solver'
 
 type DistanceSolveOptions = {
   seamRestScale?: number
+  seamStiffness?: number
 }
 
 export function solveDistanceConstraints(
@@ -14,9 +15,10 @@ export function solveDistanceConstraints(
   const dtSq = dt * dt
   const { positions, invMass } = mesh
   const seamRestScale = options.seamRestScale ?? 0
+  const seamStiffness = options.seamStiffness ?? 1
   for (let i = 0; i < constraints.length; i += 1) {
     const c = constraints[i]
-    solveOne(positions, invMass, c.a, c.b, c.rest, c.targetRest, c.compliance, dtSq, seamRestScale)
+    solveOne(positions, invMass, c.a, c.b, c.rest, c.targetRest, c.compliance, dtSq, seamRestScale, seamStiffness)
   }
 }
 
@@ -26,6 +28,7 @@ export function solveDistanceConstraintsFlat(
   set: DistanceSet,
   dt: number,
   seamRestScale: number,
+  seamStiffness = 1,
 ) {
   const dtSq = dt * dt
   const { a, b, rest, targetRest, hasTargetRest, compliance, count } = set
@@ -54,7 +57,7 @@ export function solveDistanceConstraintsFlat(
     const length = Math.sqrt(lengthSq)
     const C = length - r
     const alpha = compliance[i] / dtSq
-    const lambda = -C / (wsum + alpha)
+    const lambda = (-C / (wsum + alpha)) * (seamStiffness < 0 ? 0 : seamStiffness > 1 ? 1 : seamStiffness)
     const invLength = 1 / length
     const gx = dx * invLength
     const gy = dy * invLength
@@ -83,6 +86,7 @@ function solveOne(
   compliance: number,
   dtSq: number,
   seamRestScale: number,
+  seamStiffness = 1,
 ) {
   const ia = aIdx * 3
   const ib = bIdx * 3
@@ -103,7 +107,8 @@ function solveOne(
   const length = Math.sqrt(lengthSq)
   const C = length - r
   const alpha = compliance / dtSq
-  const lambda = -C / (wsum + alpha)
+  const stiffness = seamStiffness < 0 ? 0 : seamStiffness > 1 ? 1 : seamStiffness
+  const lambda = (-C / (wsum + alpha)) * stiffness
   const invLength = 1 / length
   const gx = dx * invLength
   const gy = dy * invLength
