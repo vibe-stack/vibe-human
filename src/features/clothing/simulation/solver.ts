@@ -90,11 +90,14 @@ export class XPBDClothSolver {
       this.integrate(dt, damping, this.params.gravity * gravityScale)
       this.clampSubstepDisplacement(sewingProgress)
       const seamRestScale = 1 - sewingProgress
+      const bendBlend = this.bendAssemblyBlend(sewingProgress)
       for (let iteration = 0; iteration < this.params.iterations; iteration += 1) {
         solveDistanceConstraintsFlat(this.mesh.positions, this.mesh.invMass, this.stretchFlat, dt, 0)
         solveDistanceConstraintsFlat(this.mesh.positions, this.mesh.invMass, this.shearFlat, dt, 0)
         solveDistanceConstraintsFlat(this.mesh.positions, this.mesh.invMass, this.seamFlat, dt, seamRestScale)
-        solveBendConstraintsFlat(this.mesh.positions, this.mesh.invMass, this.bendFlat, dt)
+        if (bendBlend > 0) {
+          solveBendConstraintsFlat(this.mesh.positions, this.mesh.invMass, this.bendFlat, dt / bendBlend)
+        }
         solvePinConstraints(this.mesh)
         this.applyGrabPin(dt)
       }
@@ -318,6 +321,14 @@ export class XPBDClothSolver {
 
   private velocityRetentionForAssembly(sewingProgress: number) {
     return 0.05 + 0.95 * sewingProgress * sewingProgress
+  }
+
+  private bendAssemblyBlend(sewingProgress: number) {
+    // Keep cloth relatively flat while seam distances are still closing so
+    // assembly behaves more like MD (pull together first, wrinkle second).
+    // Starts activating around 55% progress and reaches full bend response by
+    // the end of the sewing phase.
+    return smooth01((sewingProgress - 0.55) / 0.45)
   }
 }
 
