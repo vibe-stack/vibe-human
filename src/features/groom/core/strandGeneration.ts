@@ -184,11 +184,12 @@ function interpolateStrandPoints(
   segmentCount: number,
   runtimeByGuideId: Map<string, GuideRuntime>,
 ): THREE.Vector3[] {
-  const points: THREE.Vector3[] = []
+  const points: THREE.Vector3[] = new Array(segmentCount + 1)
+  const guidePoint = new THREE.Vector3()
 
   for (let seg = 0; seg <= segmentCount; seg += 1) {
     const t = seg / segmentCount
-    const blended = new THREE.Vector3()
+    const blended = new THREE.Vector3(0, 0, 0)
 
     for (const { guide, weight } of influences) {
       const runtime = runtimeByGuideId.get(guide.id)
@@ -203,18 +204,19 @@ function interpolateStrandPoints(
       const frac = rawIndex - lo
       const pA = guidePoints[lo]
       const pB = guidePoints[hi]
-      const guidePoint = new THREE.Vector3(
+      guidePoint.set(
         pA.x + (pB.x - pA.x) * frac,
         pA.y + (pB.y - pA.y) * frac,
         pA.z + (pB.z - pA.z) * frac,
       )
 
       // Express guide point as an offset from the guide root, apply to our root
-      const offset = guidePoint.sub(guideRoot)
-      blended.addScaledVector(offset, weight)
+      blended.x += (guidePoint.x - guideRoot.x) * weight
+      blended.y += (guidePoint.y - guideRoot.y) * weight
+      blended.z += (guidePoint.z - guideRoot.z) * weight
     }
 
-    points.push(rootPoint.clone().add(blended))
+    points[seg] = new THREE.Vector3(rootPoint.x + blended.x, rootPoint.y + blended.y, rootPoint.z + blended.z)
   }
 
   return points
@@ -365,11 +367,18 @@ function readTriangleMapValues(asset: GroomAsset, triangleIndex: number): Triang
 
 function scalePointsFromRoot(points: THREE.Vector3[], scale: number) {
   if (points.length < 2 || scale === 1) return points
-  const root = points[0].clone()
-  return points.map((point, index) => {
-    if (index === 0) return point.clone()
-    return point.clone().sub(root).multiplyScalar(scale).add(root)
-  })
+  const root = points[0]
+  const scaled = new Array<THREE.Vector3>(points.length)
+  scaled[0] = new THREE.Vector3(root.x, root.y, root.z)
+  for (let i = 1; i < points.length; i += 1) {
+    const point = points[i]
+    scaled[i] = new THREE.Vector3(
+      root.x + (point.x - root.x) * scale,
+      root.y + (point.y - root.y) * scale,
+      root.z + (point.z - root.z) * scale,
+    )
+  }
+  return scaled
 }
 
 function applyRootFlow(
@@ -381,8 +390,8 @@ function applyRootFlow(
   clumpRadius: number,
 ) {
   if (points.length < 2) return points
-  const root = points[0].clone()
-  const result: THREE.Vector3[] = []
+  const root = points[0]
+  const result: THREE.Vector3[] = new Array(points.length)
   const flow = flowDirection?.clone()
     .addScaledVector(surfaceNormal, -(flowDirection?.dot(surfaceNormal) ?? 0))
     .normalize() ?? null
@@ -395,19 +404,26 @@ function applyRootFlow(
 
   for (let i = 0; i < points.length; i += 1) {
     if (i === 0) {
-      result.push(root.clone())
+      result[0] = new THREE.Vector3(root.x, root.y, root.z)
       continue
     }
 
     const t = i / last
-    const current = points[i].clone()
-    const offset = current.clone().sub(root)
-    const length = offset.length()
+    const point = points[i]
+    const current = new THREE.Vector3(point.x, point.y, point.z)
+    const dx = point.x - root.x
+    const dy = point.y - root.y
+    const dz = point.z - root.z
+    const length = Math.sqrt(dx * dx + dy * dy + dz * dz)
 
     if (flow && length > 1e-6) {
-      const target = root.clone().addScaledVector(flow, length)
+      const targetX = root.x + flow.x * length
+      const targetY = root.y + flow.y * length
+      const targetZ = root.z + flow.z * length
       const flowWeight = 0.7 * (1 - smoothstep(0.35, 1, t)) + 0.18
-      current.lerp(target, flowWeight)
+      current.x += (targetX - current.x) * flowWeight
+      current.y += (targetY - current.y) * flowWeight
+      current.z += (targetZ - current.z) * flowWeight
     }
 
     if (side && partStrength > 0) {
@@ -415,7 +431,7 @@ function applyRootFlow(
       current.addScaledVector(side, partSign * partStrength * Math.max(clumpRadius, 0.004) * 1.4 * partLift)
     }
 
-    result.push(current)
+    result[i] = current
   }
 
   return result
@@ -519,8 +535,12 @@ function applyStrandEffects(
   const frizzPhase = rng() * Math.PI * 2
   const cutScale = 1 - settings.cutRandomness * rng() * 0.4
 
-  const root = points[0].clone()
-  const result: THREE.Vector3[] = []
+  const root = points[0]
+  const result: THREE.Vector3[] = new Array(points.length)
+  const tangent = new THREE.Vector3()
+  const basisN = new THREE.Vector3()
+  const basisB = new THREE.Vector3()
+  const helperAxis = new THREE.Vector3()
 
   for (let i = 0; i < points.length; i += 1) {
     const t = i / Math.max(1, points.length - 1)
@@ -528,27 +548,26 @@ function applyStrandEffects(
     // Local frame from segment direction
     const prev = points[Math.max(0, i - 1)]
     const next = points[Math.min(points.length - 1, i + 1)]
-    const tangent = next.clone().sub(prev).normalize()
-    const helperAxis = Math.abs(tangent.y) > 0.9
-      ? new THREE.Vector3(1, 0, 0)
-      : new THREE.Vector3(0, 1, 0)
-    const basisN = new THREE.Vector3().crossVectors(tangent, helperAxis).normalize()
-    const basisB = new THREE.Vector3().crossVectors(tangent, basisN)
+    tangent.set(next.x - prev.x, next.y - prev.y, next.z - prev.z).normalize()
+    if (Math.abs(tangent.y) > 0.9) helperAxis.set(1, 0, 0)
+    else helperAxis.set(0, 1, 0)
+    basisN.crossVectors(tangent, helperAxis).normalize()
+    basisB.crossVectors(tangent, basisN)
 
     const noiseAmp = settings.noiseAmplitude * effectScale * (0.2 + t * 0.8)
     const curlAmp = settings.curlStrength * smoothstep(0, 0.3, t)
     const frizzAmp = settings.frizzStrength * effectScale * (0.1 + t * 0.9)
 
-    const p = points[i].clone()
-      .addScaledVector(basisN, Math.sin(t * settings.noiseFrequency * Math.PI * 2 + noisePhase) * noiseAmp)
-      .addScaledVector(basisB, Math.cos(t * settings.noiseFrequency * Math.PI * 2 + noisePhase * 0.7) * noiseAmp * 0.6)
-      .addScaledVector(basisN, Math.sin(t * settings.curlFrequency * Math.PI * 2 + curlPhase) * curlAmp)
-      .addScaledVector(basisB, Math.cos(t * settings.curlFrequency * Math.PI * 2 + curlPhase) * curlAmp)
-      .addScaledVector(basisN, Math.sin(t * (settings.curlFrequency * 2.7 + 8) * Math.PI * 2 + frizzPhase) * frizzAmp)
+    const p = new THREE.Vector3(points[i].x, points[i].y, points[i].z)
+    p.addScaledVector(basisN, Math.sin(t * settings.noiseFrequency * Math.PI * 2 + noisePhase) * noiseAmp)
+    p.addScaledVector(basisB, Math.cos(t * settings.noiseFrequency * Math.PI * 2 + noisePhase * 0.7) * noiseAmp * 0.6)
+    p.addScaledVector(basisN, Math.sin(t * settings.curlFrequency * Math.PI * 2 + curlPhase) * curlAmp)
+    p.addScaledVector(basisB, Math.cos(t * settings.curlFrequency * Math.PI * 2 + curlPhase) * curlAmp)
+    p.addScaledVector(basisN, Math.sin(t * (settings.curlFrequency * 2.7 + 8) * Math.PI * 2 + frizzPhase) * frizzAmp)
 
     // Scale from root by cutScale
     p.sub(root).multiplyScalar(cutScale).add(root)
-    result.push(p)
+    result[i] = p
   }
 
   return result
