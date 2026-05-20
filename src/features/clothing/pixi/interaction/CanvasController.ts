@@ -87,7 +87,8 @@ export class CanvasController {
   // -------------------------------------------------------------------------
 
   private handlePointer(e: PointerEvent, kind: 'down' | 'move' | 'up') {
-    e.preventDefault()
+    if (this.handleTouchGesture(e, kind)) return
+    if (e.pointerType !== 'touch') e.preventDefault()
     const view = this.viewSize()
     const screen = this.screenOf(e)
     const world = screenToWorld(screen, view.w, view.h)
@@ -125,6 +126,48 @@ export class CanvasController {
     if (kind === 'down') handler.onPointerDown?.(evt, this.ctxOf(e))
     if (kind === 'move') handler.onPointerMove?.(evt, this.ctxOf(e))
     if (kind === 'up')   handler.onPointerUp?.(evt, this.ctxOf(e))
+  }
+
+  private activeTouches = new Map<number, Vec2>()
+  private touchGestureState: { distance: number; centerWorld: Vec2 } | null = null
+
+  private handleTouchGesture(e: PointerEvent, kind: 'down' | 'move' | 'up') {
+    if (e.pointerType !== 'touch') return false
+
+    if (kind === 'down') this.activeTouches.set(e.pointerId, this.screenOf(e))
+    if (kind === 'move' && this.activeTouches.has(e.pointerId)) this.activeTouches.set(e.pointerId, this.screenOf(e))
+    if (kind === 'up') this.activeTouches.delete(e.pointerId)
+
+    const touches = [...this.activeTouches.values()]
+    if (touches.length < 2) {
+      this.touchGestureState = null
+      return false
+    }
+
+    e.preventDefault()
+    const [a, b] = touches
+    const center = { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 }
+    const distance = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y))
+    const view = this.viewSize()
+
+    if (!this.touchGestureState) {
+      this.touchGestureState = {
+        distance,
+        centerWorld: screenToWorld(center, view.w, view.h),
+      }
+      return true
+    }
+
+    const scale = distance / this.touchGestureState.distance
+    const current = clothingStore.viewport2D.zoom
+    clothingStore.viewport2D.zoom = Math.max(0.05, Math.min(20, current * scale))
+    this.touchGestureState.distance = distance
+
+    const after = screenToWorld(center, view.w, view.h)
+    clothingStore.viewport2D.panX += this.touchGestureState.centerWorld.x - after.x
+    clothingStore.viewport2D.panY += this.touchGestureState.centerWorld.y - after.y
+    this.touchGestureState.centerWorld = screenToWorld(center, view.w, view.h)
+    return true
   }
 
   // -------------------------------------------------------------------------
