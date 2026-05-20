@@ -210,7 +210,7 @@ export class XPBDClothSolver {
   private clampSubstepDisplacement(sewingProgress: number) {
     const skin = this.colliders?.meshColliders?.[0]?.skin ?? 0.022
     const thickness = this.colliders?.meshColliders?.[0]?.thickness ?? 0.008
-    const baseLimit = Math.max(0.005, (skin + thickness) * 0.5)
+    const baseLimit = Math.max(0.02, (skin + thickness) * 1.35)
     const sewingTighten = 0.6 + 0.4 * sewingProgress
     const limit = baseLimit * sewingTighten
     const limitSq = limit * limit

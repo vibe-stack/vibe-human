@@ -4,7 +4,7 @@ import type { PatternDocument, PatternPanel } from '../document/types'
 import type { GarmentTopology } from './types'
 import type { RenderEmbedding, RenderPanelRuntime } from '../simulation/types'
 
-const SUBDIVISIONS = 18
+const SUBDIVISIONS = 30
 
 export function buildRenderEmbedding(
   document: PatternDocument,
