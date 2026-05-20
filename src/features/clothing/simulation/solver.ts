@@ -39,6 +39,13 @@ export class XPBDClothSolver {
   private grabVelocityX = 0
   private grabVelocityY = 0
   private grabVelocityZ = 0
+  private seamAccumX: Float32Array
+  private seamAccumY: Float32Array
+  private seamAccumZ: Float32Array
+  private seamAccumW: Float32Array
+  private seamTouched: Uint8Array
+  private seamTouchedList: Uint32Array
+  private seamTouchedCount = 0
 
   constructor(
     mesh: ClothSimMesh,
@@ -50,6 +57,12 @@ export class XPBDClothSolver {
     this.shearFlat = flattenDistanceConstraints(mesh.shearConstraints)
     this.seamFlat = flattenDistanceConstraints(mesh.seamConstraints)
     this.bendFlat = flattenBendConstraints(mesh.bendConstraints)
+    this.seamAccumX = new Float32Array(mesh.particleCount)
+    this.seamAccumY = new Float32Array(mesh.particleCount)
+    this.seamAccumZ = new Float32Array(mesh.particleCount)
+    this.seamAccumW = new Float32Array(mesh.particleCount)
+    this.seamTouched = new Uint8Array(mesh.particleCount)
+    this.seamTouchedList = new Uint32Array(mesh.particleCount)
   }
 
   setGrab(particle: number, x: number, y: number, z: number, vx: number, vy: number, vz: number) {
@@ -171,6 +184,21 @@ export class XPBDClothSolver {
     const seamA = this.seamFlat.a
     const seamB = this.seamFlat.b
     const count = this.seamFlat.count
+    const accumX = this.seamAccumX
+    const accumY = this.seamAccumY
+    const accumZ = this.seamAccumZ
+    const accumW = this.seamAccumW
+    const touched = this.seamTouched
+    const touchedList = this.seamTouchedList
+    let touchedCount = 0
+
+    const touch = (particle: number) => {
+      if (touched[particle] !== 0) return
+      touched[particle] = 1
+      touchedList[touchedCount] = particle
+      touchedCount += 1
+    }
+
     for (let i = 0; i < count; i += 1) {
       const a = seamA[i]
       const b = seamB[i]
@@ -185,26 +213,54 @@ export class XPBDClothSolver {
       const mx = positions[ia] * tB + positions[ib] * tA
       const my = positions[ia + 1] * tB + positions[ib + 1] * tA
       const mz = positions[ia + 2] * tB + positions[ib + 2] * tA
-      const px = prevPositions[ia] * tB + prevPositions[ib] * tA
-      const py = prevPositions[ia + 1] * tB + prevPositions[ib + 1] * tA
-      const pz = prevPositions[ia + 2] * tB + prevPositions[ib + 2] * tA
+      const contribution = Math.max(wa, wb)
       if (wa > 0) {
-        positions[ia] = mx
-        positions[ia + 1] = my
-        positions[ia + 2] = mz
-        prevPositions[ia] = px
-        prevPositions[ia + 1] = py
-        prevPositions[ia + 2] = pz
+        touch(a)
+        accumX[a] += mx * contribution
+        accumY[a] += my * contribution
+        accumZ[a] += mz * contribution
+        accumW[a] += contribution
       }
       if (wb > 0) {
-        positions[ib] = mx
-        positions[ib + 1] = my
-        positions[ib + 2] = mz
-        prevPositions[ib] = px
-        prevPositions[ib + 1] = py
-        prevPositions[ib + 2] = pz
+        touch(b)
+        accumX[b] += mx * contribution
+        accumY[b] += my * contribution
+        accumZ[b] += mz * contribution
+        accumW[b] += contribution
       }
     }
+
+    for (let index = 0; index < touchedCount; index += 1) {
+      const particle = touchedList[index]
+      const weight = accumW[particle]
+      touched[particle] = 0
+      if (weight <= 1e-9) continue
+      const invWeight = 1 / weight
+      const offset = particle * 3
+      const x = accumX[particle] * invWeight
+      const y = accumY[particle] * invWeight
+      const z = accumZ[particle] * invWeight
+      positions[offset] = x
+      positions[offset + 1] = y
+      positions[offset + 2] = z
+      prevPositions[offset] = x
+      prevPositions[offset + 1] = y
+      prevPositions[offset + 2] = z
+      accumX[particle] = 0
+      accumY[particle] = 0
+      accumZ[particle] = 0
+      accumW[particle] = 0
+    }
+
+    for (let index = touchedCount; index < this.seamTouchedCount; index += 1) {
+      const particle = touchedList[index]
+      touched[particle] = 0
+      accumX[particle] = 0
+      accumY[particle] = 0
+      accumZ[particle] = 0
+      accumW[particle] = 0
+    }
+    this.seamTouchedCount = touchedCount
   }
 
   private clampSubstepDisplacement(sewingProgress: number) {
