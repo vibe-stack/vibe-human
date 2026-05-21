@@ -20,11 +20,11 @@ export function buildSeamConstraints(
     if (!panelA || !panelB || !meshA || !meshB) continue
 
     const pointsA = samplePanelEdge(panelA, seam.a.edgeId, seamSamples, seam.a.reversed)
-    const pointsB = orientSeamSamples(
-      panelA,
-      pointsA,
-      panelB,
-      samplePanelEdge(panelB, seam.b.edgeId, seamSamples, seam.b.reversed),
+    const sampledB = samplePanelEdge(panelB, seam.b.edgeId, seamSamples, seam.b.reversed)
+    const orientation = chooseSeamOrientation(panelA, pointsA, panelB, sampledB)
+    const pointsB = orientation.pointsB
+    console.debug(
+      `[seam-orientation] seam=${seam.id} forward=${orientation.forwardCost.toFixed(6)} reversed=${orientation.reversedCost.toFixed(6)} chosen=${orientation.direction}`,
     )
     const edgeParticlesA = orderedEdgeParticles(panelA, meshA, pointsA)
     const edgeParticlesB = orderedEdgeParticles(panelB, meshB, pointsB)
@@ -86,7 +86,18 @@ export function orientSeamSamples(
   panelB: PatternDocument['panels'][string],
   pointsB: Array<{ x: number; y: number }>,
 ) {
-  if (pointsA.length < 2 || pointsB.length < 2) return pointsB
+  return chooseSeamOrientation(panelA, pointsA, panelB, pointsB).pointsB
+}
+
+export function chooseSeamOrientation(
+  panelA: PatternDocument['panels'][string],
+  pointsA: Array<{ x: number; y: number }>,
+  panelB: PatternDocument['panels'][string],
+  pointsB: Array<{ x: number; y: number }>,
+) {
+  if (pointsA.length < 2 || pointsB.length < 2) {
+    return { pointsB, forwardCost: 0, reversedCost: 0, direction: 'forward' as const }
+  }
   const lastA = pointsA.length - 1
   const lastB = pointsB.length - 1
   const forwardCost =
@@ -95,9 +106,10 @@ export function orientSeamSamples(
   const reversedCost =
     worldDistanceSq(panelA, pointsA[0], panelB, pointsB[lastB])
     + worldDistanceSq(panelA, pointsA[lastA], panelB, pointsB[0])
-  if (reversedCost + 1e-8 < forwardCost) return [...pointsB].reverse()
-  if (forwardCost + 1e-8 < reversedCost) return pointsB
-  return panelA.id > panelB.id ? [...pointsB].reverse() : pointsB
+  if (reversedCost < forwardCost) {
+    return { pointsB: [...pointsB].reverse(), forwardCost, reversedCost, direction: 'reversed' as const }
+  }
+  return { pointsB, forwardCost, reversedCost, direction: 'forward' as const }
 }
 
 function orderedEdgeParticles(

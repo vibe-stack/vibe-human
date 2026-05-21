@@ -61,30 +61,26 @@ export function createDemoGarment(): GarmentDocument {
   const pantsRightFront = createPantsLegPanel('pants-right-front', 'Pants Right Front', 'right', 'front')
   const pantsRightBack = createPantsLegPanel('pants-right-back', 'Pants Right Back', 'right', 'back')
   const seams: Record<string, Seam> = {
-    'right-shoulder': stitchAuto('right-shoulder', 'Right Shoulder', front, 'right-shoulder', back, 'right-shoulder'),
-    'left-shoulder': stitchAuto('left-shoulder', 'Left Shoulder', front, 'left-shoulder', back, 'left-shoulder'),
-    'right-sleeve-top': stitchAuto('right-sleeve-top', 'Right Sleeve Top', front, 'right-sleeve-top', back, 'right-sleeve-top'),
-    'left-sleeve-top': stitchAuto('left-sleeve-top', 'Left Sleeve Top', front, 'left-sleeve-top', back, 'left-sleeve-top'),
-    'right-sleeve-underarm': stitchAuto('right-sleeve-underarm', 'Right Sleeve Underarm', front, 'right-sleeve-underarm', back, 'right-sleeve-underarm'),
-    'left-sleeve-underarm': stitchAuto('left-sleeve-underarm', 'Left Sleeve Underarm', front, 'left-sleeve-underarm', back, 'left-sleeve-underarm'),
-    'right-side': stitchAuto('right-side', 'Right Side Seam', front, 'right-side', back, 'right-side'),
-    'left-side': stitchAuto('left-side', 'Left Side Seam', front, 'left-side', back, 'left-side'),
-    'pants-left-outer': stitchAuto('pants-left-outer', 'Pants Left Outer', pantsLeftFront, 'outer-side', pantsLeftBack, 'outer-side'),
-    'pants-right-outer': stitchAuto('pants-right-outer', 'Pants Right Outer', pantsRightFront, 'outer-side', pantsRightBack, 'outer-side'),
-    'pants-left-inseam': stitchAuto('pants-left-inseam', 'Pants Left Inseam', pantsLeftFront, 'inseam', pantsLeftBack, 'inseam'),
-    'pants-left-inseam-lower': stitchAuto('pants-left-inseam-lower', 'Pants Left Inseam Lower', pantsLeftFront, 'inseam-lower', pantsLeftBack, 'inseam-lower'),
-    'pants-right-inseam': stitchAuto('pants-right-inseam', 'Pants Right Inseam', pantsRightFront, 'inseam', pantsRightBack, 'inseam'),
-    'pants-right-inseam-lower': stitchAuto('pants-right-inseam-lower', 'Pants Right Inseam Lower', pantsRightFront, 'inseam-lower', pantsRightBack, 'inseam-lower'),
-    'pants-center-front': stitchAuto('pants-center-front', 'Pants Center Front', pantsLeftFront, 'crotch', pantsRightFront, 'crotch'),
-    'pants-center-back': stitchAuto('pants-center-back', 'Pants Center Back', pantsLeftBack, 'crotch', pantsRightBack, 'crotch'),
+    'right-shoulder': stitch('right-shoulder', 'Right Shoulder', front, 'right-shoulder', back, 'right-shoulder'),
+    'left-shoulder': stitch('left-shoulder', 'Left Shoulder', front, 'left-shoulder', back, 'left-shoulder'),
+    'right-sleeve-top': stitch('right-sleeve-top', 'Right Sleeve Top', front, 'right-sleeve-top', back, 'right-sleeve-top'),
+    'left-sleeve-top': stitch('left-sleeve-top', 'Left Sleeve Top', front, 'left-sleeve-top', back, 'left-sleeve-top'),
+    'right-sleeve-underarm': stitch('right-sleeve-underarm', 'Right Sleeve Underarm', front, 'right-sleeve-underarm', back, 'right-sleeve-underarm'),
+    'left-sleeve-underarm': stitch('left-sleeve-underarm', 'Left Sleeve Underarm', front, 'left-sleeve-underarm', back, 'left-sleeve-underarm'),
+    'right-side': stitch('right-side', 'Right Side Seam', front, 'right-side', back, 'right-side'),
+    'left-side': stitch('left-side', 'Left Side Seam', front, 'left-side', back, 'left-side'),
+    'pants-left-outer': stitch('pants-left-outer', 'Pants Left Outer', pantsLeftFront, 'outer-side', pantsLeftBack, 'outer-side'),
+    'pants-right-outer': stitch('pants-right-outer', 'Pants Right Outer', pantsRightFront, 'outer-side', pantsRightBack, 'outer-side'),
+    'pants-left-inseam': stitch('pants-left-inseam', 'Pants Left Inseam', pantsLeftFront, 'inseam', pantsLeftBack, 'inseam'),
+    'pants-left-inseam-lower': stitch('pants-left-inseam-lower', 'Pants Left Inseam Lower', pantsLeftFront, 'inseam-lower', pantsLeftBack, 'inseam-lower'),
+    'pants-right-inseam': stitch('pants-right-inseam', 'Pants Right Inseam', pantsRightFront, 'inseam', pantsRightBack, 'inseam'),
+    'pants-right-inseam-lower': stitch('pants-right-inseam-lower', 'Pants Right Inseam Lower', pantsRightFront, 'inseam-lower', pantsRightBack, 'inseam-lower'),
+    'pants-center-front': stitch('pants-center-front', 'Pants Center Front', pantsLeftFront, 'crotch', pantsRightFront, 'crotch'),
+    'pants-center-back': stitch('pants-center-back', 'Pants Center Back', pantsLeftBack, 'crotch', pantsRightBack, 'crotch'),
   }
   return { id: uid(), name: 'Shirt + Pants Demo', patterns: { [front.id]: front, [back.id]: back, [pantsLeftFront.id]: pantsLeftFront, [pantsLeftBack.id]: pantsLeftBack, [pantsRightFront.id]: pantsRightFront, [pantsRightBack.id]: pantsRightBack }, seams, selectedPatternId: front.id }
 }
 
-function stitch(id: string, name: string, aPanel: PatternPiece, aEdgeId: string, bPanel: PatternPiece, bEdgeId: string, bReversed = false): Seam {
-  return { id, name, a: { patternId: aPanel.id, edgeId: aEdgeId }, b: { patternId: bPanel.id, edgeId: bEdgeId, reversed: bReversed }, strength: 1 }
-}
-
-function stitchAuto(id: string, name: string, aPanel: PatternPiece, aEdgeId: string, bPanel: PatternPiece, bEdgeId: string): Seam {
-  return stitch(id, name, aPanel, aEdgeId, bPanel, bEdgeId, false)
+function stitch(id: string, name: string, aPanel: PatternPiece, aEdgeId: string, bPanel: PatternPiece, bEdgeId: string): Seam {
+  return { id, name, a: { patternId: aPanel.id, edgeId: aEdgeId }, b: { patternId: bPanel.id, edgeId: bEdgeId }, strength: 1 }
 }
