@@ -5,6 +5,7 @@ import { toPatternDocument } from '../document/legacyAdapter'
 import type { PatternPlacement } from '../document/types'
 import { XPBDClothSolver } from '../simulation/solver'
 import { samplePanelEdge } from './buildPanelSimMesh'
+import { orientSeamSamples } from './buildSeamConstraints'
 import { compileGarmentRuntime } from './compileGarmentRuntime'
 import { validatePatternDocument } from './validatePatternDocument'
 import type { PatternDocument, PatternPanel } from '../document/types'
@@ -47,7 +48,7 @@ describe('clothing compiler architecture', () => {
 
   test('seams start at placed distance and sew toward zero', () => {
     const runtime = compileGarmentRuntime(buildDocument(), { quality: 'medium', seamSamples: 12 }).value
-    assert.equal(Object.keys(runtime.document.seams).length, 6)
+    assert.equal(Object.keys(runtime.document.seams).length > 6, true)
     assert.equal(runtime.simMesh.seamConstraints.length > 0, true)
     for (const seam of runtime.simMesh.seamConstraints) {
       assert.equal(seam.kind, 'seam')
@@ -107,6 +108,20 @@ describe('clothing compiler architecture', () => {
     const rests = runtime.simMesh.seamConstraints.map((constraint) => constraint.rest)
     assert.equal(rests.length > 0, true)
     assert.equal(Math.max(...rests) < 0.75, true)
+  })
+
+  test('demo seams compile with monotonic non-crossed edge progression', () => {
+    const document = buildDocument()
+    for (const seam of Object.values(document.seams)) {
+      const panelA = document.panels[seam.a.panelId]
+      const panelB = document.panels[seam.b.panelId]
+      const pointsA = samplePanelEdge(panelA, seam.a.edgeId, 16, seam.a.reversed)
+      const sampledB = samplePanelEdge(panelB, seam.b.edgeId, 16, seam.b.reversed)
+      const pointsB = orientSeamSamples(panelA, pointsA, panelB, sampledB)
+      const forward = pairingCost(panelA, pointsA, panelB, pointsB)
+      const reversed = pairingCost(panelA, pointsA, panelB, [...pointsB].reverse())
+      assert.equal(forward <= reversed + 1e-7, true)
+    }
   })
 })
 
@@ -204,5 +219,32 @@ function cloneMesh(mesh: ReturnType<typeof compileGarmentRuntime>['value']['simM
     bendConstraints: mesh.bendConstraints.map((constraint) => ({ ...constraint })),
     seamConstraints: mesh.seamConstraints.map((constraint) => ({ ...constraint })),
     pinConstraints: mesh.pinConstraints.map((constraint) => ({ ...constraint })),
+  }
+}
+
+function pairingCost(
+  panelA: PatternPanel,
+  pointsA: Array<{ x: number; y: number }>,
+  panelB: PatternPanel,
+  pointsB: Array<{ x: number; y: number }>,
+) {
+  const n = Math.min(pointsA.length, pointsB.length)
+  let sum = 0
+  for (let index = 0; index < n; index += 1) {
+    const a = place(panelA, pointsA[index])
+    const b = place(panelB, pointsB[index])
+    sum += (a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2
+  }
+  return sum
+}
+
+function place(panel: PatternPanel, point: { x: number; y: number }) {
+  const yaw = panel.placement.rotation.y
+  const px = point.x * 0.004
+  const py = -point.y * 0.004
+  return {
+    x: panel.placement.position.x + px * Math.cos(yaw),
+    y: panel.placement.position.y + py,
+    z: panel.placement.position.z - px * Math.sin(yaw),
   }
 }

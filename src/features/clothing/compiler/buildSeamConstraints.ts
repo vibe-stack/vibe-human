@@ -80,7 +80,7 @@ export function buildSeamConstraints(
   return constraints
 }
 
-function orientSeamSamples(
+export function orientSeamSamples(
   panelA: PatternDocument['panels'][string],
   pointsA: Array<{ x: number; y: number }>,
   panelB: PatternDocument['panels'][string],
@@ -95,7 +95,9 @@ function orientSeamSamples(
   const reversedCost =
     worldDistanceSq(panelA, pointsA[0], panelB, pointsB[lastB])
     + worldDistanceSq(panelA, pointsA[lastA], panelB, pointsB[0])
-  return reversedCost + 1e-8 < forwardCost ? [...pointsB].reverse() : pointsB
+  if (reversedCost + 1e-8 < forwardCost) return [...pointsB].reverse()
+  if (forwardCost + 1e-8 < reversedCost) return pointsB
+  return panelA.id > panelB.id ? [...pointsB].reverse() : pointsB
 }
 
 function orderedEdgeParticles(
