@@ -395,18 +395,6 @@ export function loadDemoGarment(doc: GarmentDocument) {
       position: { x: 0, y: -0.56, z: -0.26 },
       rotation: { x: 0, y: Math.PI, z: 0 },
     }
-    if (patternIds.includes('pants-front')) {
-      clothingStore.placements['pants-front'] = {
-        position: { x: 0, y: -1.02, z: 0.2 },
-        rotation: { x: 0, y: 0, z: 0 },
-      }
-    }
-    if (patternIds.includes('pants-back')) {
-      clothingStore.placements['pants-back'] = {
-        position: { x: 0, y: -1.02, z: -0.2 },
-        rotation: { x: 0, y: Math.PI, z: 0 },
-      }
-    }
   }
   clothingStore.viewport2D.zoom = 1.35
   clothingStore.viewport2D.panX = 0

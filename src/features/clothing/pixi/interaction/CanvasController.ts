@@ -89,8 +89,9 @@ export class CanvasController {
 
   private handlePointer(e: PointerEvent, kind: 'down' | 'move' | 'up') {
     if (this.handleTouchGesture(e, kind)) return
-    if (e.pointerType === 'touch' && !this.shouldHandleSingleTouch(e, kind)) return
-    e.preventDefault()
+    const isTouch = e.pointerType === 'touch'
+    if (isTouch && !this.shouldHandleSingleTouch(e, kind)) return
+    if (!isTouch || this.touchDragPointerId === e.pointerId) e.preventDefault()
     const view = this.viewSize()
     const screen = this.screenOf(e)
     const world = screenToWorld(screen, view.w, view.h)

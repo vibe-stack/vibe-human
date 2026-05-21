@@ -1,9 +1,7 @@
 import type { PatternDocument } from '../document/types'
 import type { DistanceConstraint } from '../simulation/types'
 import type { CompiledPanelSimMesh } from './buildPanelSimMesh'
-import { samplePanelEdge } from './buildPanelSimMesh'
-
-const PATTERN_UNIT_SCALE = 0.004
+import { resolveSeamSamples } from '../geometry/seamUtils'
 
 export function buildSeamConstraints(
   document: PatternDocument,
@@ -19,13 +17,11 @@ export function buildSeamConstraints(
     const meshB = panels[seam.b.panelId]
     if (!panelA || !panelB || !meshA || !meshB) continue
 
-    const pointsA = samplePanelEdge(panelA, seam.a.edgeId, seamSamples, seam.a.reversed)
-    const pointsB = orientSeamSamples(
-      panelA,
-      pointsA,
-      panelB,
-      samplePanelEdge(panelB, seam.b.edgeId, seamSamples, seam.b.reversed),
-    )
+    const resolved = resolveSeamSamples(document, seam, seamSamples)
+    if (!resolved) continue
+    const pointsA = resolved.pointsA
+    const pointsB = resolved.pointsB
+    console.debug(`[SeamResolver] ${seam.id} orientation=${resolved.reversedB ? 'reversed' : 'forward'} forward=${resolved.forwardCost.toFixed(4)} reversed=${resolved.reversedCost.toFixed(4)}`)
     const edgeParticlesA = orderedEdgeParticles(panelA, meshA, pointsA)
     const edgeParticlesB = orderedEdgeParticles(panelB, meshB, pointsB)
     const count = Math.max(edgeParticlesA.length, edgeParticlesB.length)
@@ -78,26 +74,6 @@ export function buildSeamConstraints(
   }
 
   return constraints
-}
-
-export function orientSeamSamples(
-  panelA: PatternDocument['panels'][string],
-  pointsA: Array<{ x: number; y: number }>,
-  panelB: PatternDocument['panels'][string],
-  pointsB: Array<{ x: number; y: number }>,
-) {
-  if (pointsA.length < 2 || pointsB.length < 2) return pointsB
-  const lastA = pointsA.length - 1
-  const lastB = pointsB.length - 1
-  const forwardCost =
-    worldDistanceSq(panelA, pointsA[0], panelB, pointsB[0])
-    + worldDistanceSq(panelA, pointsA[lastA], panelB, pointsB[lastB])
-  const reversedCost =
-    worldDistanceSq(panelA, pointsA[0], panelB, pointsB[lastB])
-    + worldDistanceSq(panelA, pointsA[lastA], panelB, pointsB[0])
-  if (reversedCost + 1e-8 < forwardCost) return [...pointsB].reverse()
-  if (forwardCost + 1e-8 < reversedCost) return pointsB
-  return panelA.id > panelB.id ? [...pointsB].reverse() : pointsB
 }
 
 function orderedEdgeParticles(
@@ -174,20 +150,6 @@ function projectPointToPolyline(points: Array<{ x: number; y: number }>, x: numb
   return { t: bestT, distSq: bestDistSq }
 }
 
-function worldDistanceSq(
-  panelA: PatternDocument['panels'][string],
-  pointA: { x: number; y: number },
-  panelB: PatternDocument['panels'][string],
-  pointB: { x: number; y: number },
-) {
-  const a = applyPlacementFromPattern(pointA.x, pointA.y, panelA)
-  const b = applyPlacementFromPattern(pointB.x, pointB.y, panelB)
-  const dx = a.x - b.x
-  const dy = a.y - b.y
-  const dz = a.z - b.z
-  return dx * dx + dy * dy + dz * dz
-}
-
 function particleDistance(
   meshA: CompiledPanelSimMesh,
   particleA: number,
@@ -233,61 +195,8 @@ function nearestParticle(
   return best
 }
 
-function applyPlacementFromPattern(x: number, y: number, panel: PatternDocument['panels'][string]) {
-  const bounds = panelBounds(panel)
-  const worldX = ((x - bounds.minX) / bounds.width - 0.5) * bounds.width * PATTERN_UNIT_SCALE
-  const worldY = (0.5 - (y - bounds.minY) / bounds.height) * bounds.height * PATTERN_UNIT_SCALE
-  const q = quatFromEuler(panel.placement.rotation.x, panel.placement.rotation.y, panel.placement.rotation.z)
-  const rotated = rotateVec(worldX, worldY, 0, q.x, q.y, q.z, q.w)
-  return {
-    x: rotated.x + panel.placement.position.x,
-    y: rotated.y + panel.placement.position.y,
-    z: rotated.z + panel.placement.position.z,
-  }
-}
-
-function panelBounds(panel: PatternDocument['panels'][string]) {
-  const points = Object.values(panel.points)
-  if (!points.length) return { minX: -140, minY: -140, width: 280, height: 280 }
-  let minX = Infinity
-  let minY = Infinity
-  let maxX = -Infinity
-  let maxY = -Infinity
-  for (const point of points) {
-    if (point.x < minX) minX = point.x
-    if (point.y < minY) minY = point.y
-    if (point.x > maxX) maxX = point.x
-    if (point.y > maxY) maxY = point.y
-  }
-  return { minX, minY, width: maxX - minX || 1, height: maxY - minY || 1 }
-}
-
-function quatFromEuler(x: number, y: number, z: number) {
-  const c1 = Math.cos(x / 2)
-  const s1 = Math.sin(x / 2)
-  const c2 = Math.cos(y / 2)
-  const s2 = Math.sin(y / 2)
-  const c3 = Math.cos(z / 2)
-  const s3 = Math.sin(z / 2)
-  return {
-    x: s1 * c2 * c3 + c1 * s2 * s3,
-    y: c1 * s2 * c3 - s1 * c2 * s3,
-    z: c1 * c2 * s3 + s1 * s2 * c3,
-    w: c1 * c2 * c3 - s1 * s2 * s3,
-  }
-}
-
-function rotateVec(x: number, y: number, z: number, qx: number, qy: number, qz: number, qw: number) {
-  const tx = 2 * (qy * z - qz * y)
-  const ty = 2 * (qz * x - qx * z)
-  const tz = 2 * (qx * y - qy * x)
-  return {
-    x: x + qw * tx + (qy * tz - qz * ty),
-    y: y + qw * ty + (qz * tx - qx * tz),
-    z: z + qw * tz + (qx * ty - qy * tx),
-  }
-}
 
 function clamp01(value: number) {
-  return value < 0 ? 0 : value > 1 ? 1 : value
+  return Math.min(1, Math.max(0, value))
 }
+
