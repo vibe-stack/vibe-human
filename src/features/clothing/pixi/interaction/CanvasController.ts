@@ -48,6 +48,7 @@ export class CanvasController {
   }
 
   destroy() {
+    this.resetTouchState()
     for (const fn of this.cleanup) fn()
     this.cleanup = []
   }
@@ -76,6 +77,13 @@ export class CanvasController {
     off(c, 'pointermove', (e: Event) => this.handlePointer(e as PointerEvent, 'move'))
     off(c, 'pointerup',   (e: Event) => this.handlePointer(e as PointerEvent, 'up'))
     off(c, 'pointercancel', (e: Event) => {
+      const pe = e as PointerEvent
+      console.debug('[CanvasController] pointercancel', {
+        pointerId: pe.pointerId,
+        activeTouchesSize: this.activeTouches.size,
+        touchDragPointerId: this.touchDragPointerId,
+      })
+      this.resetTouchState()
       this.tool().onCancel?.(this.ctxOf(e as PointerEvent))
     })
 
@@ -135,14 +143,47 @@ export class CanvasController {
   private touchGestureState: { distance: number; centerWorld: Vec2 } | null = null
   private touchDragPointerId: number | null = null
 
+  private resetTouchState() {
+    this.activeTouches.clear()
+    this.touchGestureState = null
+    this.touchDragPointerId = null
+    this.panOverride = false
+    console.debug('[CanvasController] touch state reset', {
+      activeTouchesSize: this.activeTouches.size,
+      touchDragPointerId: this.touchDragPointerId,
+    })
+  }
+
   private handleTouchGesture(e: PointerEvent, kind: 'down' | 'move' | 'up') {
     if (e.pointerType !== 'touch') return false
 
+    if (kind === 'down' || kind === 'up') {
+      console.debug(`[CanvasController] pointer${kind}`, {
+        pointerId: e.pointerId,
+        activeTouchesSize: this.activeTouches.size,
+        touchDragPointerId: this.touchDragPointerId,
+      })
+    }
+
     if (kind === 'down') this.activeTouches.set(e.pointerId, this.screenOf(e))
     if (kind === 'move' && this.activeTouches.has(e.pointerId)) this.activeTouches.set(e.pointerId, this.screenOf(e))
-    if (kind === 'up') this.activeTouches.delete(e.pointerId)
+    if (kind === 'up') {
+      this.activeTouches.delete(e.pointerId)
+      if (this.activeTouches.size === 0) {
+        this.touchGestureState = null
+        this.touchDragPointerId = null
+        console.debug('[CanvasController] gesture end', {
+          activeTouchesSize: this.activeTouches.size,
+          touchDragPointerId: this.touchDragPointerId,
+        })
+      }
+    }
 
     const touches = [...this.activeTouches.values()]
+    if (touches.length === 0) {
+      this.resetTouchState()
+      return false
+    }
     if (touches.length < 2) {
       // On touch devices, reserve one-finger gestures for native page scroll.
       // Two-finger gestures are used for canvas pan/zoom.
@@ -159,6 +200,10 @@ export class CanvasController {
     const view = this.viewSize()
 
     if (!this.touchGestureState) {
+      console.debug('[CanvasController] gesture start', {
+        activeTouchesSize: this.activeTouches.size,
+        touchDragPointerId: this.touchDragPointerId,
+      })
       this.touchGestureState = {
         distance,
         centerWorld: screenToWorld(center, view.w, view.h),
