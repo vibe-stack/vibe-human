@@ -5,7 +5,7 @@ import { toPatternDocument } from '../document/legacyAdapter'
 import type { PatternPlacement } from '../document/types'
 import { XPBDClothSolver } from '../simulation/solver'
 import { samplePanelEdge } from './buildPanelSimMesh'
-import { orientSeamSamples } from './buildSeamConstraints'
+import { chooseSeamOrientation, orientSeamSamples } from './buildSeamConstraints'
 import { compileGarmentRuntime } from './compileGarmentRuntime'
 import { validatePatternDocument } from './validatePatternDocument'
 import type { PatternDocument, PatternPanel } from '../document/types'
@@ -110,17 +110,17 @@ describe('clothing compiler architecture', () => {
     assert.equal(Math.max(...rests) < 0.75, true)
   })
 
-  test('demo seams compile with monotonic non-crossed edge progression', () => {
+  test('demo seams choose lower endpoint orientation cost', () => {
     const document = buildDocument()
     for (const seam of Object.values(document.seams)) {
       const panelA = document.panels[seam.a.panelId]
       const panelB = document.panels[seam.b.panelId]
       const pointsA = samplePanelEdge(panelA, seam.a.edgeId, 16, seam.a.reversed)
       const sampledB = samplePanelEdge(panelB, seam.b.edgeId, 16, seam.b.reversed)
-      const pointsB = orientSeamSamples(panelA, pointsA, panelB, sampledB)
-      const forward = pairingCost(panelA, pointsA, panelB, pointsB)
-      const reversed = pairingCost(panelA, pointsA, panelB, [...pointsB].reverse())
-      assert.equal(forward <= reversed + 1e-7, true)
+      const orientation = chooseSeamOrientation(panelA, pointsA, panelB, sampledB)
+      const chosen = orientation.direction === 'forward' ? orientation.forwardCost : orientation.reversedCost
+      const alternative = orientation.direction === 'forward' ? orientation.reversedCost : orientation.forwardCost
+      assert.equal(chosen <= alternative + 1e-8, true, `seam ${seam.id} chose worse endpoint orientation`)
     }
   })
 })
