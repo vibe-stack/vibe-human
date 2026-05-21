@@ -38,7 +38,7 @@ export default function PatternCanvas() {
 
       container.appendChild(app.canvas as HTMLCanvasElement)
       const canvas = app.canvas as HTMLCanvasElement
-      canvas.style.touchAction = 'pan-y pinch-zoom'
+      canvas.style.touchAction = 'none'
 
       // Scene graph
       const world = new PIXI.Container()
@@ -120,7 +120,7 @@ export default function PatternCanvas() {
       style={{
         width: '100%', height: '100%',
         overflow: 'hidden', position: 'relative',
-        touchAction: 'pan-y pinch-zoom',
+        touchAction: 'none',
       }}
     />
   )

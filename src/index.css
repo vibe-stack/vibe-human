@@ -13,6 +13,13 @@ html, body, #root {
   background: #080810;
 }
 
+
+body {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
 /* Range slider styling */
 .range-slider {
   -webkit-appearance: none;
