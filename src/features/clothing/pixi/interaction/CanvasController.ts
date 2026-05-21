@@ -232,6 +232,13 @@ export class CanvasController {
     if (kind !== 'down') return false
     if (this.activeTouches.size > 1) return false
 
+    const activeTool = clothingStore.activeClothingTool
+    const alwaysHandleTouchTools: ClothingTool[] = ['rect', 'ellipse', 'circle', 'polygon', 'pen', 'seam']
+    if (alwaysHandleTouchTools.includes(activeTool)) {
+      this.touchDragPointerId = e.pointerId
+      return true
+    }
+
     const view = this.viewSize()
     const world = screenToWorld(this.screenOf(e), view.w, view.h)
     const pick = pickAt(clothingStore.garment, world, clothingStore.viewport2D.zoom)
