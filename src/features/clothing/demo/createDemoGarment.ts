@@ -37,6 +37,20 @@ export function createDemoGarment(): GarmentDocument {
   return { id: uid(), name: 'T-Shirt Demo', patterns: { [front.id]: front, [back.id]: back }, seams, selectedPatternId: front.id }
 }
 
-function stitch(id: string, name: string, aPanel: PatternPiece, aEdgeId: string, bPanel: PatternPiece, bEdgeId: string): Seam {
-  return { id, name, a: { patternId: aPanel.id, edgeId: aEdgeId }, b: { patternId: bPanel.id, edgeId: bEdgeId }, strength: 1 }
+function stitch(
+  id: string,
+  name: string,
+  aPanel: PatternPiece,
+  aEdgeId: string,
+  bPanel: PatternPiece,
+  bEdgeId: string,
+  bReversed = true,
+): Seam {
+  return {
+    id,
+    name,
+    a: { patternId: aPanel.id, edgeId: aEdgeId },
+    b: { patternId: bPanel.id, edgeId: bEdgeId, reversed: bReversed },
+    strength: 1,
+  }
 }

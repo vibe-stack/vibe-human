@@ -38,8 +38,6 @@ export default function PatternCanvas() {
 
       container.appendChild(app.canvas as HTMLCanvasElement)
       const canvas = app.canvas as HTMLCanvasElement
-      canvas.style.touchAction = 'pan-y pinch-zoom'
-      canvas.style.overscrollBehavior = 'auto'
 
       // Scene graph
       const world = new PIXI.Container()
@@ -57,7 +55,6 @@ export default function PatternCanvas() {
       // Hover handling (kept here so it can run regardless of active tool)
       // ---------------------------------------------------------------------
       const onHoverMove = (e: PointerEvent) => {
-        if (e.pointerType === 'touch') return
         const rect = canvas.getBoundingClientRect()
         const screen = { x: e.clientX - rect.left, y: e.clientY - rect.top }
         const view = { w: canvas.clientWidth, h: canvas.clientHeight }

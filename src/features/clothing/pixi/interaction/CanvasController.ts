@@ -76,9 +76,7 @@ export class CanvasController {
     off(c, 'pointermove', (e: Event) => this.handlePointer(e as PointerEvent, 'move'))
     off(c, 'pointerup',   (e: Event) => this.handlePointer(e as PointerEvent, 'up'))
     off(c, 'pointercancel', (e: Event) => {
-      const pe = e as PointerEvent
-      this.clearTouchPointer(pe.pointerId)
-      this.tool().onCancel?.(this.ctxOf(pe))
+      this.tool().onCancel?.(this.ctxOf(e as PointerEvent))
     })
 
     off(window, 'keydown', (e: Event) => this.handleKey(e as KeyboardEvent))
@@ -91,10 +89,8 @@ export class CanvasController {
 
   private handlePointer(e: PointerEvent, kind: 'down' | 'move' | 'up') {
     if (this.handleTouchGesture(e, kind)) return
-    const shouldHandleTouch = e.pointerType !== 'touch' || this.shouldHandleSingleTouch(e, kind)
-    if (!shouldHandleTouch) return
-    const shouldPreventTouchDefault = e.pointerType !== 'touch' || this.shouldPreventTouchDefault(kind)
-    if (shouldPreventTouchDefault) e.preventDefault()
+    if (e.pointerType === 'touch' && !this.shouldHandleSingleTouch(e, kind)) return
+    e.preventDefault()
     const view = this.viewSize()
     const screen = this.screenOf(e)
     const world = screenToWorld(screen, view.w, view.h)
@@ -143,7 +139,7 @@ export class CanvasController {
 
     if (kind === 'down') this.activeTouches.set(e.pointerId, this.screenOf(e))
     if (kind === 'move' && this.activeTouches.has(e.pointerId)) this.activeTouches.set(e.pointerId, this.screenOf(e))
-    if (kind === 'up') this.clearTouchPointer(e.pointerId)
+    if (kind === 'up') this.activeTouches.delete(e.pointerId)
 
     const touches = [...this.activeTouches.values()]
     if (touches.length < 2) {
@@ -196,17 +192,6 @@ export class CanvasController {
     const shouldDrag = pick?.type === 'point' || pick?.type === 'edge' || pick?.type === 'pattern'
     if (shouldDrag) this.touchDragPointerId = e.pointerId
     return shouldDrag
-  }
-
-  private shouldPreventTouchDefault(kind: 'down' | 'move' | 'up') {
-    if (this.touchGestureState) return true
-    return kind === 'move' && this.touchDragPointerId !== null
-  }
-
-  private clearTouchPointer(pointerId: number) {
-    this.activeTouches.delete(pointerId)
-    if (this.touchDragPointerId === pointerId) this.touchDragPointerId = null
-    if (this.activeTouches.size < 2) this.touchGestureState = null
   }
 
   // -------------------------------------------------------------------------
@@ -319,10 +304,7 @@ export class CanvasController {
     const pid = e?.pointerId ?? -1
     return {
       pointerId: pid,
-      setPointerCapture: (id) => {
-        if (e?.pointerType === 'touch' && this.touchDragPointerId !== id) return
-        try { this.canvas.setPointerCapture(id) } catch {}
-      },
+      setPointerCapture: (id) => { try { this.canvas.setPointerCapture(id) } catch {} },
       releasePointerCapture: (id) => { try { this.canvas.releasePointerCapture(id) } catch {} },
     }
   }
