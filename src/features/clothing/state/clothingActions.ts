@@ -385,7 +385,8 @@ export function loadDemoGarment(doc: GarmentDocument) {
       rotation: { x: 0, y: 0, z: 0 },
     }
   } else if (patternIds.length >= 2) {
-    const [frontId, backId] = patternIds
+    const frontId = patternIds.includes('torso-front') ? 'torso-front' : patternIds[0]
+    const backId = patternIds.includes('torso-back') ? 'torso-back' : patternIds[1]
     clothingStore.placements[frontId] = {
       position: { x: 0, y: -0.56, z: 0.26 },
       rotation: { x: 0, y: 0, z: 0 },
