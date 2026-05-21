@@ -18,6 +18,7 @@ import { editPointsTool } from './tools/editPointsTool'
 import { rectTool, ellipseTool, circleTool, polygonTool, penTool } from './tools/shapeTools'
 import { seamTool } from './tools/seamTool'
 import { panTool } from './tools/panTool'
+import { pickAt } from '../PatternPicker'
 
 const TOOLS: Record<ClothingTool, ToolHandler> = {
   select: selectTool,
@@ -88,7 +89,8 @@ export class CanvasController {
 
   private handlePointer(e: PointerEvent, kind: 'down' | 'move' | 'up') {
     if (this.handleTouchGesture(e, kind)) return
-    if (e.pointerType !== 'touch') e.preventDefault()
+    if (e.pointerType === 'touch' && !this.shouldHandleSingleTouch(e, kind)) return
+    e.preventDefault()
     const view = this.viewSize()
     const screen = this.screenOf(e)
     const world = screenToWorld(screen, view.w, view.h)
@@ -130,6 +132,7 @@ export class CanvasController {
 
   private activeTouches = new Map<number, Vec2>()
   private touchGestureState: { distance: number; centerWorld: Vec2 } | null = null
+  private touchDragPointerId: number | null = null
 
   private handleTouchGesture(e: PointerEvent, kind: 'down' | 'move' | 'up') {
     if (e.pointerType !== 'touch') return false
@@ -145,6 +148,8 @@ export class CanvasController {
       this.touchGestureState = null
       return false
     }
+
+    this.touchDragPointerId = null
 
     e.preventDefault()
     const [a, b] = touches
@@ -170,6 +175,23 @@ export class CanvasController {
     clothingStore.viewport2D.panY += this.touchGestureState.centerWorld.y - after.y
     this.touchGestureState.centerWorld = screenToWorld(center, view.w, view.h)
     return true
+  }
+
+  private shouldHandleSingleTouch(e: PointerEvent, kind: 'down' | 'move' | 'up') {
+    if (kind === 'up' && this.touchDragPointerId === e.pointerId) {
+      this.touchDragPointerId = null
+      return true
+    }
+    if (kind === 'move') return this.touchDragPointerId === e.pointerId
+    if (kind !== 'down') return false
+    if (this.activeTouches.size > 1) return false
+
+    const view = this.viewSize()
+    const world = screenToWorld(this.screenOf(e), view.w, view.h)
+    const pick = pickAt(clothingStore.garment, world, clothingStore.viewport2D.zoom)
+    const shouldDrag = pick?.type === 'point' || pick?.type === 'edge' || pick?.type === 'pattern'
+    if (shouldDrag) this.touchDragPointerId = e.pointerId
+    return shouldDrag
   }
 
   // -------------------------------------------------------------------------
