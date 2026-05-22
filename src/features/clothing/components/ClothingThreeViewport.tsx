@@ -1,27 +1,13 @@
-import { Suspense, useRef } from 'react'
+import { Suspense, useEffect, useRef } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls, Grid } from '@react-three/drei'
+import { Orbit } from 'lucide-react'
+import { useSnapshot } from 'valtio'
 import * as THREE from 'three/webgpu'
+import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import GarmentPreviewMesh from '../three/GarmentPreviewMesh'
-
-// ---------------------------------------------------------------------------
-// Shared orbit-controls lock: when > 0 orbit is disabled (garment is being
-// dragged). Exported so ClothScene can increment/decrement.
-// ---------------------------------------------------------------------------
-let _orbitLockCount = 0
-let _orbitRef: { current: unknown } | null = null
-export function lockOrbit() {
-  _orbitLockCount += 1
-  updateOrbitEnabled()
-}
-export function unlockOrbit() {
-  _orbitLockCount = Math.max(0, _orbitLockCount - 1)
-  updateOrbitEnabled()
-}
-function updateOrbitEnabled() {
-  const controls = _orbitRef?.current as { enabled?: boolean } | null
-  if (controls) controls.enabled = _orbitLockCount === 0
-}
+import { clothingStore } from '../state/clothingStore'
+import { setOrbitController, setOrbitUserEnabled } from './orbitControlsState'
 
 // ---------------------------------------------------------------------------
 // ClothingThreeViewport
@@ -29,11 +15,20 @@ function updateOrbitEnabled() {
 // ---------------------------------------------------------------------------
 
 export default function ClothingThreeViewport() {
-  const orbitRef = useRef(null)
-  _orbitRef = orbitRef as { current: unknown }
+  const orbitRef = useRef<OrbitControlsImpl | null>(null)
+  const { previewOptions } = useSnapshot(clothingStore)
+
+  useEffect(() => {
+    setOrbitController(orbitRef.current)
+    return () => setOrbitController(null)
+  }, [])
+
+  useEffect(() => {
+    setOrbitUserEnabled(previewOptions.orbitControlsEnabled)
+  }, [previewOptions.orbitControlsEnabled])
 
   return (
-    <div style={{ width: '100%', height: '100%', background: '#0a0a14' }}>
+    <div style={{ width: '100%', height: '100%', background: '#0a0a14', position: 'relative' }}>
       <Canvas
         camera={{ position: [0, 0.4, 1.4], fov: 28 }}
         gl={async (props) => {
@@ -79,6 +74,32 @@ export default function ClothingThreeViewport() {
           target={[0, 0.1, 0]}
         />
       </Canvas>
+      <button
+        type="button"
+        onClick={() => { clothingStore.previewOptions.orbitControlsEnabled = !previewOptions.orbitControlsEnabled }}
+        title={previewOptions.orbitControlsEnabled ? 'Disable orbit controls' : 'Enable orbit controls'}
+        aria-label={previewOptions.orbitControlsEnabled ? 'Disable orbit controls' : 'Enable orbit controls'}
+        style={{
+          position: 'absolute',
+          right: 12,
+          bottom: 12,
+          zIndex: 2,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: 34,
+          height: 34,
+          border: '1px solid rgba(255,255,255,0.12)',
+          borderRadius: 8,
+          background: previewOptions.orbitControlsEnabled ? 'rgba(68,136,255,0.24)' : 'rgba(8,8,16,0.78)',
+          color: previewOptions.orbitControlsEnabled ? '#9fc1ff' : 'rgba(255,255,255,0.55)',
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
+          cursor: 'pointer',
+        }}
+      >
+        <Orbit size={16} strokeWidth={1.9} />
+      </button>
     </div>
   )
 }

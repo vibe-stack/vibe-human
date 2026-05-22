@@ -1,9 +1,20 @@
 import { nanoid } from '../../../utils/nanoid'
-import type { GarmentDocument, PatternEdge, PatternPiece, PatternPoint, Seam } from '../state/clothingTypes'
+import type { GarmentDocument, PatternEdge, PatternPiece, PatternPlacement, PatternPoint, Seam } from '../state/clothingTypes'
 
 function uid() { return nanoid(8) }
 const makePoint = (id: string, x: number, y: number, handles?: Pick<PatternPoint, 'in' | 'out'>): PatternPoint => ({ id, x, y, kind: handles ? 'smooth' : 'corner', ...handles })
 const makeEdge = (id: string, from: string, to: string, curve: PatternEdge['curve'] = 'line'): PatternEdge => ({ id, from, to, curve })
+
+export const DEMO_GARMENT_PLACEMENTS: Record<string, PatternPlacement> = {
+  'torso-front': {
+    position: { x: -0.045, y: -0.54, z: 0.34 },
+    rotation: { x: 0, y: 0.16, z: -0.04 },
+  },
+  'torso-back': {
+    position: { x: 0.045, y: -0.54, z: -0.34 },
+    rotation: { x: 0, y: -0.16, z: 0.04 },
+  },
+}
 
 function createTShirtPanel(id: string, name: string, neckDepth: number): PatternPiece { /* unchanged */
   const neckLeft = makePoint(`${id}-neck-left`, -44, -182, { out: { x: 22, y: neckDepth } })
@@ -18,7 +29,19 @@ function createTShirtPanel(id: string, name: string, neckDepth: number): Pattern
   const leftSleeveBottom = makePoint(`${id}-left-sleeve-bottom`, -172, -44)
   const leftSleeveTop = makePoint(`${id}-left-sleeve-top`, -196, -120)
   const leftShoulder = makePoint(`${id}-left-shoulder`, -96, -168)
-  return { id, name, points: { [neckLeft.id]: neckLeft,[neckRight.id]: neckRight,[rightShoulder.id]: rightShoulder,[rightSleeveTop.id]: rightSleeveTop,[rightSleeveBottom.id]: rightSleeveBottom,[rightUnderarm.id]: rightUnderarm,[rightHem.id]: rightHem,[leftHem.id]: leftHem,[leftUnderarm.id]: leftUnderarm,[leftSleeveBottom.id]: leftSleeveBottom,[leftSleeveTop.id]: leftSleeveTop,[leftShoulder.id]: leftShoulder }, edges: [makeEdge('neck', neckLeft.id, neckRight.id, 'cubic'),makeEdge('right-shoulder', neckRight.id, rightShoulder.id),makeEdge('right-sleeve-top', rightShoulder.id, rightSleeveTop.id),makeEdge('right-sleeve-opening', rightSleeveTop.id, rightSleeveBottom.id),makeEdge('right-sleeve-underarm', rightSleeveBottom.id, rightUnderarm.id),makeEdge('right-side', rightUnderarm.id, rightHem.id),makeEdge('hem', rightHem.id, leftHem.id),makeEdge('left-side', leftHem.id, leftUnderarm.id),makeEdge('left-sleeve-underarm', leftUnderarm.id, leftSleeveBottom.id),makeEdge('left-sleeve-opening', leftSleeveBottom.id, leftSleeveTop.id),makeEdge('left-sleeve-top', leftSleeveTop.id, leftShoulder.id),makeEdge('left-shoulder', leftShoulder.id, neckLeft.id)], closed: true, fabricId: 'cotton-demo', particleDistance: 16 }
+  return {
+    id,
+    name,
+    points: { [neckLeft.id]: neckLeft,[neckRight.id]: neckRight,[rightShoulder.id]: rightShoulder,[rightSleeveTop.id]: rightSleeveTop,[rightSleeveBottom.id]: rightSleeveBottom,[rightUnderarm.id]: rightUnderarm,[rightHem.id]: rightHem,[leftHem.id]: leftHem,[leftUnderarm.id]: leftUnderarm,[leftSleeveBottom.id]: leftSleeveBottom,[leftSleeveTop.id]: leftSleeveTop,[leftShoulder.id]: leftShoulder },
+    edges: [makeEdge('neck', neckLeft.id, neckRight.id, 'cubic'),makeEdge('right-shoulder', neckRight.id, rightShoulder.id),makeEdge('right-sleeve-top', rightShoulder.id, rightSleeveTop.id),makeEdge('right-sleeve-opening', rightSleeveTop.id, rightSleeveBottom.id),makeEdge('right-sleeve-underarm', rightSleeveBottom.id, rightUnderarm.id),makeEdge('right-side', rightUnderarm.id, rightHem.id),makeEdge('hem', rightHem.id, leftHem.id),makeEdge('left-side', leftHem.id, leftUnderarm.id),makeEdge('left-sleeve-underarm', leftUnderarm.id, leftSleeveBottom.id),makeEdge('left-sleeve-opening', leftSleeveBottom.id, leftSleeveTop.id),makeEdge('left-sleeve-top', leftSleeveTop.id, leftShoulder.id),makeEdge('left-shoulder', leftShoulder.id, neckLeft.id)],
+    closed: true,
+    fabricId: 'cotton-demo',
+    particleDistance: 16,
+    stretchCompliance: 0.0001,
+    shearCompliance: 0.00016,
+    bendCompliance: 0.12,
+    damping: 0.045,
+  }
 }
 
 export function createDemoGarment(): GarmentDocument {

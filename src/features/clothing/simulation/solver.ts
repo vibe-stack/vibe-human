@@ -97,7 +97,7 @@ export class XPBDClothSolver {
         solveDistanceConstraintsFlat(this.mesh.positions, this.mesh.invMass, this.shearFlat, dt, 0)
         solveDistanceConstraintsFlat(this.mesh.positions, this.mesh.invMass, this.seamFlat, dt, seamRestScale, seamStiffness)
         if (bendBlend > 0) {
-          solveBendConstraintsFlat(this.mesh.positions, this.mesh.invMass, this.bendFlat, dt / bendBlend)
+          solveBendConstraintsFlat(this.mesh.positions, this.mesh.invMass, this.bendFlat, dt * bendBlend)
         }
         solvePinConstraints(this.mesh)
         this.applyGrabPin(dt)

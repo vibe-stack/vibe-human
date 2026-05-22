@@ -10,7 +10,7 @@ import { toPatternDocument } from '../../document/legacyAdapter'
 import { useGarmentSimulation } from '../../rendering/useGarmentSimulation'
 import { selectPattern, setPatternPlacement } from '../../state/clothingActions'
 import type { GarmentDocument, PatternPlacement } from '../../state/clothingTypes'
-import { lockOrbit, unlockOrbit } from '../../components/ClothingThreeViewport'
+import { lockOrbit, unlockOrbit } from '../../components/orbitControlsState'
 
 const _raycaster = new THREE.Raycaster()
 const _ndc = new THREE.Vector2()

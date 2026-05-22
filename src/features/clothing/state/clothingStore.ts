@@ -23,6 +23,7 @@ type Viewport2DState = {
 }
 
 type PreviewOptions3D = {
+  orbitControlsEnabled: boolean
   showWireframe: boolean
   showSeams: boolean
   showTriangulation: boolean
@@ -111,6 +112,7 @@ export const clothingStore = proxy<ClothingState>({
     hoveredEntityType: null,
   },
   previewOptions: {
+    orbitControlsEnabled: true,
     showWireframe: false,
     showSeams: true,
     showTriangulation: false,
@@ -125,7 +127,7 @@ export const clothingStore = proxy<ClothingState>({
   },
   simRunning: false,
   simResetKey: 0,
-  simQuality: 'medium',
+  simQuality: 'high',
   transformMode: 'translate',
   collisionAvatar: {
     buildRequestId: 0,
