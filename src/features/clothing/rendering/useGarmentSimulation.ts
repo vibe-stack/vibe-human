@@ -45,9 +45,9 @@ type RenderPanelEntry = {
   neighbors: Uint32Array
 }
 
-const VISUAL_SMOOTHING_PASSES = 5
-const VISUAL_SMOOTHING_ALPHA = 0.5
-const VISUAL_SMOOTHING_SHRINK = -0.53
+const VISUAL_SMOOTHING_PASSES = 3
+const VISUAL_SMOOTHING_ALPHA = 0.28
+const VISUAL_SMOOTHING_SHRINK = -0.08
 
 export function useGarmentSimulation(args: {
   document: PatternDocument

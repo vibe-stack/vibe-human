@@ -1,4 +1,5 @@
 import { nanoid } from '../../../utils/nanoid'
+import { DEMO_GARMENT_PLACEMENTS } from '../demo/createDemoGarment'
 import { clothingStore } from './clothingStore'
 import { pushHistory } from './historyActions'
 import { setSelectedPatterns } from './transformActions'
@@ -387,14 +388,8 @@ export function loadDemoGarment(doc: GarmentDocument) {
   } else if (patternIds.length >= 2) {
     const frontId = patternIds.includes('torso-front') ? 'torso-front' : patternIds[0]
     const backId = patternIds.includes('torso-back') ? 'torso-back' : patternIds[1]
-    clothingStore.placements[frontId] = {
-      position: { x: 0, y: -0.56, z: 0.26 },
-      rotation: { x: 0, y: 0, z: 0 },
-    }
-    clothingStore.placements[backId] = {
-      position: { x: 0, y: -0.56, z: -0.26 },
-      rotation: { x: 0, y: 0, z: 0 },
-    }
+    clothingStore.placements[frontId] = structuredClone(DEMO_GARMENT_PLACEMENTS['torso-front'])
+    clothingStore.placements[backId] = structuredClone(DEMO_GARMENT_PLACEMENTS['torso-back'])
   }
   clothingStore.viewport2D.zoom = 1.35
   clothingStore.viewport2D.panX = 0
