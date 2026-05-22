@@ -322,7 +322,8 @@ export function buildTopologyKey(document: PatternDocument, quality: CompileQual
       const edges = panel.edges.map((edge) => `${edge.id}:${edge.from}>${edge.to}:${edge.curve}`).join('|')
       const holes = (panel.holes ?? []).map((hole) => hole.map((edge) => edge.id).join(',')).join('|')
       const placement = panel.placement
-      return `${panel.id}:${panel.closed}:${panel.particleDistance}:${panel.fabricId ?? ''}:${points}:${edges}:${holes}:${placement.position.x},${placement.position.y},${placement.position.z}:${placement.rotation.x},${placement.rotation.y},${placement.rotation.z}`
+      const placementKey = `${placement.position.x},${placement.position.y},${placement.position.z}:${placement.rotation.x},${placement.rotation.y},${placement.rotation.z}`
+      return `${panel.id}:${panel.closed}:${panel.particleDistance}:${panel.fabricId ?? ''}:${points}:${edges}:${holes}:${placementKey}`
     })
     .sort()
     .join('||')
