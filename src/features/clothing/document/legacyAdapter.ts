@@ -55,7 +55,7 @@ function defaultPlacement(_panelId: string): PatternPlacement {
 function buildDemoPlacementMap(panelIds: string[]): Record<string, PatternPlacement> {
   const result: Record<string, PatternPlacement> = {}
   if (panelIds.includes('torso-front')) result['torso-front'] = { position: { x: 0, y: 0.38, z: 0.26 }, rotation: { x: 0, y: 0, z: 0 } }
-  if (panelIds.includes('torso-back')) result['torso-back'] = { position: { x: 0, y: 0.38, z: -0.26 }, rotation: { x: 0, y: Math.PI, z: 0 } }
+  if (panelIds.includes('torso-back')) result['torso-back'] = { position: { x: 0, y: 0.38, z: -0.26 }, rotation: { x: 0, y: 0, z: 0 } }
   if (panelIds.includes('left-panel')) result['left-panel'] = { position: { x: -0.16, y: 0.38, z: 0 }, rotation: { x: 0, y: -Math.PI / 2, z: 0 } }
   if (panelIds.includes('right-panel')) result['right-panel'] = { position: { x: 0.16, y: 0.38, z: 0 }, rotation: { x: 0, y: Math.PI / 2, z: 0 } }
   return result
