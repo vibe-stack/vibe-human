@@ -373,7 +373,7 @@ export default function App() {
 
               <OrbitControls
                 enabled={!isTransforming && (!showClothing || previewOptions.orbitControlsEnabled)}
-                mouseButtons={{  MIDDLE: 0, RIGHT: 2 }}
+                mouseButtons={{ MIDDLE: 0, RIGHT: 2 }}
                 minDistance={0.2}
                 maxDistance={25}
                 minPolarAngle={Math.PI * 0.2}
