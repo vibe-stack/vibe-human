@@ -10,6 +10,7 @@ import {
   Move3d,
   Pen,
   PenTool,
+  Pin,
   Play,
   Redo2,
   RotateCcw,
@@ -56,11 +57,28 @@ const TOOLS: ToolDef[] = [
 ]
 
 export default function ClothingToolbar() {
-  const { activeClothingTool, simRunning, history, selectedPatternIds } = useSnapshot(clothingStore)
+  const { activeClothingTool, simRunning, history, selectedPatternIds, garment } = useSnapshot(clothingStore)
   const canUndoNow = history.past.length > 0
   const canRedoNow = history.future.length > 0
   const hasSelection = selectedPatternIds.length > 0
   const canBoolean = selectedPatternIds.length >= 2
+
+  const selectedPatternId = garment.selectedPatternId
+  const selectedEdgeId = garment.selectedEdgeId
+  const hasEdgeSelected = !!(selectedPatternId && selectedEdgeId)
+  const isEdgeGlued = hasEdgeSelected
+    && !!(clothingStore.garment.patterns[selectedPatternId]?.gluedEdgeIds?.includes(selectedEdgeId!))
+
+  function toggleGlue() {
+    if (!selectedPatternId || !selectedEdgeId) return
+    const next = new Set(clothingStore.garment.patterns[selectedPatternId]?.gluedEdgeIds ?? [])
+    if (next.has(selectedEdgeId)) next.delete(selectedEdgeId)
+    else next.add(selectedEdgeId)
+    clothingStore.garment.patterns[selectedPatternId].gluedEdgeIds = [...next]
+    clothingStore.dirty.previewDirty = true
+    clothingStore.simResetKey += 1
+    clothingStore.simRunning = false
+  }
 
   return (
     <div style={{
@@ -127,6 +145,15 @@ export default function ClothingToolbar() {
         >
           <Scissors size={14} />
         </IconButton>
+        {hasEdgeSelected && (
+          <IconButton
+            onClick={toggleGlue}
+            title={isEdgeGlued ? 'Unpin edge (remove glue — edge will move with simulation)' : 'Pin/glue edge (hold it in place during simulation)'}
+            active={isEdgeGlued}
+          >
+            <Pin size={14} />
+          </IconButton>
+        )}
       </ToolGroup>
 
       <div style={{ flex: 1, minWidth: 8 }} />
@@ -198,8 +225,8 @@ function ToolButton({
 }
 
 function IconButton({
-  onClick, title, children, disabled,
-}: { onClick: () => void; title: string; children: ReactNode; disabled?: boolean }) {
+  onClick, title, children, disabled, active,
+}: { onClick: () => void; title: string; children: ReactNode; disabled?: boolean; active?: boolean }) {
   return (
     <button
       onClick={onClick}
@@ -212,10 +239,10 @@ function IconButton({
         minWidth: 30,
         height: 30,
         padding: '0 8px',
-        background: 'transparent',
-        border: '1px solid rgba(255,255,255,0.08)',
+        background: active ? 'rgba(68,136,255,0.25)' : 'transparent',
+        border: active ? '1px solid rgba(68,136,255,0.6)' : '1px solid rgba(255,255,255,0.08)',
         borderRadius: 4,
-        color: disabled ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.7)',
+        color: disabled ? 'rgba(255,255,255,0.2)' : active ? '#88bbff' : 'rgba(255,255,255,0.7)',
         cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.5 : 1,
       }}

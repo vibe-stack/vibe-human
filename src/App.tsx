@@ -20,6 +20,7 @@ import TestPanel from './TestPanel'
 import GroomPanel, { BrushToolbar } from './features/groom/components/GroomPanel'
 import GarmentPreviewMesh from './features/clothing/three/GarmentPreviewMesh'
 import ClothingPatternEditor2D from './features/clothing/components/ClothingPatternEditor2D'
+import ClothingToolbar from './features/clothing/components/ClothingToolbar'
 import { ClothingInspector } from './features/clothing/index'
 import { loadDemoGarment } from './features/clothing/state/clothingActions'
 import { createDemoGarment } from './features/clothing/demo/createDemoGarment'
@@ -259,9 +260,14 @@ export default function App() {
             borderTop: '1px solid rgba(255,255,255,0.07)',
           }}>
             {showClothing && (
-              <div style={{ minHeight: 320, borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-                <ClothingPatternEditor2D />
-              </div>
+              <>
+                <div style={{ position: 'sticky', top: 0, zIndex: 21 }}>
+                  <ClothingToolbar />
+                </div>
+                <div style={{ height: 300, borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                  <ClothingPatternEditor2D hideToolbar />
+                </div>
+              </>
             )}
             {showExpressions && <ControlPanel />}
             {showTest && <TestPanel />}
