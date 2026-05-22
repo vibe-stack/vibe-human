@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { createDemoGarment } from '../demo/createDemoGarment'
 import { toPatternDocument } from '../document/legacyAdapter'
 import type { PatternPlacement } from '../document/types'
+import { resolveSeamSamples } from '../geometry/seamUtils'
 import { XPBDClothSolver } from '../simulation/solver'
 import { samplePanelEdge } from './buildPanelSimMesh'
 import { orientSeamSamples } from './buildSeamConstraints'
@@ -128,6 +129,22 @@ describe('clothing compiler architecture', () => {
       assert.equal(forward <= reversed + 1e-7, true)
     }
   })
+
+  test('demo seams start aligned in the default placement', () => {
+    const document = buildDocument()
+    for (const seam of Object.values(document.seams)) {
+      const resolved = resolveSeamSamples(document, seam, 16)
+      assert.notEqual(resolved, null)
+      if (!resolved) continue
+      const count = Math.min(resolved.pointsA.length, resolved.pointsB.length)
+      for (let index = 0; index < count; index += 1) {
+        const a = place(document.panels[seam.a.panelId], resolved.pointsA[index])
+        const b = place(document.panels[seam.b.panelId], resolved.pointsB[index])
+        assert.equal(Math.abs(a.x - b.x) < 1e-6, true)
+        assert.equal(Math.abs(a.y - b.y) < 1e-6, true)
+      }
+    }
+  })
 })
 
 function buildDocument() {
@@ -139,7 +156,7 @@ function buildDocument() {
     },
     'torso-back': {
       position: { x: 0, y: -0.74, z: -0.3 },
-      rotation: { x: 0, y: Math.PI, z: 0 },
+      rotation: { x: 0, y: 0, z: 0 },
     },
   }
   return toPatternDocument(garment, placements)
@@ -158,7 +175,7 @@ function buildDocumentWithBackSeamsUnreversed() {
     },
     'torso-back': {
       position: { x: 0, y: -0.74, z: -0.3 },
-      rotation: { x: 0, y: Math.PI, z: 0 },
+      rotation: { x: 0, y: 0, z: 0 },
     },
   }
   return toPatternDocument(garment, placements)

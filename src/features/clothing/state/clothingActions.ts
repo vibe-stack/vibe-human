@@ -393,7 +393,7 @@ export function loadDemoGarment(doc: GarmentDocument) {
     }
     clothingStore.placements[backId] = {
       position: { x: 0, y: -0.56, z: -0.26 },
-      rotation: { x: 0, y: Math.PI, z: 0 },
+      rotation: { x: 0, y: 0, z: 0 },
     }
   }
   clothingStore.viewport2D.zoom = 1.35
