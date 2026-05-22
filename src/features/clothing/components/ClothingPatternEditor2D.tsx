@@ -1,23 +1,16 @@
-import { useEffect, useState } from 'react'
 import ClothingToolbar from './ClothingToolbar'
 import PatternCanvas from '../pixi/PatternCanvas'
 
 // ---------------------------------------------------------------------------
 // ClothingPatternEditor2D
-// Vertical stack: toolbar at top, Pixi canvas fills remaining space.
+// Vertical stack: toolbar at top (unless hideToolbar), Pixi canvas fills rest.
+//
+// On mobile the parent (App.tsx) renders ClothingToolbar separately as a
+// sticky element above this component and passes hideToolbar={true} so there
+// is no duplicate toolbar.
 // ---------------------------------------------------------------------------
 
-export default function ClothingPatternEditor2D() {
-  const [isMobileViewport, setIsMobileViewport] = useState(false)
-
-  useEffect(() => {
-    const media = window.matchMedia('(max-width: 900px), (pointer: coarse)')
-    const update = () => setIsMobileViewport(media.matches)
-    update()
-    media.addEventListener('change', update)
-    return () => media.removeEventListener('change', update)
-  }, [])
-
+export default function ClothingPatternEditor2D({ hideToolbar }: { hideToolbar?: boolean }) {
   return (
     <div style={{
       display: 'flex',
@@ -26,11 +19,10 @@ export default function ClothingPatternEditor2D() {
       height: '100%',
       overflow: 'hidden',
     }}>
-      <ClothingToolbar />
+      {!hideToolbar && <ClothingToolbar />}
       <div style={{
-        flex: isMobileViewport ? '0 0 70%' : 1,
+        flex: 1,
         minHeight: 0,
-        height: isMobileViewport ? '70%' : undefined,
         position: 'relative',
       }}>
         <PatternCanvas />

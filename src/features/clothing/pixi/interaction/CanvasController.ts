@@ -171,7 +171,10 @@ export class CanvasController {
       this.activeTouches.delete(e.pointerId)
       if (this.activeTouches.size === 0) {
         this.touchGestureState = null
-        this.touchDragPointerId = null
+        // Do NOT clear touchDragPointerId here — shouldHandleSingleTouch checks
+        // it on 'up' and clears it after routing the event to the active tool.
+        // Clearing it here would prevent onPointerUp from reaching shape tools,
+        // so rect/circle/etc never get to commitDraft().
         console.debug('[CanvasController] gesture end', {
           activeTouchesSize: this.activeTouches.size,
           touchDragPointerId: this.touchDragPointerId,
@@ -233,7 +236,7 @@ export class CanvasController {
     if (this.activeTouches.size > 1) return false
 
     const activeTool = clothingStore.activeClothingTool
-    const alwaysHandleTouchTools: ClothingTool[] = ['rect', 'ellipse', 'circle', 'polygon', 'pen', 'seam']
+    const alwaysHandleTouchTools: ClothingTool[] = ['rect', 'ellipse', 'circle', 'polygon', 'pen', 'seam', 'pan']
     if (alwaysHandleTouchTools.includes(activeTool)) {
       this.touchDragPointerId = e.pointerId
       return true
