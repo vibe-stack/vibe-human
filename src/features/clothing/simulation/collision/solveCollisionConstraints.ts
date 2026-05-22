@@ -396,7 +396,7 @@ function pushOutOfSweptMeshCollider(
     }
   }
 
-  if (!Number.isFinite(bestT)) return false
+  if (bestT === Infinity) return false
   out[0] = bestX + bestNx * target
   out[1] = bestY + bestNy * target
   out[2] = bestZ + bestNz * target

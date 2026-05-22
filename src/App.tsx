@@ -132,7 +132,7 @@ function ClothingOrbitToggle() {
   return (
     <button
       type="button"
-      onClick={() => { clothingStore.previewOptions.orbitControlsEnabled = !previewOptions.orbitControlsEnabled }}
+      onClick={() => { clothingStore.previewOptions.orbitControlsEnabled = !clothingStore.previewOptions.orbitControlsEnabled }}
       title={previewOptions.orbitControlsEnabled ? 'Disable orbit controls' : 'Enable orbit controls'}
       aria-label={previewOptions.orbitControlsEnabled ? 'Disable orbit controls' : 'Enable orbit controls'}
       style={{
