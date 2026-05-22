@@ -4,6 +4,7 @@ import { OrbitControls, Grid } from '@react-three/drei'
 import { Orbit } from 'lucide-react'
 import { useSnapshot } from 'valtio'
 import * as THREE from 'three/webgpu'
+import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import GarmentPreviewMesh from '../three/GarmentPreviewMesh'
 import { clothingStore } from '../state/clothingStore'
 import { setOrbitController, setOrbitUserEnabled } from './orbitControlsState'
@@ -14,7 +15,7 @@ import { setOrbitController, setOrbitUserEnabled } from './orbitControlsState'
 // ---------------------------------------------------------------------------
 
 export default function ClothingThreeViewport() {
-  const orbitRef = useRef<{ enabled: boolean } | null>(null)
+  const orbitRef = useRef<OrbitControlsImpl | null>(null)
   const { previewOptions } = useSnapshot(clothingStore)
 
   useEffect(() => {

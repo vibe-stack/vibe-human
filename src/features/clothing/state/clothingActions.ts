@@ -411,7 +411,10 @@ export function loadDemoGarment(doc: GarmentDocument) {
 
 export { movePointRaw as movePoint, moveHandleRaw as moveHandle } from './pointActions'
 
-export function setRectanglePatternBounds(_patternId: string, _a: { x: number; y: number }, _b: { x: number; y: number }) {
+export function setRectanglePatternBounds(patternId: string, a: { x: number; y: number }, b: { x: number; y: number }) {
+  void patternId
+  void a
+  void b
   // Retained for any external caller — no-op since rectangle drafting is now
   // handled by the draft system. The original use-case (live rubber-band
   // rectangle while drawing) is now drawn as a preview, not a committed piece.

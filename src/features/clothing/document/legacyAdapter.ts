@@ -14,7 +14,7 @@ export function toPatternDocument(
   for (const piece of pieces) {
     panels[piece.id] = {
       ...JSON.parse(JSON.stringify(piece)),
-      placement: clonePlacement(placements[piece.id] ?? demoPlacements[piece.id] ?? defaultPlacement(piece.id)),
+      placement: clonePlacement(placements[piece.id] ?? demoPlacements[piece.id] ?? defaultPlacement()),
       pins: buildGluedEdgePins(piece),
       metadata: undefined,
     }
@@ -46,7 +46,7 @@ function clonePlacement(placement: PatternPlacement): PatternPlacement {
   }
 }
 
-function defaultPlacement(_panelId: string): PatternPlacement {
+function defaultPlacement(): PatternPlacement {
   return {
     position: { x: 0, y: 0.38, z: 0 },
     rotation: { x: 0, y: 0, z: 0 },
