@@ -14,7 +14,7 @@ import type { ClothInstance } from './useClothSolver'
 
 const PULL_RADIUS_PX = 64
 const MAX_PARTICLES = 64
-const FLICK_SCALE = 1.4
+const FLICK_SCALE = 0.7
 
 type DragState = {
   pointerId: number
@@ -73,7 +73,7 @@ export function useClothDrag(instance: ClothInstance | null, ensureRunning: () =
     const now = performance.now()
     const dt = Math.max((now - d.lastTime) / 1000, 1 / 240)
     const instV = next.clone().sub(d.cursor).divideScalar(dt)
-    d.velocity.lerp(instV, 0.55)
+    d.velocity.lerp(instV, 0.35)
     d.cursor.copy(next)
     d.lastTime = now
 

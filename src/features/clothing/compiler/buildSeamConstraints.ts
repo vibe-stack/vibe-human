@@ -1,7 +1,8 @@
-import type { PatternDocument } from '../document/types'
+import type { PatternDocument, PatternPanel } from '../document/types'
 import type { DistanceConstraint } from '../simulation/types'
 import type { CompiledPanelSimMesh } from './buildPanelSimMesh'
-import { resolveSeamSamples } from '../geometry/seamUtils'
+import { resolveSeamSamples, placePt } from '../geometry/seamUtils'
+import type { Vec2 } from '../state/clothingTypes'
 
 export function buildSeamConstraints(
   document: PatternDocument,
@@ -82,7 +83,7 @@ function orderedEdgeParticles(
   edgePoints: Array<{ x: number; y: number }>,
 ) {
   if (edgePoints.length < 2 || mesh.panelInfo.particleIndices.length === 0) return []
-  const toleranceSq = Math.max(36, (panel.particleDistance * 0.55) ** 2)
+  const toleranceSq = Math.max(36, (panel.particleDistance * 0.75) ** 2)
   const matches: Array<{ particle: number; t: number; distSq: number }> = []
 
   for (let localIndex = 0; localIndex < mesh.panelInfo.particleIndices.length; localIndex += 1) {
@@ -200,3 +201,28 @@ function clamp01(value: number) {
   return Math.min(1, Math.max(0, value))
 }
 
+// ---------------------------------------------------------------------------
+// Orient seam samples using 3D world-space endpoint cost.
+// This correctly handles cases where both panels share identical 2D pattern
+// coordinates but have different 3D placements (e.g., front/back of a T-shirt).
+// ---------------------------------------------------------------------------
+
+export function orientSeamSamples(
+  panelA: PatternPanel,
+  pointsA: Vec2[],
+  panelB: PatternPanel,
+  pointsB: Vec2[],
+): Vec2[] {
+  if (pointsA.length < 2 || pointsB.length < 2) return pointsB
+  const n = Math.min(pointsA.length, pointsB.length)
+  let forwardCost = 0
+  let reversedCost = 0
+  for (let i = 0; i < n; i += 1) {
+    const a3 = placePt(panelA, pointsA[i])
+    const bfwd = placePt(panelB, pointsB[i])
+    const brev = placePt(panelB, pointsB[n - 1 - i])
+    forwardCost += (a3.x - bfwd.x) ** 2 + (a3.y - bfwd.y) ** 2 + (a3.z - bfwd.z) ** 2
+    reversedCost += (a3.x - brev.x) ** 2 + (a3.y - brev.y) ** 2 + (a3.z - brev.z) ** 2
+  }
+  return reversedCost + 1e-8 < forwardCost ? [...pointsB].reverse() : pointsB
+}

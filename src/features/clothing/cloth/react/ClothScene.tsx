@@ -10,6 +10,7 @@ import { toPatternDocument } from '../../document/legacyAdapter'
 import { useGarmentSimulation } from '../../rendering/useGarmentSimulation'
 import { selectPattern, setPatternPlacement } from '../../state/clothingActions'
 import type { GarmentDocument, PatternPlacement } from '../../state/clothingTypes'
+import { lockOrbit, unlockOrbit } from '../../components/ClothingThreeViewport'
 
 const _raycaster = new THREE.Raycaster()
 const _ndc = new THREE.Vector2()
@@ -102,6 +103,8 @@ export default function ClothScene() {
                 const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(cameraForward, grabPoint)
                 const canvas = gl.domElement
                 canvas.setPointerCapture(event.pointerId)
+                lockOrbit()
+                const isTouch = event.pointerType === 'touch'
                 const state = {
                   panelId: panel.panelId,
                   particle,
@@ -122,10 +125,12 @@ export default function ClothScene() {
                     const now = performance.now()
                     const dtMs = Math.max(1, now - state.lastTime)
                     const invDt = 1000 / dtMs
+                    // Use lower sensitivity for touch to avoid harsh responses
+                    const sensitivityScale = isTouch ? 0.4 : 1.0
                     state.velocity.set(
-                      (hit.x - state.lastTarget.x) * invDt,
-                      (hit.y - state.lastTarget.y) * invDt,
-                      (hit.z - state.lastTarget.z) * invDt,
+                      (hit.x - state.lastTarget.x) * invDt * sensitivityScale,
+                      (hit.y - state.lastTarget.y) * invDt * sensitivityScale,
+                      (hit.z - state.lastTarget.z) * invDt * sensitivityScale,
                     )
                     state.lastTarget.copy(state.target)
                     state.target.copy(hit)
@@ -140,6 +145,7 @@ export default function ClothScene() {
                     canvas.removeEventListener('lostpointercapture', state.onRelease)
                     grab.release()
                     grabRef.current = null
+                    unlockOrbit()
                   },
                 }
                 canvas.addEventListener('pointermove', state.onMove)
