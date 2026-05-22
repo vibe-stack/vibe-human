@@ -75,7 +75,7 @@ export function useGarmentSimulation(args: {
   const { document, quality, resetKey, running, enabled, collision } = args
   const topologyKey = useMemo(() => buildTopologyKey(document, quality, resetKey), [document, quality, resetKey])
   const compileResult = useMemo(
-    () => compileGarmentRuntime(document, { quality, seamSamples: 12 }),
+    () => compileGarmentRuntime(document, { quality, seamSamples: 18 }),
     [topologyKey],
   )
   const renderPanels = useMemo(

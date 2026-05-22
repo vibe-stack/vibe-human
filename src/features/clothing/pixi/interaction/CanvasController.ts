@@ -184,7 +184,9 @@ export class CanvasController {
 
     const touches = [...this.activeTouches.values()]
     if (touches.length === 0) {
-      this.resetTouchState()
+      // Don't reset touchDragPointerId here — the pointer-up event still needs
+      // to reach the active tool via shouldHandleSingleTouch before we clear it.
+      this.touchGestureState = null
       return false
     }
     if (touches.length < 2) {

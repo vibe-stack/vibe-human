@@ -1,8 +1,27 @@
-import { Suspense } from 'react'
+import { Suspense, useRef } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls, Grid } from '@react-three/drei'
 import * as THREE from 'three/webgpu'
 import GarmentPreviewMesh from '../three/GarmentPreviewMesh'
+
+// ---------------------------------------------------------------------------
+// Shared orbit-controls lock: when > 0 orbit is disabled (garment is being
+// dragged). Exported so ClothScene can increment/decrement.
+// ---------------------------------------------------------------------------
+let _orbitLockCount = 0
+let _orbitRef: { current: unknown } | null = null
+export function lockOrbit() {
+  _orbitLockCount += 1
+  updateOrbitEnabled()
+}
+export function unlockOrbit() {
+  _orbitLockCount = Math.max(0, _orbitLockCount - 1)
+  updateOrbitEnabled()
+}
+function updateOrbitEnabled() {
+  const controls = _orbitRef?.current as { enabled?: boolean } | null
+  if (controls) controls.enabled = _orbitLockCount === 0
+}
 
 // ---------------------------------------------------------------------------
 // ClothingThreeViewport
@@ -10,6 +29,9 @@ import GarmentPreviewMesh from '../three/GarmentPreviewMesh'
 // ---------------------------------------------------------------------------
 
 export default function ClothingThreeViewport() {
+  const orbitRef = useRef(null)
+  _orbitRef = orbitRef as { current: unknown }
+
   return (
     <div style={{ width: '100%', height: '100%', background: '#0a0a14' }}>
       <Canvas
@@ -50,6 +72,7 @@ export default function ClothingThreeViewport() {
         </Suspense>
 
         <OrbitControls
+          ref={orbitRef}
           mouseButtons={{ LEFT: 1, MIDDLE: 0, RIGHT: 2 }}
           minDistance={0.3}
           maxDistance={12}
