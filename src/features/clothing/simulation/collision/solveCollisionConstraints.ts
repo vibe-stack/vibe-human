@@ -12,6 +12,7 @@ import type {
 
 const CONTACT_RESULT = new Float32Array(6)
 const TRIANGLE_RESULT = new Float32Array(6)
+const SWEEP_RESULT = new Float32Array(7)
 const ROTATED_LOCAL = new Float32Array(3)
 const ROTATED_SURFACE = new Float32Array(3)
 const ROTATED_NORMAL = new Float32Array(3)
@@ -33,13 +34,16 @@ export function solveCollisionConstraints(mesh: ClothSimMesh, snapshot: Collider
   for (let particle = 0; particle < particleCount; particle += 1) {
     if (invMass[particle] === 0) continue
     const offset = particle * 3
+    const prevX = prevPositions[offset]
+    const prevY = prevPositions[offset + 1]
+    const prevZ = prevPositions[offset + 2]
     let px = positions[offset]
     let py = positions[offset + 1]
     let pz = positions[offset + 2]
     let hit = false
 
     for (const meshCollider of snapshot.meshColliders ?? []) {
-      if (!pushOutOfMeshCollider(meshCollider, px, py, pz, CONTACT_RESULT)) continue
+      if (!pushOutOfMeshCollider(meshCollider, prevX, prevY, prevZ, px, py, pz, CONTACT_RESULT)) continue
       px = CONTACT_RESULT[0]
       py = CONTACT_RESULT[1]
       pz = CONTACT_RESULT[2]
@@ -177,19 +181,18 @@ function pushOutOfLowResPatch(
 
 function pushOutOfMeshCollider(
   collider: MeshSurfaceColliderSnapshot,
+  prevX: number,
+  prevY: number,
+  prevZ: number,
   px: number,
   py: number,
   pz: number,
   out: Float32Array,
 ) {
   const target = collider.skin + collider.thickness
-  if (target <= 0 || isOutsideBounds(collider.bounds, target, px, py, pz)) return false
+  if (target <= 0) return false
   const cellSize = collider.cellSize
   const invCellSize = 1 / cellSize
-  const searchRadius = colliderSearchRadius(target, cellSize)
-  const cx = Math.floor(px * invCellSize)
-  const cy = Math.floor(py * invCellSize)
-  const cz = Math.floor(pz * invCellSize)
   const visitStamp = nextVisitStamp(collider)
   const hashKeys = collider.cellHashKeys
   const hashValues = collider.cellHashValues
@@ -205,19 +208,164 @@ function pushOutOfMeshCollider(
   const vertices = collider.vertices
   const indices = collider.indices
 
-  let bestDistSq = Infinity
+  if (!isOutsideBounds(collider.bounds, target, px, py, pz)) {
+    const searchRadius = colliderSearchRadius(target, cellSize)
+    const cx = Math.floor(px * invCellSize)
+    const cy = Math.floor(py * invCellSize)
+    const cz = Math.floor(pz * invCellSize)
+    let bestDistSq = Infinity
+    let bestX = 0
+    let bestY = 0
+    let bestZ = 0
+    let bestNx = 0
+    let bestNy = 1
+    let bestNz = 0
+    let currentTargetDist = target
+
+    for (let dx = -searchRadius; dx <= searchRadius; dx += 1) {
+      for (let dy = -searchRadius; dy <= searchRadius; dy += 1) {
+        for (let dz = -searchRadius; dz <= searchRadius; dz += 1) {
+          const key = hashCell(cx + dx, cy + dy, cz + dz)
+          let cellIndex: number
+          if (useOA) {
+            cellIndex = lookupOA(hashKeys!, hashValues!, hashMask, key)
+            if (cellIndex < 0) continue
+          } else {
+            const found = collider.cellIndexLookup.get(key)
+            if (found === undefined) continue
+            cellIndex = found
+          }
+          const start = cellStarts[cellIndex]
+          const count = cellCounts[cellIndex]
+          for (let item = 0; item < count; item += 1) {
+            const triangle = cellTriangleIndices[start + item]
+            if (triangleVisitMarks[triangle] === visitStamp) continue
+            triangleVisitMarks[triangle] = visitStamp
+            if (triangleCentroids && triangleRadii) {
+              const normalOffset = triangle * 3
+              const cdx = px - triangleCentroids[normalOffset]
+              const cdy = py - triangleCentroids[normalOffset + 1]
+              const cdz = pz - triangleCentroids[normalOffset + 2]
+              const centerDistSq = cdx * cdx + cdy * cdy + cdz * cdz
+              const reachable = currentTargetDist + triangleRadii[triangle]
+              if (centerDistSq > reachable * reachable) continue
+            }
+            const nx = triangleNormals[triangle * 3]
+            const ny = triangleNormals[triangle * 3 + 1]
+            const nz = triangleNormals[triangle * 3 + 2]
+            if (nx === 0 && ny === 0 && nz === 0) continue
+            const ia = indices[triangle * 3] * 3
+            const ib = indices[triangle * 3 + 1] * 3
+            const ic = indices[triangle * 3 + 2] * 3
+            closestPointTriangleRaw(
+              px, py, pz,
+              vertices[ia], vertices[ia + 1], vertices[ia + 2],
+              vertices[ib], vertices[ib + 1], vertices[ib + 2],
+              vertices[ic], vertices[ic + 1], vertices[ic + 2],
+              TRIANGLE_RESULT,
+            )
+            TRIANGLE_RESULT[3] = nx
+            TRIANGLE_RESULT[4] = ny
+            TRIANGLE_RESULT[5] = nz
+            const deltaX = px - TRIANGLE_RESULT[0]
+            const deltaY = py - TRIANGLE_RESULT[1]
+            const deltaZ = pz - TRIANGLE_RESULT[2]
+            const distSq = deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ
+            if (distSq < bestDistSq) {
+              bestDistSq = distSq
+              bestX = TRIANGLE_RESULT[0]
+              bestY = TRIANGLE_RESULT[1]
+              bestZ = TRIANGLE_RESULT[2]
+              bestNx = nx
+              bestNy = ny
+              bestNz = nz
+              currentTargetDist = Math.sqrt(distSq)
+            }
+          }
+        }
+      }
+    }
+
+    if (bestDistSq !== Infinity) {
+      const dx = px - bestX
+      const dy = py - bestY
+      const dz = pz - bestZ
+      const signed = dx * bestNx + dy * bestNy + dz * bestNz
+      const dist = Math.sqrt(bestDistSq)
+      if (signed < 0 || dist < target) {
+        let nx: number
+        let ny: number
+        let nz: number
+        let correction: number
+        if (signed >= 0) {
+          if (dist > 1e-6) {
+            const inv = 1 / dist
+            nx = dx * inv
+            ny = dy * inv
+            nz = dz * inv
+          } else {
+            nx = bestNx
+            ny = bestNy
+            nz = bestNz
+          }
+          correction = target - dist
+        } else {
+          nx = bestNx
+          ny = bestNy
+          nz = bestNz
+          correction = target + dist
+        }
+        out[0] = px + nx * correction
+        out[1] = py + ny * correction
+        out[2] = pz + nz * correction
+        out[3] = nx
+        out[4] = ny
+        out[5] = nz
+        return true
+      }
+    }
+  }
+
+  return pushOutOfSweptMeshCollider(collider, target, prevX, prevY, prevZ, px, py, pz, out)
+}
+
+function pushOutOfSweptMeshCollider(
+  collider: MeshSurfaceColliderSnapshot,
+  target: number,
+  startX: number,
+  startY: number,
+  startZ: number,
+  endX: number,
+  endY: number,
+  endZ: number,
+  out: Float32Array,
+) {
+  if (segmentOutsideBounds(collider.bounds, target, startX, startY, startZ, endX, endY, endZ)) return false
+  const cellSize = collider.cellSize
+  const invCellSize = 1 / cellSize
+  const minCellX = Math.floor((Math.min(startX, endX) - target) * invCellSize)
+  const maxCellX = Math.floor((Math.max(startX, endX) + target) * invCellSize)
+  const minCellY = Math.floor((Math.min(startY, endY) - target) * invCellSize)
+  const maxCellY = Math.floor((Math.max(startY, endY) + target) * invCellSize)
+  const minCellZ = Math.floor((Math.min(startZ, endZ) - target) * invCellSize)
+  const maxCellZ = Math.floor((Math.max(startZ, endZ) + target) * invCellSize)
+  const hashKeys = collider.cellHashKeys
+  const hashValues = collider.cellHashValues
+  const hashMask = collider.cellHashMask ?? -1
+  const useOA = hashKeys !== undefined && hashValues !== undefined && hashMask >= 0
+  const visitStamp = nextVisitStamp(collider)
+  let bestT = Infinity
   let bestX = 0
   let bestY = 0
   let bestZ = 0
   let bestNx = 0
   let bestNy = 1
   let bestNz = 0
-  let currentTargetDist = target
 
-  for (let dx = -searchRadius; dx <= searchRadius; dx += 1) {
-    for (let dy = -searchRadius; dy <= searchRadius; dy += 1) {
-      for (let dz = -searchRadius; dz <= searchRadius; dz += 1) {
-        const key = hashCell(cx + dx, cy + dy, cz + dz)
+  for (let cx = minCellX; cx <= maxCellX; cx += 1) {
+    for (let cy = minCellY; cy <= maxCellY; cy += 1) {
+      for (let cz = minCellZ; cz <= maxCellZ; cz += 1) {
+        const key = hashCell(cx, cy, cz)
         let cellIndex: number
         if (useOA) {
           cellIndex = lookupOA(hashKeys!, hashValues!, hashMask, key)
@@ -227,93 +375,96 @@ function pushOutOfMeshCollider(
           if (found === undefined) continue
           cellIndex = found
         }
-        const start = cellStarts[cellIndex]
-        const count = cellCounts[cellIndex]
+        const start = collider.cellStarts[cellIndex]
+        const count = collider.cellCounts[cellIndex]
         for (let item = 0; item < count; item += 1) {
-          const triangle = cellTriangleIndices[start + item]
-          if (triangleVisitMarks[triangle] === visitStamp) continue
-          triangleVisitMarks[triangle] = visitStamp
-          if (triangleCentroids && triangleRadii) {
-            const normalOffset = triangle * 3
-            const cdx = px - triangleCentroids[normalOffset]
-            const cdy = py - triangleCentroids[normalOffset + 1]
-            const cdz = pz - triangleCentroids[normalOffset + 2]
-            const centerDistSq = cdx * cdx + cdy * cdy + cdz * cdz
-            const reachable = currentTargetDist + triangleRadii[triangle]
-            if (centerDistSq > reachable * reachable) continue
-          }
-          const nx = triangleNormals[triangle * 3]
-          const ny = triangleNormals[triangle * 3 + 1]
-          const nz = triangleNormals[triangle * 3 + 2]
-          if (nx === 0 && ny === 0 && nz === 0) continue
-          const ia = indices[triangle * 3] * 3
-          const ib = indices[triangle * 3 + 1] * 3
-          const ic = indices[triangle * 3 + 2] * 3
-          closestPointTriangleRaw(
-            px, py, pz,
-            vertices[ia], vertices[ia + 1], vertices[ia + 2],
-            vertices[ib], vertices[ib + 1], vertices[ib + 2],
-            vertices[ic], vertices[ic + 1], vertices[ic + 2],
-            TRIANGLE_RESULT,
-          )
-          TRIANGLE_RESULT[3] = nx
-          TRIANGLE_RESULT[4] = ny
-          TRIANGLE_RESULT[5] = nz
-          const deltaX = px - TRIANGLE_RESULT[0]
-          const deltaY = py - TRIANGLE_RESULT[1]
-          const deltaZ = pz - TRIANGLE_RESULT[2]
-          const distSq = deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ
-          if (distSq < bestDistSq) {
-            bestDistSq = distSq
-            bestX = TRIANGLE_RESULT[0]
-            bestY = TRIANGLE_RESULT[1]
-            bestZ = TRIANGLE_RESULT[2]
-            bestNx = nx
-            bestNy = ny
-            bestNz = nz
-            currentTargetDist = Math.sqrt(distSq)
-          }
+          const triangle = collider.cellTriangleIndices[start + item]
+          if (collider.triangleVisitMarks[triangle] === visitStamp) continue
+          collider.triangleVisitMarks[triangle] = visitStamp
+          if (!segmentIntersectsTriangle(collider, triangle, startX, startY, startZ, endX, endY, endZ, target, SWEEP_RESULT)) continue
+          const t = SWEEP_RESULT[0]
+          if (t >= bestT) continue
+          bestT = t
+          bestX = SWEEP_RESULT[1]
+          bestY = SWEEP_RESULT[2]
+          bestZ = SWEEP_RESULT[3]
+          bestNx = SWEEP_RESULT[4]
+          bestNy = SWEEP_RESULT[5]
+          bestNz = SWEEP_RESULT[6]
         }
       }
     }
   }
 
-  if (bestDistSq === Infinity) return false
-  const dx = px - bestX
-  const dy = py - bestY
-  const dz = pz - bestZ
-  const signed = dx * bestNx + dy * bestNy + dz * bestNz
-  const dist = Math.sqrt(bestDistSq)
-  if (signed >= 0 && dist >= target) return false
+  if (bestT === Infinity) return false
+  out[0] = bestX + bestNx * target
+  out[1] = bestY + bestNy * target
+  out[2] = bestZ + bestNz * target
+  out[3] = bestNx
+  out[4] = bestNy
+  out[5] = bestNz
+  return true
+}
 
-  let nx: number
-  let ny: number
-  let nz: number
-  let correction: number
-  if (signed >= 0) {
-    if (dist > 1e-6) {
-      const inv = 1 / dist
-      nx = dx * inv
-      ny = dy * inv
-      nz = dz * inv
-    } else {
-      nx = bestNx
-      ny = bestNy
-      nz = bestNz
-    }
-    correction = target - dist
-  } else {
-    nx = bestNx
-    ny = bestNy
-    nz = bestNz
-    correction = target + dist
+function segmentIntersectsTriangle(
+  collider: MeshSurfaceColliderSnapshot,
+  triangle: number,
+  startX: number,
+  startY: number,
+  startZ: number,
+  endX: number,
+  endY: number,
+  endZ: number,
+  target: number,
+  out: Float32Array,
+) {
+  const normalOffset = triangle * 3
+  let nx = collider.triangleNormals[normalOffset]
+  let ny = collider.triangleNormals[normalOffset + 1]
+  let nz = collider.triangleNormals[normalOffset + 2]
+  if (nx === 0 && ny === 0 && nz === 0) return false
+
+  const ia = collider.indices[triangle * 3] * 3
+  const ib = collider.indices[triangle * 3 + 1] * 3
+  const ic = collider.indices[triangle * 3 + 2] * 3
+  const ax = collider.vertices[ia]
+  const ay = collider.vertices[ia + 1]
+  const az = collider.vertices[ia + 2]
+  const bx = collider.vertices[ib]
+  const by = collider.vertices[ib + 1]
+  const bz = collider.vertices[ib + 2]
+  const cx = collider.vertices[ic]
+  const cy = collider.vertices[ic + 1]
+  const cz = collider.vertices[ic + 2]
+  const startSigned = (startX - ax) * nx + (startY - ay) * ny + (startZ - az) * nz
+  const endSigned = (endX - ax) * nx + (endY - ay) * ny + (endZ - az) * nz
+  if ((startSigned > target && endSigned > target) || (startSigned < -target && endSigned < -target)) return false
+  const denom = startSigned - endSigned
+  if (Math.abs(denom) <= 1e-8) return false
+  const t = startSigned / denom
+  if (t < 0 || t > 1) return false
+
+  const hitX = startX + (endX - startX) * t
+  const hitY = startY + (endY - startY) * t
+  const hitZ = startZ + (endZ - startZ) * t
+  closestPointTriangleRaw(hitX, hitY, hitZ, ax, ay, az, bx, by, bz, cx, cy, cz, CONTACT_RESULT)
+  const errX = hitX - CONTACT_RESULT[0]
+  const errY = hitY - CONTACT_RESULT[1]
+  const errZ = hitZ - CONTACT_RESULT[2]
+  if (errX * errX + errY * errY + errZ * errZ > 1e-8) return false
+
+  if (startSigned < 0) {
+    nx = -nx
+    ny = -ny
+    nz = -nz
   }
-  out[0] = px + nx * correction
-  out[1] = py + ny * correction
-  out[2] = pz + nz * correction
-  out[3] = nx
-  out[4] = ny
-  out[5] = nz
+  out[0] = t
+  out[1] = hitX
+  out[2] = hitY
+  out[3] = hitZ
+  out[4] = nx
+  out[5] = ny
+  out[6] = nz
   return true
 }
 
@@ -594,6 +745,26 @@ function isOutsideBounds(bounds: CollisionBounds, margin: number, x: number, y: 
     || y > bounds.maxY + margin
     || z < bounds.minZ - margin
     || z > bounds.maxZ + margin
+  )
+}
+
+function segmentOutsideBounds(
+  bounds: CollisionBounds,
+  margin: number,
+  startX: number,
+  startY: number,
+  startZ: number,
+  endX: number,
+  endY: number,
+  endZ: number,
+) {
+  return (
+    Math.max(startX, endX) < bounds.minX - margin
+    || Math.min(startX, endX) > bounds.maxX + margin
+    || Math.max(startY, endY) < bounds.minY - margin
+    || Math.min(startY, endY) > bounds.maxY + margin
+    || Math.max(startZ, endZ) < bounds.minZ - margin
+    || Math.min(startZ, endZ) > bounds.maxZ + margin
   )
 }
 

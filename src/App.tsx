@@ -2,7 +2,7 @@ import { Suspense, useEffect, useState } from 'react'
 import { Canvas, extend, useThree, type ThreeToJSXElements } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import * as THREE from 'three/webgpu'
-import { Activity, Smile, Box, Layers, Scissors, Shirt } from 'lucide-react'
+import { Activity, Smile, Box, Layers, Scissors, Shirt, Orbit } from 'lucide-react'
 import { useSnapshot } from 'valtio'
 import { Group, Panel, Separator } from 'react-resizable-panels'
 
@@ -22,6 +22,7 @@ import GarmentPreviewMesh from './features/clothing/three/GarmentPreviewMesh'
 import ClothingPatternEditor2D from './features/clothing/components/ClothingPatternEditor2D'
 import ClothingToolbar from './features/clothing/components/ClothingToolbar'
 import { ClothingInspector } from './features/clothing/index'
+import { clothingStore } from './features/clothing/state/clothingStore'
 import { loadDemoGarment } from './features/clothing/state/clothingActions'
 import { createDemoGarment } from './features/clothing/demo/createDemoGarment'
 import { appState, setCharacterRenderMode, toggleShowExpressions, toggleShowHair, toggleShowModeling, toggleShowSkinning, toggleShowTest, toggleShowClothing, type CharacterRenderMode } from './appState'
@@ -125,8 +126,42 @@ function CharacterRenderModeTabs() {
   )
 }
 
+function ClothingOrbitToggle() {
+  const { previewOptions } = useSnapshot(clothingStore)
+
+  return (
+    <button
+      type="button"
+      onClick={() => { clothingStore.previewOptions.orbitControlsEnabled = !clothingStore.previewOptions.orbitControlsEnabled }}
+      title={previewOptions.orbitControlsEnabled ? 'Disable orbit controls' : 'Enable orbit controls'}
+      aria-label={previewOptions.orbitControlsEnabled ? 'Disable orbit controls' : 'Enable orbit controls'}
+      style={{
+        position: 'absolute',
+        right: 12,
+        bottom: 12,
+        zIndex: 12,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: 34,
+        height: 34,
+        border: '1px solid rgba(255,255,255,0.12)',
+        borderRadius: 8,
+        background: previewOptions.orbitControlsEnabled ? 'rgba(68,136,255,0.24)' : 'rgba(8,8,16,0.78)',
+        color: previewOptions.orbitControlsEnabled ? '#9fc1ff' : 'rgba(255,255,255,0.55)',
+        backdropFilter: 'blur(12px)',
+        WebkitBackdropFilter: 'blur(12px)',
+        cursor: 'pointer',
+      }}
+    >
+      <Orbit size={16} strokeWidth={1.9} />
+    </button>
+  )
+}
+
 export default function App() {
   const { fov, isTransforming, showExpressions, showHair, showModeling, showSkinning, showTest, showClothing } = useSnapshot(appState)
+  const { previewOptions } = useSnapshot(clothingStore)
   const [isMobile, setIsMobile] = useState(false)
 
   const anyPanelActive = showExpressions || showHair || showModeling || showSkinning || showTest || showClothing
@@ -239,7 +274,7 @@ export default function App() {
                 </Suspense>
               )}
               <OrbitControls
-                enabled={!isTransforming}
+                enabled={!isTransforming && (!showClothing || previewOptions.orbitControlsEnabled)}
                 mouseButtons={{ MIDDLE: 0, RIGHT: 2 }}
                 minDistance={0.2}
                 maxDistance={25}
@@ -250,6 +285,7 @@ export default function App() {
             </Canvas>
             {showClothing && <ClothingBootstrapper />}
             <CharacterRenderModeTabs />
+            {showClothing && <ClothingOrbitToggle />}
             {showHair && <BrushToolbar />}
           </div>
           <div style={{
@@ -336,8 +372,8 @@ export default function App() {
               )}
 
               <OrbitControls
-                enabled={!isTransforming}
-                mouseButtons={{  MIDDLE: 0, RIGHT: 2 }}
+                enabled={!isTransforming && (!showClothing || previewOptions.orbitControlsEnabled)}
+                mouseButtons={{ MIDDLE: 0, RIGHT: 2 }}
                 minDistance={0.2}
                 maxDistance={25}
                 minPolarAngle={Math.PI * 0.2}
@@ -347,6 +383,7 @@ export default function App() {
             </Canvas>
             {showClothing && <ClothingBootstrapper />}
             <CharacterRenderModeTabs />
+            {showClothing && <ClothingOrbitToggle />}
             {showHair && <BrushToolbar />}
           </div>
 
