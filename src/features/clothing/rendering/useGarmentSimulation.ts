@@ -75,8 +75,11 @@ export function useGarmentSimulation(args: {
   const { document, quality, resetKey, running, enabled, collision } = args
   const topologyKey = useMemo(() => buildTopologyKey(document, quality, resetKey), [document, quality, resetKey])
   const compileResult = useMemo(
-    () => compileGarmentRuntime(document, { quality, seamSamples: 18 }),
-    [topologyKey],
+    () => {
+      void topologyKey
+      return compileGarmentRuntime(document, { quality, seamSamples: 18 })
+    },
+    [document, quality, topologyKey],
   )
   const renderPanels = useMemo(
     () => compileResult.value.renderPanels.map((panel) => createRenderPanelEntry(panel)),
@@ -154,6 +157,7 @@ export function useGarmentSimulation(args: {
     const runtime = runtimeRef.current
     if (!runtime) return
     applyDocumentPlacements(runtime.simMesh, document)
+    refreshSeamPlacementRest(runtime.simMesh)
     updateRenderPanels(runtime, renderPanelsRef.current, runtime.simMesh.positions)
   }, [document])
 
@@ -310,7 +314,7 @@ function timed<T>(enabled: boolean, label: string, fn: () => T) {
   return result
 }
 
-function buildTopologyKey(document: PatternDocument, quality: CompileQuality, resetKey: number) {
+export function buildTopologyKey(document: PatternDocument, quality: CompileQuality, resetKey: number) {
   const panelKeys = Object.values(document.panels)
     .map((panel) => {
       const points = Object.values(panel.points)
@@ -319,7 +323,8 @@ function buildTopologyKey(document: PatternDocument, quality: CompileQuality, re
         .join('|')
       const edges = panel.edges.map((edge) => `${edge.id}:${edge.from}>${edge.to}:${edge.curve}`).join('|')
       const holes = (panel.holes ?? []).map((hole) => hole.map((edge) => edge.id).join(',')).join('|')
-      return `${panel.id}:${panel.closed}:${panel.particleDistance}:${panel.fabricId ?? ''}:${points}:${edges}:${holes}`
+      const placement = panel.placement
+      return `${panel.id}:${panel.closed}:${panel.particleDistance}:${panel.fabricId ?? ''}:${points}:${edges}:${holes}:${placement.position.x},${placement.position.y},${placement.position.z}:${placement.rotation.x},${placement.rotation.y},${placement.rotation.z}`
     })
     .sort()
     .join('||')
