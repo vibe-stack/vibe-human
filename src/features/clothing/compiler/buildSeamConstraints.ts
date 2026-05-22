@@ -1,7 +1,7 @@
 import type { PatternDocument, PatternPanel } from '../document/types'
 import type { DistanceConstraint } from '../simulation/types'
 import type { CompiledPanelSimMesh } from './buildPanelSimMesh'
-import { resolveSeamSamples } from '../geometry/seamUtils'
+import { resolveSeamSamples, placePt } from '../geometry/seamUtils'
 import type { Vec2 } from '../state/clothingTypes'
 
 export function buildSeamConstraints(
@@ -218,23 +218,11 @@ export function orientSeamSamples(
   let forwardCost = 0
   let reversedCost = 0
   for (let i = 0; i < n; i += 1) {
-    const a3 = placePoint(panelA, pointsA[i])
-    const bfwd = placePoint(panelB, pointsB[i])
-    const brev = placePoint(panelB, pointsB[n - 1 - i])
+    const a3 = placePt(panelA, pointsA[i])
+    const bfwd = placePt(panelB, pointsB[i])
+    const brev = placePt(panelB, pointsB[n - 1 - i])
     forwardCost += (a3.x - bfwd.x) ** 2 + (a3.y - bfwd.y) ** 2 + (a3.z - bfwd.z) ** 2
     reversedCost += (a3.x - brev.x) ** 2 + (a3.y - brev.y) ** 2 + (a3.z - brev.z) ** 2
   }
   return reversedCost + 1e-8 < forwardCost ? [...pointsB].reverse() : pointsB
-}
-
-function placePoint(panel: PatternPanel, point: Vec2) {
-  const SCALE = 0.004
-  const yaw = panel.placement.rotation.y
-  const px = point.x * SCALE
-  const py = -point.y * SCALE
-  return {
-    x: panel.placement.position.x + px * Math.cos(yaw),
-    y: panel.placement.position.y + py,
-    z: panel.placement.position.z - px * Math.sin(yaw),
-  }
 }

@@ -94,7 +94,8 @@ function endpointCost(pointsA: Vec2[], pointsB: Vec2[], reverseB: boolean) {
     + Math.hypot(aEnd.x - bEnd.x, aEnd.y - bEnd.y)
 }
 
-const PATTERN_SCALE = 0.004
+/** Pattern units → meters conversion factor (1 pattern unit = 4mm) */
+export const PATTERN_UNIT_SCALE = 0.004
 
 function endpointCost3D(pointsA: Vec2[], pointsB: Vec2[], panelA: PatternPanel, panelB: PatternPanel, reverseB: boolean) {
   // Use sum of all corresponding pair distances in 3D for robust orientation
@@ -112,10 +113,11 @@ function endpointCost3D(pointsA: Vec2[], pointsB: Vec2[], panelA: PatternPanel, 
   return sum
 }
 
-function placePt(panel: PatternPanel, point: Vec2) {
+/** Transform a 2D pattern point into 3D world space using panel placement. */
+export function placePt(panel: PatternPanel, point: Vec2) {
   const yaw = panel.placement.rotation.y
-  const px = point.x * PATTERN_SCALE
-  const py = -point.y * PATTERN_SCALE
+  const px = point.x * PATTERN_UNIT_SCALE
+  const py = -point.y * PATTERN_UNIT_SCALE
   return {
     x: panel.placement.position.x + px * Math.cos(yaw),
     y: panel.placement.position.y + py,
