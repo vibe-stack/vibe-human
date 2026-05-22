@@ -13,6 +13,24 @@ describe('useGarmentSimulation topology key', () => {
 
     assert.notEqual(rotatedKey, originalKey)
   })
+
+  test('quality changes invalidate the topology key', () => {
+    const document = buildDocument()
+
+    assert.notEqual(
+      buildTopologyKey(document, 'low', 0),
+      buildTopologyKey(document, 'medium', 0),
+    )
+  })
+
+  test('reset key changes invalidate the topology key', () => {
+    const document = buildDocument()
+
+    assert.notEqual(
+      buildTopologyKey(document, 'medium', 0),
+      buildTopologyKey(document, 'medium', 1),
+    )
+  })
 })
 
 function buildDocument(): PatternDocument {

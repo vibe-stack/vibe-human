@@ -77,7 +77,7 @@ export function useGarmentSimulation(args: {
   const compileResult = useMemo(
     () => compileGarmentRuntime(document, { quality, seamSamples: 18 }),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- topologyKey intentionally captures placement-sensitive recompilation inputs.
-    [document, quality, topologyKey],
+    [topologyKey],
   )
   const renderPanels = useMemo(
     () => compileResult.value.renderPanels.map((panel) => createRenderPanelEntry(panel)),
