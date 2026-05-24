@@ -153,9 +153,13 @@ export class XPBDClothSolver {
       }
       this.solveSelfCollision(sewingProgress)
       solveCollisionConstraints(this.mesh, this.colliders)
+      this.applyGround()
+      if (substep === this.params.substeps - 1) {
+        this.solveGroundSelfCollision(sewingProgress)
+        this.applyGround()
+      }
       if (sewingProgress >= 1) this.weldSeamPairs()
       this.deriveVelocities(dt, this.velocityRetentionForAssembly(sewingProgress))
-      this.applyGround()
       this.elapsed += dt
     }
 
@@ -359,6 +363,21 @@ export class XPBDClothSolver {
     this.selfCollision.solve(this.mesh, {
       radius: radius * (0.65 + 0.35 * ramp),
       stiffness: stiffness * ramp,
+      surfaceContacts: false,
+    })
+  }
+
+  private solveGroundSelfCollision(sewingProgress: number) {
+    const radius = this.params.selfCollisionRadius ?? 0
+    const stiffness = this.params.selfCollisionStiffness ?? 0
+    if (radius <= 0 || stiffness <= 0) return
+    const ramp = smooth01((sewingProgress - 0.12) / 0.38)
+    if (ramp <= 0) return
+    this.selfCollision.solve(this.mesh, {
+      radius,
+      stiffness: stiffness * ramp * 0.65,
+      groundY: this.params.groundY,
+      surfaceContacts: true,
     })
   }
 

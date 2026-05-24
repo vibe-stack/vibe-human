@@ -48,7 +48,7 @@ export function buildPanelSimMesh(
   const preset = QUALITY_PRESETS[options.quality]
   const stretchCompliance = panel.stretchCompliance ?? preset.stretchCompliance
   const shearCompliance = panel.shearCompliance ?? preset.shearCompliance
-  const bendCompliance = panel.bendCompliance ?? preset.bendCompliance
+  const bendCompliance = Math.max(0.025, panel.bendCompliance ?? preset.bendCompliance)
   const bounds = boundsOf(panel)
 
   // Target particle spacing in pattern (mm) space, derived from the quality

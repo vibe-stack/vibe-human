@@ -55,6 +55,7 @@ type RenderPanelEntry = {
 
 const VISUAL_SMOOTHING_PASSES = 0
 const VISUAL_SMOOTHING_ALPHA = 0
+const SIM_NORMAL_CACHE = new WeakMap<GarmentRuntime, Float32Array>()
 
 export function useGarmentSimulation(args: {
   document: PatternDocument
@@ -671,10 +672,14 @@ function createRenderPanelEntry(panel: GarmentRuntime['renderPanels'][number]): 
   }
 }
 
-function updateRenderPanels(_runtime: GarmentRuntime, entries: RenderPanelEntry[], positions: Float32Array) {
+function updateRenderPanels(runtime: GarmentRuntime, entries: RenderPanelEntry[], positions: Float32Array) {
+  const simNormals = simNormalScratch(runtime)
+  computeVertexNormalsFlat(positions, runtime.simMesh.triangles, simNormals, runtime.simMesh.particleCount)
+
   for (const entry of entries) {
     const { panel, vertexCount } = entry
     const array = entry.positionArray
+    const normals = entry.normalArray
     const simTriangles = panel.embedding.simTriangles
     const barycentrics = panel.embedding.barycentrics
     for (let vertex = 0; vertex < vertexCount; vertex += 1) {
@@ -688,12 +693,27 @@ function updateRenderPanels(_runtime: GarmentRuntime, entries: RenderPanelEntry[
       array[base] = positions[ia] * wa + positions[ib] * wb + positions[ic] * wc
       array[base + 1] = positions[ia + 1] * wa + positions[ib + 1] * wb + positions[ic + 1] * wc
       array[base + 2] = positions[ia + 2] * wa + positions[ib + 2] * wb + positions[ic + 2] * wc
+      const nx = simNormals[ia] * wa + simNormals[ib] * wb + simNormals[ic] * wc
+      const ny = simNormals[ia + 1] * wa + simNormals[ib + 1] * wb + simNormals[ic + 1] * wc
+      const nz = simNormals[ia + 2] * wa + simNormals[ib + 2] * wb + simNormals[ic + 2] * wc
+      const nLen = Math.hypot(nx, ny, nz) || 1
+      normals[base] = nx / nLen
+      normals[base + 1] = ny / nLen
+      normals[base + 2] = nz / nLen
     }
     smoothVisualMeshPositions(array, entry.smoothScratch, entry.neighborOffsets, entry.neighbors, VISUAL_SMOOTHING_PASSES, VISUAL_SMOOTHING_ALPHA)
-    computeVertexNormalsFlat(array, entry.indices, entry.normalArray, vertexCount)
     ;(entry.geometry.getAttribute('position') as THREE.BufferAttribute).needsUpdate = true
     ;(entry.geometry.getAttribute('normal') as THREE.BufferAttribute).needsUpdate = true
   }
+}
+
+function simNormalScratch(runtime: GarmentRuntime) {
+  const needed = runtime.simMesh.particleCount * 3
+  const existing = SIM_NORMAL_CACHE.get(runtime)
+  if (existing && existing.length === needed) return existing
+  const next = new Float32Array(needed)
+  SIM_NORMAL_CACHE.set(runtime, next)
+  return next
 }
 
 // Specialized, allocation-free replacement for THREE's computeVertexNormals on a

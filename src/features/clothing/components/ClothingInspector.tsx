@@ -157,7 +157,7 @@ export default function ClothingInspector() {
           <Slider
             label="Bend Compliance"
             value={selectedPattern.bendCompliance ?? 0.25}
-            min={0}
+            min={0.025}
             max={5}
             step={0.005}
             onChange={(value) => {

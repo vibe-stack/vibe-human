@@ -2,6 +2,8 @@ import type { PatternDocument } from '../document/types'
 import type { RenderEmbedding, RenderPanelRuntime } from '../simulation/types'
 import type { GarmentTopology } from './types'
 
+const VISUAL_SUBDIVISIONS = 4
+
 export function buildRenderEmbedding(
   document: PatternDocument,
   topology: GarmentTopology,
@@ -11,67 +13,87 @@ export function buildRenderEmbedding(
   for (const panel of Object.values(document.panels)) {
     const info = topology.panelInfo[panel.id]
     if (!info || info.triangleIndices.length === 0) continue
-    const panelMesh = buildPanelVisualMesh(info.particleIndices, info.triangleIndices, topology.simMesh.panelUvs)
-    const embedding = embedPanelVertices(info.particleIndices, info.triangleIndices)
+    const built = buildPanelVisualMesh(info.triangleIndices, topology.simMesh.panelUvs)
     renderPanels.push({
       panelId: panel.id,
-      indices: panelMesh.indices,
-      panelUvs: panelMesh.panelUvs,
-      embedding,
+      indices: built.indices,
+      panelUvs: built.panelUvs,
+      embedding: built.embedding,
     })
   }
 
   return { renderPanels }
 }
 
-type VisualMeshBuffers = {
+type VisualMeshBuild = {
   panelUvs: Float32Array
   indices: Uint32Array
+  embedding: RenderEmbedding
 }
 
-function buildPanelVisualMesh(
-  particleIndices: number[],
-  triangleIndices: Uint32Array,
-  simUvs: Float32Array,
-): VisualMeshBuffers {
-  const localByGlobal = new Map<number, number>()
-  const panelUvs = new Float32Array(particleIndices.length * 2)
-  for (let local = 0; local < particleIndices.length; local += 1) {
-    const global = particleIndices[local]
-    localByGlobal.set(global, local)
-    panelUvs[local * 2] = simUvs[global * 2]
-    panelUvs[local * 2 + 1] = simUvs[global * 2 + 1]
+function buildPanelVisualMesh(triangleIndices: Uint32Array, simUvs: Float32Array): VisualMeshBuild {
+  const panelUvs: number[] = []
+  const indices: number[] = []
+  const simTriangles: number[] = []
+  const barycentrics: number[] = []
+  const welded = new Map<string, number>()
+  const scale = 1e6
+
+  const vertexFor = (
+    simA: number,
+    simB: number,
+    simC: number,
+    wa: number,
+    wb: number,
+    wc: number,
+  ) => {
+    const u = simUvs[simA * 2] * wa + simUvs[simB * 2] * wb + simUvs[simC * 2] * wc
+    const v = simUvs[simA * 2 + 1] * wa + simUvs[simB * 2 + 1] * wb + simUvs[simC * 2 + 1] * wc
+    const key = `${Math.round(u * scale)}:${Math.round(v * scale)}`
+    const existing = welded.get(key)
+    if (existing !== undefined) return existing
+
+    const vertex = panelUvs.length / 2
+    welded.set(key, vertex)
+    panelUvs.push(u, v)
+    simTriangles.push(simA, simB, simC)
+    barycentrics.push(wa, wb, wc)
+    return vertex
   }
 
-  const indices = new Uint32Array(triangleIndices.length)
-  for (let i = 0; i < triangleIndices.length; i += 1) {
-    indices[i] = localByGlobal.get(triangleIndices[i]) ?? 0
+  for (let triangle = 0; triangle < triangleIndices.length; triangle += 3) {
+    const simA = triangleIndices[triangle]
+    const simB = triangleIndices[triangle + 1]
+    const simC = triangleIndices[triangle + 2]
+    const grid: number[][] = []
+
+    for (let i = 0; i <= VISUAL_SUBDIVISIONS; i += 1) {
+      grid[i] = []
+      for (let j = 0; j <= VISUAL_SUBDIVISIONS - i; j += 1) {
+        const wa = 1 - (i + j) / VISUAL_SUBDIVISIONS
+        const wb = i / VISUAL_SUBDIVISIONS
+        const wc = j / VISUAL_SUBDIVISIONS
+        grid[i][j] = vertexFor(simA, simB, simC, wa, wb, wc)
+      }
+    }
+
+    for (let i = 0; i < VISUAL_SUBDIVISIONS; i += 1) {
+      for (let j = 0; j < VISUAL_SUBDIVISIONS - i; j += 1) {
+        const v0 = grid[i][j]
+        const v1 = grid[i + 1][j]
+        const v2 = grid[i][j + 1]
+        indices.push(v0, v1, v2)
+        if (j < VISUAL_SUBDIVISIONS - i - 1) indices.push(v1, grid[i + 1][j + 1], v2)
+      }
+    }
   }
 
-  return { panelUvs, indices }
-}
-
-function embedPanelVertices(particleIndices: number[], triangleIndices: Uint32Array): RenderEmbedding {
-  const simTriangles = new Uint32Array(particleIndices.length * 3)
-  const barycentrics = new Float32Array(particleIndices.length * 3)
-  const triangleByParticle = new Map<number, { offset: number; slot: number }>()
-
-  for (let i = 0; i < triangleIndices.length; i += 3) {
-    if (!triangleByParticle.has(triangleIndices[i])) triangleByParticle.set(triangleIndices[i], { offset: i, slot: 0 })
-    if (!triangleByParticle.has(triangleIndices[i + 1])) triangleByParticle.set(triangleIndices[i + 1], { offset: i, slot: 1 })
-    if (!triangleByParticle.has(triangleIndices[i + 2])) triangleByParticle.set(triangleIndices[i + 2], { offset: i, slot: 2 })
+  return {
+    panelUvs: new Float32Array(panelUvs),
+    indices: new Uint32Array(indices),
+    embedding: {
+      simTriangles: new Uint32Array(simTriangles),
+      barycentrics: new Float32Array(barycentrics),
+    },
   }
-
-  for (let vertex = 0; vertex < particleIndices.length; vertex += 1) {
-    const offset = vertex * 3
-    const particle = particleIndices[vertex]
-    const triangle = triangleByParticle.get(particle)
-    if (!triangle) continue
-    simTriangles[offset] = triangleIndices[triangle.offset]
-    simTriangles[offset + 1] = triangleIndices[triangle.offset + 1]
-    simTriangles[offset + 2] = triangleIndices[triangle.offset + 2]
-    barycentrics[offset + triangle.slot] = 1
-  }
-
-  return { simTriangles, barycentrics }
 }

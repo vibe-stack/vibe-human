@@ -50,6 +50,32 @@ describe('ClothSelfCollisionSolver', () => {
     assert.equal(Math.abs(mesh.positions[0]) < 1e-8, true)
     assert.equal(Math.abs(mesh.positions[3] - 0.006) < 1e-8, true)
   })
+
+  test('repels particles from non-adjacent cloth triangle faces', () => {
+    const mesh = makeMesh({
+      positions: [
+        -0.1, 0, -0.1,
+        0.1, 0, -0.1,
+        0, 0, 0.18,
+        0, 0.005, 0,
+      ],
+      local: [
+        -10, -10,
+        10, -10,
+        0, 18,
+        0, 0,
+      ],
+      triangles: [0, 1, 2],
+    })
+    const solver = new ClothSelfCollisionSolver(mesh)
+
+    solver.solve(mesh, { radius: 0.02, stiffness: 1 })
+
+    assert.equal(mesh.positions[10] > 0.01, true)
+    assert.equal(mesh.positions[1] < 0, true)
+    assert.equal(mesh.positions[4] < 0, true)
+    assert.equal(mesh.positions[7] < 0, true)
+  })
 })
 
 function makeMesh(input: { positions: number[]; local: number[]; triangles?: number[] }): ClothSimMesh {
