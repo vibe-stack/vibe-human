@@ -83,7 +83,7 @@ export default function ClothScene() {
         const placement = docPanel?.placement
         if (!placement) return null
         const baseColor = docPanel?.color ?? '#5f8cff'
-        const displayColor = selected ? tintForSelection(baseColor) : baseColor
+        const displayColor = baseColor
         return (
           <group key={panel.panelId}>
             <mesh
@@ -189,19 +189,6 @@ export default function ClothScene() {
       )}
     </group>
   )
-}
-
-const _tintColor = new THREE.Color()
-function tintForSelection(hex: string) {
-  try {
-    _tintColor.set(hex)
-    const hsl = { h: 0, s: 0, l: 0 }
-    _tintColor.getHSL(hsl)
-    _tintColor.setHSL(hsl.h, Math.min(1, hsl.s * 1.1), Math.min(1, hsl.l + 0.12))
-    return `#${_tintColor.getHexString()}`
-  } catch {
-    return hex
-  }
 }
 
 function PanelTransformHandle({

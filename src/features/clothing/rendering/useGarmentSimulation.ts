@@ -130,6 +130,11 @@ export function useGarmentSimulation(args: {
   // flat. This is what keeps 2D pattern edits non-destructive.
   const lastResetKeyRef = useRef<number | null>(null)
   const liveParamsKeyRef = useRef<string | null>(null)
+  // Previous placements, used to compute delta transforms when the gizmo is
+  // dragged while the sim is paused. Initialised/reset by the compile effect.
+  type Vec3 = { x: number; y: number; z: number }
+  type PlacementRec = { position: Vec3; rotation: Vec3 }
+  const prevPlacementsRef = useRef<Record<string, PlacementRec>>({})
 
   useEffect(() => {
     collisionRef.current = collision
@@ -200,6 +205,13 @@ export function useGarmentSimulation(args: {
     updateRenderPanels(compileResult.value, renderPanels, nextMesh.positions)
     accumRef.current = 0
 
+    // Snapshot the current placements so the gizmo-delta effect can diff against them.
+    const snapshotPlacements: Record<string, PlacementRec> = {}
+    for (const [id, panel] of Object.entries(documentRef.current.panels)) {
+      snapshotPlacements[id] = { position: { ...panel.placement.position }, rotation: { ...panel.placement.rotation } }
+    }
+    prevPlacementsRef.current = snapshotPlacements
+
     lastResetKeyRef.current = resetKey
     liveParamsKeyRef.current = liveParamsKey
     // eslint-disable-next-line react-hooks/exhaustive-deps -- resetKey/liveParamsKey are derived from compileResult inputs; depending on them directly would double-fire.
@@ -230,16 +242,35 @@ export function useGarmentSimulation(args: {
     }
   }, [liveParamsKey, quality])
 
-  // Placement while paused: the gizmo writes panel placement into the document,
-  // which we translate into particle positions here. Gated on a placement-only
-  // key so unrelated document edits (color, compliance, …) never snap a draped,
-  // paused garment back to its spawn pose.
+  // Placement while paused: the gizmo writes panel placement into the document.
+  // We apply a DELTA transform to the existing (draped) particle positions so
+  // the sim shape is preserved — only translated/rotated — instead of being
+  // snapped back to a flat spawn pose. Gated on a placement-only key so
+  // unrelated document edits (color, compliance, …) never disturb the drape.
   const placementKey = useMemo(() => buildPlacementKey(document), [document])
   useEffect(() => {
     if (runningRef.current) return
     const runtime = runtimeRef.current
     if (!runtime) return
-    applyDocumentPlacements(runtime.simMesh, documentRef.current)
+    const doc = documentRef.current
+    for (const [panelId, panel] of Object.entries(doc.panels)) {
+      const prev = prevPlacementsRef.current[panelId]
+      if (!prev) {
+        // First time we see this panel (e.g. added after compile) — initialise.
+        prevPlacementsRef.current[panelId] = { position: { ...panel.placement.position }, rotation: { ...panel.placement.rotation } }
+        continue
+      }
+      const curr = panel.placement
+      const samePosX = prev.position.x === curr.position.x
+      const samePosY = prev.position.y === curr.position.y
+      const samePosZ = prev.position.z === curr.position.z
+      const sameRotX = prev.rotation.x === curr.rotation.x
+      const sameRotY = prev.rotation.y === curr.rotation.y
+      const sameRotZ = prev.rotation.z === curr.rotation.z
+      if (samePosX && samePosY && samePosZ && sameRotX && sameRotY && sameRotZ) continue
+      applyPlacementDelta(runtime.simMesh, panelId, prev, curr)
+      prevPlacementsRef.current[panelId] = { position: { ...curr.position }, rotation: { ...curr.rotation } }
+    }
     refreshSeamPlacementRest(runtime.simMesh)
     updateRenderPanels(runtime, renderPanelsRef.current, runtime.simMesh.positions)
   }, [placementKey])
@@ -622,6 +653,57 @@ function panelBounds(panel: PatternPanel) {
   return { minX, minY, width: maxX - minX || 1, height: maxY - minY || 1 }
 }
 
+function quatMul(
+  a: { x: number; y: number; z: number; w: number },
+  b: { x: number; y: number; z: number; w: number },
+) {
+  return {
+    x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+    y: a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+    z: a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+    w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+  }
+}
+
+/**
+ * Translate/rotate all particles of `panelId` by the delta between two
+ * placements. Preserves the draped shape — only moves it in world space.
+ */
+function applyPlacementDelta(
+  mesh: GarmentRuntime['simMesh'],
+  panelId: string,
+  prev: { position: { x: number; y: number; z: number }; rotation: { x: number; y: number; z: number } },
+  next: { position: { x: number; y: number; z: number }; rotation: { x: number; y: number; z: number } },
+) {
+  const q0 = quatFromEuler(prev.rotation.x, prev.rotation.y, prev.rotation.z)
+  const q1 = quatFromEuler(next.rotation.x, next.rotation.y, next.rotation.z)
+  // Inverse of q0 (unit quaternion: conjugate == inverse)
+  const q0inv = { x: -q0.x, y: -q0.y, z: -q0.z, w: q0.w }
+  // Delta quaternion: rotate from old orientation to new
+  const dq = quatMul(q1, q0inv)
+
+  const { positions, prevPositions, velocities, panelIds, particleCount } = mesh
+  for (let i = 0; i < particleCount; i += 1) {
+    if (panelIds[i] !== panelId) continue
+    const off = i * 3
+    // Express particle relative to old placement pivot, apply delta rotation,
+    // then translate to new placement pivot.
+    const rx = positions[off] - prev.position.x
+    const ry = positions[off + 1] - prev.position.y
+    const rz = positions[off + 2] - prev.position.z
+    const rotated = rotateVec(rx, ry, rz, dq.x, dq.y, dq.z, dq.w)
+    positions[off] = rotated.x + next.position.x
+    positions[off + 1] = rotated.y + next.position.y
+    positions[off + 2] = rotated.z + next.position.z
+    prevPositions[off] = positions[off]
+    prevPositions[off + 1] = positions[off + 1]
+    prevPositions[off + 2] = positions[off + 2]
+    velocities[off] = 0
+    velocities[off + 1] = 0
+    velocities[off + 2] = 0
+  }
+}
+
 function quatFromEuler(x: number, y: number, z: number) {
   const c1 = Math.cos(x / 2)
   const s1 = Math.sin(x / 2)
@@ -695,6 +777,8 @@ function updateRenderPanels(_runtime: GarmentRuntime, entries: RenderPanelEntry[
     computeVertexNormalsFlat(array, entry.indices, entry.normalArray, vertexCount)
     ;(entry.geometry.getAttribute('position') as THREE.BufferAttribute).needsUpdate = true
     ;(entry.geometry.getAttribute('normal') as THREE.BufferAttribute).needsUpdate = true
+    // Invalidate the cached bounding sphere so raycasting uses current positions.
+    entry.geometry.boundingSphere = null
   }
 }
 
