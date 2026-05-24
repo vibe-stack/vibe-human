@@ -76,6 +76,80 @@ export function solveCollisionConstraints(mesh: ClothSimMesh, snapshot: Collider
       positions[offset + 2] = pz
     }
   }
+
+  solveTriangleCollisionConstraints(mesh, snapshot)
+}
+
+function solveTriangleCollisionConstraints(mesh: ClothSimMesh, snapshot: ColliderSnapshot) {
+  const { positions, prevPositions, invMass, triangles } = mesh
+  if (triangles.length === 0) return
+
+  for (let triangle = 0; triangle < triangles.length; triangle += 3) {
+    const a = triangles[triangle]
+    const b = triangles[triangle + 1]
+    const c = triangles[triangle + 2]
+    const wa = invMass[a]
+    const wb = invMass[b]
+    const wc = invMass[c]
+    const wsum = wa + wb + wc
+    if (wsum <= 1e-9) continue
+
+    const ia = a * 3
+    const ib = b * 3
+    const ic = c * 3
+    const prevX = (prevPositions[ia] + prevPositions[ib] + prevPositions[ic]) / 3
+    const prevY = (prevPositions[ia + 1] + prevPositions[ib + 1] + prevPositions[ic + 1]) / 3
+    const prevZ = (prevPositions[ia + 2] + prevPositions[ib + 2] + prevPositions[ic + 2]) / 3
+    let px = (positions[ia] + positions[ib] + positions[ic]) / 3
+    let py = (positions[ia + 1] + positions[ib + 1] + positions[ic + 1]) / 3
+    let pz = (positions[ia + 2] + positions[ib + 2] + positions[ic + 2]) / 3
+    let hit = false
+
+    for (const meshCollider of snapshot.meshColliders ?? []) {
+      if (!pushOutOfMeshCollider(meshCollider, prevX, prevY, prevZ, px, py, pz, CONTACT_RESULT)) continue
+      px = CONTACT_RESULT[0]
+      py = CONTACT_RESULT[1]
+      pz = CONTACT_RESULT[2]
+      hit = true
+    }
+
+    for (const patch of snapshot.lowResMeshPatches ?? []) {
+      if (!pushOutOfLowResPatch(patch, px, py, pz, CONTACT_RESULT)) continue
+      px = CONTACT_RESULT[0]
+      py = CONTACT_RESULT[1]
+      pz = CONTACT_RESULT[2]
+      hit = true
+    }
+
+    for (const proxy of snapshot.proxies) {
+      if (!pushOut(proxy, px, py, pz, CONTACT_RESULT)) continue
+      px = CONTACT_RESULT[0]
+      py = CONTACT_RESULT[1]
+      pz = CONTACT_RESULT[2]
+      hit = true
+    }
+
+    if (!hit) continue
+    const correctionX = px - (positions[ia] + positions[ib] + positions[ic]) / 3
+    const correctionY = py - (positions[ia + 1] + positions[ib + 1] + positions[ic + 1]) / 3
+    const correctionZ = pz - (positions[ia + 2] + positions[ib + 2] + positions[ic + 2]) / 3
+    applyTriangleCorrection(positions, ia, correctionX, correctionY, correctionZ, (wa / wsum) * 3)
+    applyTriangleCorrection(positions, ib, correctionX, correctionY, correctionZ, (wb / wsum) * 3)
+    applyTriangleCorrection(positions, ic, correctionX, correctionY, correctionZ, (wc / wsum) * 3)
+  }
+}
+
+function applyTriangleCorrection(
+  positions: Float32Array,
+  offset: number,
+  correctionX: number,
+  correctionY: number,
+  correctionZ: number,
+  weight: number,
+) {
+  positions[offset] += correctionX * weight
+  positions[offset + 1] += correctionY * weight
+  positions[offset + 2] += correctionZ * weight
 }
 
 function applyContactFriction(

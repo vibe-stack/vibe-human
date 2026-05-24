@@ -101,7 +101,7 @@ function makeCloth(pts: Float32Array): ClothSimMesh {
     velocities: new Float32Array(count * 3),
     invMass: new Float32Array(count).fill(1),
     panelIds: [], panelUvs: new Float32Array(), panelLocalPositions: new Float32Array(), triangles: new Uint32Array(),
-    stretchConstraints: [], shearConstraints: [], bendConstraints: [], seamConstraints: [], pinConstraints: [],
+    stretchConstraints: [], shearConstraints: [], bendDistanceConstraints: [], bendConstraints: [], seamConstraints: [], pinConstraints: [],
   } as unknown as ClothSimMesh
 }
 

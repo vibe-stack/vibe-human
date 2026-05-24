@@ -116,7 +116,7 @@ export function ClothingDebugView({
 function buildConstraintPositions(runtime: GarmentRuntime, seamsOnly: boolean) {
   const constraints = seamsOnly
     ? runtime.simMesh.seamConstraints
-    : [...runtime.simMesh.stretchConstraints, ...runtime.simMesh.shearConstraints, ...runtime.simMesh.bendConstraints.map((constraint) => ({ a: constraint.a, b: constraint.c }))]
+    : [...runtime.simMesh.stretchConstraints, ...runtime.simMesh.shearConstraints, ...runtime.simMesh.bendDistanceConstraints, ...runtime.simMesh.bendConstraints.map((constraint) => ({ a: constraint.a, b: constraint.c }))]
   const out = new Float32Array(constraints.length * 2 * 3)
   updateConstraintPositions(runtime, out, seamsOnly)
   return out
@@ -126,7 +126,7 @@ function updateConstraintPositions(runtime: GarmentRuntime, out: Float32Array, s
   const positions = runtime.simMesh.positions
   const constraints = seamsOnly
     ? runtime.simMesh.seamConstraints
-    : [...runtime.simMesh.stretchConstraints, ...runtime.simMesh.shearConstraints, ...runtime.simMesh.bendConstraints.map((constraint) => ({ a: constraint.a, b: constraint.c, rest: 0, compliance: 0, kind: 'stretch' as const }))]
+    : [...runtime.simMesh.stretchConstraints, ...runtime.simMesh.shearConstraints, ...runtime.simMesh.bendDistanceConstraints, ...runtime.simMesh.bendConstraints.map((constraint) => ({ a: constraint.a, b: constraint.c, rest: 0, compliance: 0, kind: 'stretch' as const }))]
   for (let index = 0; index < constraints.length; index += 1) {
     const constraint = constraints[index]
     const ia = constraint.a * 3

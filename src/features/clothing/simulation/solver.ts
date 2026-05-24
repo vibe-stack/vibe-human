@@ -31,6 +31,7 @@ export class XPBDClothSolver {
   private elapsed = 0
   private stretchFlat: DistanceSet
   private shearFlat: DistanceSet
+  private bendDistanceFlat: DistanceSet
   private seamFlat: DistanceSet
   private bendFlat: BendSet
   private grabParticle = -1
@@ -57,6 +58,7 @@ export class XPBDClothSolver {
     this.params = params
     this.stretchFlat = flattenDistanceConstraints(mesh.stretchConstraints)
     this.shearFlat = flattenDistanceConstraints(mesh.shearConstraints)
+    this.bendDistanceFlat = flattenDistanceConstraints(mesh.bendDistanceConstraints)
     this.seamFlat = flattenDistanceConstraints(mesh.seamConstraints)
     this.bendFlat = flattenBendConstraints(mesh.bendConstraints)
     this.seamAccumX = new Float32Array(mesh.particleCount)
@@ -87,6 +89,7 @@ export class XPBDClothSolver {
 
   /** Overwrite the compliance of every bend constraint. */
   setBendCompliance(value: number) {
+    this.bendDistanceFlat.compliance.fill(value)
     this.bendFlat.compliance.fill(value)
   }
 
@@ -141,7 +144,8 @@ export class XPBDClothSolver {
         solveDistanceConstraintsFlat(this.mesh.positions, this.mesh.invMass, this.stretchFlat, dt, 0)
         solveDistanceConstraintsFlat(this.mesh.positions, this.mesh.invMass, this.shearFlat, dt, 0)
         solveDistanceConstraintsFlat(this.mesh.positions, this.mesh.invMass, this.seamFlat, dt, seamRestScale, seamStiffness)
-        if (bendBlend > 0) {
+        if (bendBlend > 0 && (iteration & 1) === 0) {
+          solveDistanceConstraintsFlat(this.mesh.positions, this.mesh.invMass, this.bendDistanceFlat, dt * bendBlend, 0)
           solveBendConstraintsFlat(this.mesh.positions, this.mesh.invMass, this.bendFlat, dt * bendBlend)
         }
         solvePinConstraints(this.mesh)

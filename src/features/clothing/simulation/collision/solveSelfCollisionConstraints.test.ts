@@ -66,6 +66,7 @@ function makeMesh(input: { positions: number[]; local: number[]; triangles?: num
     triangles: new Uint32Array(input.triangles ?? []),
     stretchConstraints: [],
     shearConstraints: [],
+    bendDistanceConstraints: [],
     bendConstraints: [],
     seamConstraints: [],
     pinConstraints: [],

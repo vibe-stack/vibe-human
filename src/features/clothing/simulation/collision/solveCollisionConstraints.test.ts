@@ -23,6 +23,7 @@ describe('solveCollisionConstraints', () => {
       triangles: new Uint32Array(),
       stretchConstraints: [],
       shearConstraints: [],
+      bendDistanceConstraints: [],
       bendConstraints: [],
       seamConstraints: [],
       pinConstraints: [],
@@ -82,6 +83,7 @@ describe('solveCollisionConstraints', () => {
       triangles: new Uint32Array(),
       stretchConstraints: [],
       shearConstraints: [],
+      bendDistanceConstraints: [],
       bendConstraints: [],
       seamConstraints: [],
       pinConstraints: [],
@@ -128,5 +130,76 @@ describe('solveCollisionConstraints', () => {
     solveCollisionConstraints(mesh, snapshot)
 
     assert.equal(Math.abs(mesh.positions[1] - 0.03) < 1e-4, true)
+  })
+
+  test('uses triangle centroid contacts so coarse cloth faces do not pass through small colliders', () => {
+    const mesh: ClothSimMesh = {
+      particleCount: 3,
+      positions: new Float32Array([
+        -0.4, 0.02, -0.2,
+        0.4, 0.02, -0.2,
+        0, 0.02, 0.7,
+      ]),
+      prevPositions: new Float32Array([
+        -0.4, 0.02, -0.2,
+        0.4, 0.02, -0.2,
+        0, 0.02, 0.7,
+      ]),
+      velocities: new Float32Array(9),
+      invMass: new Float32Array([1, 1, 1]),
+      panelIds: ['panel', 'panel', 'panel'],
+      panelUvs: new Float32Array(6),
+      panelLocalPositions: new Float32Array(6),
+      triangles: new Uint32Array([0, 1, 2]),
+      stretchConstraints: [],
+      shearConstraints: [],
+      bendDistanceConstraints: [],
+      bendConstraints: [],
+      seamConstraints: [],
+      pinConstraints: [],
+    }
+    const snapshot: ColliderSnapshot = {
+      version: 1,
+      proxies: [],
+      meshColliders: [
+        {
+          kind: 'mesh',
+          id: 'small-head-region.mesh',
+          vertices: new Float32Array([
+            -0.12, 0, -0.02,
+            0.12, 0, -0.02,
+            0, 0, 0.34,
+          ]),
+          indices: new Uint32Array([0, 1, 2]),
+          triangleNormals: new Float32Array([0, 1, 0]),
+          triangleCentroids: new Float32Array([0, 0, 0.1]),
+          triangleRadii: new Float32Array([0.24]),
+          cellSize: 1,
+          cellKeys: new Int32Array([hashCell(0, 0, 0)]),
+          cellStarts: new Uint32Array([0]),
+          cellCounts: new Uint32Array([1]),
+          cellTriangleIndices: new Uint32Array([0]),
+          cellIndexLookup: new Map([[hashCell(0, 0, 0), 0]]),
+          triangleVisitMarks: new Uint32Array([0]),
+          triangleVisitStamp: 0,
+          bounds: {
+            minX: -0.12,
+            minY: 0,
+            minZ: -0.02,
+            maxX: 0.12,
+            maxY: 0,
+            maxZ: 0.34,
+          },
+          skin: 0.04,
+          thickness: 0.01,
+          friction: 0.5,
+        },
+      ],
+    }
+
+    solveCollisionConstraints(mesh, snapshot)
+
+    const centroidY = (mesh.positions[1] + mesh.positions[4] + mesh.positions[7]) / 3
+    assert.equal(Math.abs(centroidY - 0.05) < 1e-4, true)
   })
 })

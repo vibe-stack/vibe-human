@@ -53,9 +53,8 @@ type RenderPanelEntry = {
   neighbors: Uint32Array
 }
 
-const VISUAL_SMOOTHING_PASSES = 3
-const VISUAL_SMOOTHING_ALPHA = 0.28
-const VISUAL_SMOOTHING_SHRINK = -0.08
+const VISUAL_SMOOTHING_PASSES = 0
+const VISUAL_SMOOTHING_ALPHA = 0
 
 export function useGarmentSimulation(args: {
   document: PatternDocument
@@ -691,7 +690,6 @@ function updateRenderPanels(_runtime: GarmentRuntime, entries: RenderPanelEntry[
       array[base + 2] = positions[ia + 2] * wa + positions[ib + 2] * wb + positions[ic + 2] * wc
     }
     smoothVisualMeshPositions(array, entry.smoothScratch, entry.neighborOffsets, entry.neighbors, VISUAL_SMOOTHING_PASSES, VISUAL_SMOOTHING_ALPHA)
-    smoothVisualMeshPositions(array, entry.smoothScratch, entry.neighborOffsets, entry.neighbors, 1, VISUAL_SMOOTHING_SHRINK)
     computeVertexNormalsFlat(array, entry.indices, entry.normalArray, vertexCount)
     ;(entry.geometry.getAttribute('position') as THREE.BufferAttribute).needsUpdate = true
     ;(entry.geometry.getAttribute('normal') as THREE.BufferAttribute).needsUpdate = true

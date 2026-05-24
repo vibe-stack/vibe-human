@@ -165,6 +165,7 @@ function buildAdjacency(mesh: ClothSimMesh) {
   const pairs: number[] = []
   addDistancePairs(pairs, particleCount, mesh.stretchConstraints)
   addDistancePairs(pairs, particleCount, mesh.shearConstraints)
+  addDistancePairs(pairs, particleCount, mesh.bendDistanceConstraints)
   addDistancePairs(pairs, particleCount, mesh.seamConstraints)
 
   for (let i = 0; i < mesh.triangles.length; i += 3) {

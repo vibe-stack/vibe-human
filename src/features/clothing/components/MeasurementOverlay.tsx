@@ -74,13 +74,15 @@ export default function MeasurementOverlay() {
   const piece = garment.patterns[selectedPatternId]
   const edge = piece?.edges.find((e) => e.id === selectedEdgeId)
   if (!piece || !edge) return null
+  const mutablePiece = piece as PatternPiece
+  const mutableEdge = edge as PatternEdge
 
   const { panX, panY, zoom } = viewport2D
   const { w, h } = viewSize
 
-  const len = edgeLengthCm(piece, edge)
-  const mid = edgeMidWorld(piece, edge)
-  const norm = edgeMidNormal(piece, edge)
+  const len = edgeLengthCm(mutablePiece, mutableEdge)
+  const mid = edgeMidWorld(mutablePiece, mutableEdge)
+  const norm = edgeMidNormal(mutablePiece, mutableEdge)
   const screen = worldToScreen(mid, panX, panY, zoom, w, h)
 
   // Offset the label outward perpendicular to the edge

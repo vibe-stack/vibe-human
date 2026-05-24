@@ -42,6 +42,7 @@ export type ClothSimMesh = {
   triangles: Uint32Array
   stretchConstraints: DistanceConstraint[]
   shearConstraints: DistanceConstraint[]
+  bendDistanceConstraints: DistanceConstraint[]
   bendConstraints: BendConstraint[]
   seamConstraints: DistanceConstraint[]
   pinConstraints: PinConstraint[]

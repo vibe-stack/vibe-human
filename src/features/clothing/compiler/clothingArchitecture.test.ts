@@ -238,6 +238,7 @@ function cloneMesh(mesh: ReturnType<typeof compileGarmentRuntime>['value']['simM
     triangles: new Uint32Array(mesh.triangles),
     stretchConstraints: mesh.stretchConstraints.map((constraint) => ({ ...constraint })),
     shearConstraints: mesh.shearConstraints.map((constraint) => ({ ...constraint })),
+    bendDistanceConstraints: mesh.bendDistanceConstraints.map((constraint) => ({ ...constraint })),
     bendConstraints: mesh.bendConstraints.map((constraint) => ({ ...constraint })),
     seamConstraints: mesh.seamConstraints.map((constraint) => ({ ...constraint })),
     pinConstraints: mesh.pinConstraints.map((constraint) => ({ ...constraint })),

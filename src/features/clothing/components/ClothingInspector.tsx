@@ -135,9 +135,9 @@ export default function ClothingInspector() {
           <Slider
             label="Stretch Compliance"
             value={selectedPattern.stretchCompliance ?? 0.0002}
-            min={0.00001}
-            max={0.002}
-            step={0.00001}
+            min={0}
+            max={0.05}
+            step={0.0001}
             onChange={(value) => {
               clothingStore.garment.patterns[selectedPattern.id].stretchCompliance = value
               clothingStore.dirty.previewDirty = true
@@ -146,9 +146,9 @@ export default function ClothingInspector() {
           <Slider
             label="Shear Compliance"
             value={selectedPattern.shearCompliance ?? 0.00028}
-            min={0.00001}
-            max={0.002}
-            step={0.00001}
+            min={0}
+            max={0.05}
+            step={0.0001}
             onChange={(value) => {
               clothingStore.garment.patterns[selectedPattern.id].shearCompliance = value
               clothingStore.dirty.previewDirty = true
@@ -157,9 +157,9 @@ export default function ClothingInspector() {
           <Slider
             label="Bend Compliance"
             value={selectedPattern.bendCompliance ?? 0.25}
-            min={0.001}
-            max={1}
-            step={0.001}
+            min={0}
+            max={5}
+            step={0.005}
             onChange={(value) => {
               clothingStore.garment.patterns[selectedPattern.id].bendCompliance = value
               clothingStore.dirty.previewDirty = true
@@ -480,7 +480,7 @@ function Slider({
   return (
     <label style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'center' }}>
       <span style={{ opacity: 0.7 }}>{label}</span>
-      <span style={{ color: 'rgba(255,255,255,0.85)', fontVariantNumeric: 'tabular-nums' }}>{value.toFixed(step >= 1 ? 0 : 3)}</span>
+      <span style={{ color: 'rgba(255,255,255,0.85)', fontVariantNumeric: 'tabular-nums' }}>{formatSliderValue(value, step)}</span>
       <input
         type="range"
         min={min}
@@ -492,4 +492,11 @@ function Slider({
       />
     </label>
   )
+}
+
+function formatSliderValue(value: number, step: number) {
+  if (step >= 1) return value.toFixed(0)
+  if (step >= 0.01) return value.toFixed(2)
+  if (step >= 0.001) return value.toFixed(3)
+  return value.toFixed(4)
 }

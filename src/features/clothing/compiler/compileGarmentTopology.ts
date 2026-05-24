@@ -34,6 +34,7 @@ export function compileGarmentTopology(document: PatternDocument, options: Compi
     triangles,
     stretchConstraints: Object.values(panels).flatMap((panel) => panel.stretchConstraints),
     shearConstraints: Object.values(panels).flatMap((panel) => panel.shearConstraints),
+    bendDistanceConstraints: Object.values(panels).flatMap((panel) => panel.bendDistanceConstraints),
     bendConstraints: Object.values(panels).flatMap((panel) => panel.bendConstraints),
     seamConstraints: [],
     pinConstraints: Object.values(panels).flatMap((panel) => panel.pinConstraints),

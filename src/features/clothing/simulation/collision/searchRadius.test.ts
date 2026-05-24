@@ -120,6 +120,7 @@ describe('solveCollisionConstraints still resolves penetrations after radius tig
       triangles: new Uint32Array(),
       stretchConstraints: [],
       shearConstraints: [],
+      bendDistanceConstraints: [],
       bendConstraints: [],
       seamConstraints: [],
       pinConstraints: [],
