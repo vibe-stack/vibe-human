@@ -94,8 +94,7 @@ export default function ClothingInspector() {
                     else next.add(selectedEdge.id)
                     clothingStore.garment.patterns[selectedPattern.id].gluedEdgeIds = [...next]
                     clothingStore.dirty.previewDirty = true
-                    clothingStore.simResetKey += 1
-                    clothingStore.simRunning = false
+                    // Gluing reprojects the live drape rather than resetting it.
                   }} />
                 </ButtonRow>
               </>
@@ -130,8 +129,7 @@ export default function ClothingInspector() {
               clothingStore.garment.patterns[selectedPattern.id].particleDistance = value
               clothingStore.dirty.triangulationDirty = true
               clothingStore.dirty.previewDirty = true
-              clothingStore.simResetKey += 1
-              clothingStore.simRunning = false
+              // Resolution change rebuilds the grid but keeps the draped shape.
             }}
           />
           <Slider
@@ -143,8 +141,6 @@ export default function ClothingInspector() {
             onChange={(value) => {
               clothingStore.garment.patterns[selectedPattern.id].stretchCompliance = value
               clothingStore.dirty.previewDirty = true
-              clothingStore.simResetKey += 1
-              clothingStore.simRunning = false
             }}
           />
           <Slider
@@ -156,8 +152,6 @@ export default function ClothingInspector() {
             onChange={(value) => {
               clothingStore.garment.patterns[selectedPattern.id].shearCompliance = value
               clothingStore.dirty.previewDirty = true
-              clothingStore.simResetKey += 1
-              clothingStore.simRunning = false
             }}
           />
           <Slider
@@ -169,8 +163,6 @@ export default function ClothingInspector() {
             onChange={(value) => {
               clothingStore.garment.patterns[selectedPattern.id].bendCompliance = value
               clothingStore.dirty.previewDirty = true
-              clothingStore.simResetKey += 1
-              clothingStore.simRunning = false
             }}
           />
           <Slider
@@ -182,8 +174,6 @@ export default function ClothingInspector() {
             onChange={(value) => {
               clothingStore.garment.patterns[selectedPattern.id].damping = value
               clothingStore.dirty.previewDirty = true
-              clothingStore.simResetKey += 1
-              clothingStore.simRunning = false
             }}
           />
           <Slider

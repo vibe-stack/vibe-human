@@ -10,7 +10,7 @@ import type {
 
 const PATTERN_UNIT_SCALE = 0.004
 
-const QUALITY_PRESETS: Record<CompilerOptions['quality'], {
+export const QUALITY_PRESETS: Record<CompilerOptions['quality'], {
   spacing: number
   bendCompliance: number
   stretchCompliance: number

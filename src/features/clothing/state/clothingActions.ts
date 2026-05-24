@@ -287,8 +287,9 @@ export function resetSim() {
 export function setSimQuality(quality: ClothSimQuality) {
   if (clothingStore.simQuality === quality) return
   clothingStore.simQuality = quality
-  clothingStore.simResetKey += 1
-  clothingStore.simRunning = false
+  // Quality changes spacing (resolution) + solver iterations. The simulation
+  // reprojects the current drape onto the new grid and absorbs the iteration
+  // change live — no reset, no forced pause.
 }
 
 export function setTransformMode(mode: ClothingTransformMode) {

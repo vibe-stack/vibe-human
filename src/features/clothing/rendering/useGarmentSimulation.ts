@@ -3,6 +3,7 @@ import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three/webgpu'
 import type { PatternDocument, PatternPanel } from '../document/types'
 import { compileGarmentRuntime } from '../compiler/compileGarmentRuntime'
+import { QUALITY_PRESETS as COMPLIANCE_PRESETS } from '../compiler/buildPanelSimMesh'
 import type { CompileQuality } from '../compiler/types'
 import { XPBDClothSolver } from '../simulation/solver'
 import type {
@@ -73,11 +74,33 @@ export function useGarmentSimulation(args: {
   }
 }) {
   const { document, quality, resetKey, running, enabled, collision } = args
-  const topologyKey = useMemo(() => buildTopologyKey(document, quality, resetKey), [document, quality, resetKey])
+
+  // The simulation reacts to three *independent* kinds of change. The guiding
+  // rule, MD-style: the drape is only ever thrown away on an explicit reset.
+  // Everything else either reprojects the existing drape or is absorbed live.
+  //
+  //   geometryKey   — pattern points/edges/holes, seams, glue pins, resolution
+  //                   (quality spacing + particleDistance). Recompiles the
+  //                   mesh, then re-projects the current drape onto the new
+  //                   grid so editing the 2D pattern reshapes the cloth in
+  //                   place instead of resetting it.
+  //   liveParamsKey — compliance / damping / solver iterations. Pushed into the
+  //                   running solver in place; never rebuilds.
+  //   placementKey  — panel placement. Handled live by the gizmo; never
+  //                   rebuilds (see the paused-placement effect below).
+  //
+  // resetKey is separate: bumping it is the *only* thing that respawns flat.
+  const geometryKey = useMemo(() => buildGeometryKey(document, quality), [document, quality])
+  const liveParamsKey = useMemo(() => buildLiveParamsKey(document, quality), [document, quality])
+
+  // Recompile when geometry/resolution changes or on an explicit reset. The
+  // flat-vs-reproject decision is made in the consuming effect by comparing
+  // resetKey against the last built one.
+  const rebuildKey = `${resetKey}::${geometryKey}`
   const compileResult = useMemo(
     () => compileGarmentRuntime(document, { quality, seamSamples: 18 }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- topologyKey intentionally captures placement-sensitive recompilation inputs.
-    [topologyKey],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- rebuildKey captures exactly the recompilation-worthy inputs.
+    [rebuildKey],
   )
   const renderPanels = useMemo(
     () => compileResult.value.renderPanels.map((panel) => createRenderPanelEntry(panel)),
@@ -94,6 +117,12 @@ export function useGarmentSimulation(args: {
   const meshColliderTopologyRef = useRef<AvatarMeshColliderTopology | null>(null)
   const collisionRef = useRef(collision)
   const enabledRef = useRef(enabled)
+
+  // Last seen reset key. A recompile reprojects the existing drape unless the
+  // reset key changed (or this is the first build), in which case it respawns
+  // flat. This is what keeps 2D pattern edits non-destructive.
+  const lastResetKeyRef = useRef<number | null>(null)
+  const liveParamsKeyRef = useRef<string | null>(null)
 
   useEffect(() => {
     collisionRef.current = collision
@@ -130,19 +159,43 @@ export function useGarmentSimulation(args: {
   }, [document])
 
   useEffect(() => {
+    const nextMesh = compileResult.value.simMesh
+
+    // Reproject unless this rebuild was an explicit reset (or the first build).
+    // Reset is the only path that throws the drape away.
+    const previousMesh = runtimeRef.current?.simMesh ?? null
+    const isReset = lastResetKeyRef.current === null || lastResetKeyRef.current !== resetKey
+    const canReproject = !isReset && previousMesh !== null && previousMesh.particleCount > 0
+
     runtimeRef.current = compileResult.value
-    frameRef.current = { positions: compileResult.value.simMesh.positions }
-    applyDocumentPlacements(compileResult.value.simMesh, documentRef.current)
-    refreshSeamPlacementRest(compileResult.value.simMesh)
+    frameRef.current = { positions: nextMesh.positions }
+
+    if (canReproject && previousMesh) {
+      // Keep the draped shape: sample the old world positions per panel in
+      // pattern space and write them into the new grid. Seam rests are then
+      // re-derived from the reprojected geometry so a paused garment doesn't
+      // twitch. This covers resolution changes AND 2D pattern edits.
+      reprojectDrape(previousMesh, nextMesh)
+      refreshSeamPlacementRest(nextMesh)
+    } else {
+      // Explicit reset or first build: spawn flat at the document placement.
+      applyDocumentPlacements(nextMesh, documentRef.current)
+      refreshSeamPlacementRest(nextMesh)
+    }
+
     const panelDamping = Object.values(documentRef.current.panels)
       .map((panel) => panel.damping)
       .filter((value): value is number => Number.isFinite(value))
     const damping = panelDamping.length
       ? panelDamping.reduce((sum, value) => sum + value, 0) / panelDamping.length
       : SOLVER_PRESETS[quality].damping
-    solverRef.current = new XPBDClothSolver(compileResult.value.simMesh, { ...SOLVER_PRESETS[quality], damping })
-    updateRenderPanels(compileResult.value, renderPanels, compileResult.value.simMesh.positions)
+    solverRef.current = new XPBDClothSolver(nextMesh, { ...SOLVER_PRESETS[quality], damping })
+    updateRenderPanels(compileResult.value, renderPanels, nextMesh.positions)
     accumRef.current = 0
+
+    lastResetKeyRef.current = resetKey
+    liveParamsKeyRef.current = liveParamsKey
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- resetKey/liveParamsKey are derived from compileResult inputs; depending on them directly would double-fire.
   }, [compileResult, quality, renderPanels])
 
   const runningRef = useRef(running)
@@ -150,14 +203,39 @@ export function useGarmentSimulation(args: {
     runningRef.current = running
   }, [running])
 
+  // Live material / solver knobs: push straight into the running solver. No
+  // rebuild, no respawn. When the sim is paused we run a single settle step so
+  // the change is actually visible (MD-style tweak-during-pause); when it's
+  // running the next frame already reflects it. Skips the render right after a
+  // rebuild, which has already applied fresh presets.
+  useEffect(() => {
+    const solver = solverRef.current
+    const runtime = runtimeRef.current
+    if (!solver || !runtime) return
+    if (liveParamsKeyRef.current === liveParamsKey) return
+    liveParamsKeyRef.current = liveParamsKey
+
+    applyLiveSolverParams(solver, documentRef.current, quality)
+
+    if (!runningRef.current) {
+      frameRef.current = solver.settle(getBodyProxySnapshot())
+      updateRenderPanels(runtime, renderPanelsRef.current, frameRef.current.positions)
+    }
+  }, [liveParamsKey, quality])
+
+  // Placement while paused: the gizmo writes panel placement into the document,
+  // which we translate into particle positions here. Gated on a placement-only
+  // key so unrelated document edits (color, compliance, …) never snap a draped,
+  // paused garment back to its spawn pose.
+  const placementKey = useMemo(() => buildPlacementKey(document), [document])
   useEffect(() => {
     if (runningRef.current) return
     const runtime = runtimeRef.current
     if (!runtime) return
-    applyDocumentPlacements(runtime.simMesh, document)
+    applyDocumentPlacements(runtime.simMesh, documentRef.current)
     refreshSeamPlacementRest(runtime.simMesh)
     updateRenderPanels(runtime, renderPanelsRef.current, runtime.simMesh.positions)
-  }, [document])
+  }, [placementKey])
 
   useFrame((_, delta) => {
     if (!enabledRef.current) return
@@ -312,7 +390,16 @@ function timed<T>(enabled: boolean, label: string, fn: () => T) {
   return result
 }
 
-export function buildTopologyKey(document: PatternDocument, quality: CompileQuality, resetKey: number) {
+/**
+ * Everything that changes the particle mesh: pattern geometry (points, edges,
+ * holes), seams, glue pins, and resolution (solver quality spacing + per-panel
+ * particleDistance). A change here rebuilds the mesh and then reprojects the
+ * current drape onto it — so editing the 2D pattern, sewing, or changing
+ * resolution reshapes the cloth in place instead of resetting it. Only an
+ * explicit reset (resetKey) respawns flat; it is intentionally NOT part of this
+ * key so the rebuild path can tell the two cases apart.
+ */
+export function buildGeometryKey(document: PatternDocument, quality: CompileQuality) {
   const panelKeys = Object.values(document.panels)
     .map((panel) => {
       const points = Object.values(panel.points)
@@ -321,9 +408,8 @@ export function buildTopologyKey(document: PatternDocument, quality: CompileQual
         .join('|')
       const edges = panel.edges.map((edge) => `${edge.id}:${edge.from}>${edge.to}:${edge.curve}`).join('|')
       const holes = (panel.holes ?? []).map((hole) => hole.map((edge) => edge.id).join(',')).join('|')
-      const placement = panel.placement
-      const placementKey = `${placement.position.x},${placement.position.y},${placement.position.z}:${placement.rotation.x},${placement.rotation.y},${placement.rotation.z}`
-      return `${panel.id}:${panel.closed}:${panel.particleDistance}:${panel.fabricId ?? ''}:${points}:${edges}:${holes}:${placementKey}`
+      const pins = (panel.pins ?? []).map((pin) => `${pin.id}:${pin.u},${pin.v}:${pin.weight ?? ''}`).sort().join('|')
+      return `${panel.id}:${panel.closed}:${panel.fabricId ?? ''}:${panel.particleDistance}:${points}:${edges}:${holes}:${pins}`
     })
     .sort()
     .join('||')
@@ -331,7 +417,108 @@ export function buildTopologyKey(document: PatternDocument, quality: CompileQual
     .map((seam) => `${seam.id}:${seam.a.panelId}:${seam.a.edgeId}:${seam.a.reversed ? 1 : 0}:${seam.b.panelId}:${seam.b.edgeId}:${seam.b.reversed ? 1 : 0}:${seam.strength}`)
     .sort()
     .join('||')
-  return `${quality}|${resetKey}|${panelKeys}|${seamKeys}`
+  return `${quality}|${panelKeys}|${seamKeys}`
+}
+
+/**
+ * Material / solver knobs that the solver can absorb in place: per-panel
+ * compliance + damping, plus the quality preset (which also dictates solver
+ * substeps/iterations). Never triggers a rebuild.
+ */
+export function buildLiveParamsKey(document: PatternDocument, quality: CompileQuality) {
+  const panelKeys = Object.values(document.panels)
+    .map((panel) => `${panel.id}:${panel.stretchCompliance ?? ''}:${panel.shearCompliance ?? ''}:${panel.bendCompliance ?? ''}:${panel.damping ?? ''}`)
+    .sort()
+    .join('||')
+  return `${quality}|${panelKeys}`
+}
+
+/** Per-panel placement only — drives the live (paused) gizmo translate. */
+export function buildPlacementKey(document: PatternDocument) {
+  return Object.values(document.panels)
+    .map((panel) => {
+      const p = panel.placement
+      return `${panel.id}:${p.position.x},${p.position.y},${p.position.z}:${p.rotation.x},${p.rotation.y},${p.rotation.z}`
+    })
+    .sort()
+    .join('||')
+}
+
+/**
+ * Push the document's material / solver knobs into a live solver. Compliance is
+ * resolved against the same quality presets the compiler uses, so a panel that
+ * leaves a knob unset still tracks quality changes. Mirrors the averaging the
+ * rebuild path uses for damping.
+ */
+function applyLiveSolverParams(solver: XPBDClothSolver, document: PatternDocument, quality: CompileQuality) {
+  const preset = COMPLIANCE_PRESETS[quality]
+  const panels = Object.values(document.panels)
+
+  const avg = (pick: (panel: PatternPanel) => number | undefined, fallback: number) => {
+    const values = panels.map(pick).filter((value): value is number => Number.isFinite(value))
+    return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : fallback
+  }
+
+  solver.setStretchCompliance(avg((panel) => panel.stretchCompliance, preset.stretchCompliance))
+  solver.setShearCompliance(avg((panel) => panel.shearCompliance, preset.shearCompliance))
+  solver.setBendCompliance(avg((panel) => panel.bendCompliance, preset.bendCompliance))
+  solver.setDamping(avg((panel) => panel.damping, SOLVER_PRESETS[quality].damping))
+  solver.setSolverIterations(SOLVER_PRESETS[quality].substeps, SOLVER_PRESETS[quality].iterations)
+}
+
+/**
+ * Re-project a draped garment from one particle grid onto a freshly-built one.
+ * Used for resolution changes *and* 2D pattern edits (moving / adding / deleting
+ * points, edges, holes) — anything short of a full reset.
+ *
+ * Matching is done in pattern space (`panelLocalPositions`, in mm) rather than
+ * grid (u, v): a panel edit moves the bounding box that (u, v) is normalised
+ * against, so the same (u, v) would point at different fabric. Pattern-space
+ * coords are stable per fabric location, so each new particle inherits the
+ * draped world position of the nearest old particle that occupied roughly the
+ * same spot on the cloth. Particles in newly-grown regions snap to the closest
+ * existing fabric (MD-style "extend the panel"); particles whose fabric was
+ * deleted simply have no successor. Velocities are zeroed — the reprojected
+ * drape becomes the new grid's rest state.
+ */
+function reprojectDrape(previous: GarmentRuntime['simMesh'], next: GarmentRuntime['simMesh']) {
+  // Bucket previous particles by panel for a cheap nearest-neighbour lookup.
+  const byPanel = new Map<string, number[]>()
+  for (let i = 0; i < previous.particleCount; i += 1) {
+    const panelId = previous.panelIds[i]
+    let bucket = byPanel.get(panelId)
+    if (!bucket) { bucket = []; byPanel.set(panelId, bucket) }
+    bucket.push(i)
+  }
+
+  const { positions, prevPositions, velocities, panelIds, panelLocalPositions, particleCount } = next
+  for (let particle = 0; particle < particleCount; particle += 1) {
+    const bucket = byPanel.get(panelIds[particle])
+    const offset = particle * 3
+    if (!bucket || bucket.length === 0) continue
+
+    const px = panelLocalPositions[particle * 2]
+    const py = panelLocalPositions[particle * 2 + 1]
+    let best = bucket[0]
+    let bestDist = Infinity
+    for (const candidate of bucket) {
+      const dx = previous.panelLocalPositions[candidate * 2] - px
+      const dy = previous.panelLocalPositions[candidate * 2 + 1] - py
+      const dist = dx * dx + dy * dy
+      if (dist < bestDist) { bestDist = dist; best = candidate }
+    }
+
+    const src = best * 3
+    positions[offset] = previous.positions[src]
+    positions[offset + 1] = previous.positions[src + 1]
+    positions[offset + 2] = previous.positions[src + 2]
+    prevPositions[offset] = previous.positions[src]
+    prevPositions[offset + 1] = previous.positions[src + 1]
+    prevPositions[offset + 2] = previous.positions[src + 2]
+    velocities[offset] = 0
+    velocities[offset + 1] = 0
+    velocities[offset + 2] = 0
+  }
 }
 
 function applyDocumentPlacements(runtimeMesh: GarmentRuntime['simMesh'], document: PatternDocument) {

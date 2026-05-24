@@ -65,6 +65,48 @@ export class XPBDClothSolver {
     this.seamTouchedList = new Uint32Array(mesh.particleCount)
   }
 
+  // ---------------------------------------------------------------------------
+  // Live parameter updates — applied to the in-flight solver without rebuilding
+  // the constraint mesh or respawning particles. Take effect on the next step
+  // (or the next settle()). This is what lets the inspector tweak a running or
+  // paused sim the way Marvelous Designer does.
+  // ---------------------------------------------------------------------------
+
+  /** Overwrite the compliance of every stretch (structural) constraint. */
+  setStretchCompliance(value: number) {
+    this.stretchFlat.compliance.fill(value)
+  }
+
+  /** Overwrite the compliance of every shear (diagonal) constraint. */
+  setShearCompliance(value: number) {
+    this.shearFlat.compliance.fill(value)
+  }
+
+  /** Overwrite the compliance of every bend constraint. */
+  setBendCompliance(value: number) {
+    this.bendFlat.compliance.fill(value)
+  }
+
+  /** Set base velocity damping (0..1). */
+  setDamping(value: number) {
+    this.params.damping = value
+  }
+
+  /** Set XPBD substeps + constraint iterations per fixed step. */
+  setSolverIterations(substeps: number, iterations: number) {
+    this.params.substeps = Math.max(1, Math.round(substeps))
+    this.params.iterations = Math.max(1, Math.round(iterations))
+  }
+
+  /**
+   * Run a single fixed step in isolation so a parameter change is visible while
+   * the sim is paused. Mirrors MD's "tweak during pause" feel. Returns the
+   * frame so the caller can refresh the render mesh.
+   */
+  settle(snapshot?: ColliderSnapshot | null): ClothFrame {
+    return this.step(snapshot)
+  }
+
   setGrab(particle: number, x: number, y: number, z: number, vx: number, vy: number, vz: number) {
     this.grabParticle = particle
     this.grabTargetX = x

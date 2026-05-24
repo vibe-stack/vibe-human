@@ -76,8 +76,7 @@ export default function ClothingToolbar() {
     else next.add(selectedEdgeId)
     clothingStore.garment.patterns[selectedPatternId].gluedEdgeIds = [...next]
     clothingStore.dirty.previewDirty = true
-    clothingStore.simResetKey += 1
-    clothingStore.simRunning = false
+    // Gluing reprojects the live drape rather than resetting it.
   }
 
   return (

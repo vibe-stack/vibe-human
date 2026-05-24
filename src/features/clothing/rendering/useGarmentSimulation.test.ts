@@ -1,42 +1,94 @@
 import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { PatternDocument } from '../document/types'
-import { buildTopologyKey } from './useGarmentSimulation'
+import {
+  buildGeometryKey,
+  buildLiveParamsKey,
+  buildPlacementKey,
+} from './useGarmentSimulation'
 
-describe('useGarmentSimulation topology key', () => {
-  test('panel placement changes invalidate the topology key', () => {
+describe('useGarmentSimulation rebuild keys', () => {
+  test('panel placement does NOT change the geometry key', () => {
     const document = buildDocument()
-    const originalKey = buildTopologyKey(document, 'medium', 0)
+    const before = buildGeometryKey(document, 'medium')
 
     document.panels.back.placement.rotation.y = Math.PI
-    const rotatedKey = buildTopologyKey(document, 'medium', 0)
 
-    assert.notEqual(rotatedKey, originalKey)
+    // Placement is handled live by the gizmo — it must not trigger a rebuild.
+    assert.equal(buildGeometryKey(document, 'medium'), before)
   })
 
-  test('quality changes invalidate the topology key', () => {
+  test('placement changes are captured by the placement key', () => {
+    const document = buildDocument()
+    const before = buildPlacementKey(document)
+
+    document.panels.back.placement.rotation.y = Math.PI
+
+    assert.notEqual(buildPlacementKey(document), before)
+  })
+
+  test('quality changes the geometry key (resolution)', () => {
     const document = buildDocument()
 
     assert.notEqual(
-      buildTopologyKey(document, 'low', 0),
-      buildTopologyKey(document, 'medium', 0),
+      buildGeometryKey(document, 'low'),
+      buildGeometryKey(document, 'medium'),
     )
   })
 
-  test('reset key changes invalidate the topology key', () => {
+  test('editing a pattern point changes the geometry key', () => {
     const document = buildDocument()
+    const before = buildGeometryKey(document, 'medium')
 
-    assert.notEqual(
-      buildTopologyKey(document, 'medium', 0),
-      buildTopologyKey(document, 'medium', 1),
-    )
+    document.panels.back.points.tr.x = 80
+
+    assert.notEqual(buildGeometryKey(document, 'medium'), before)
+  })
+
+  test('adding a pattern point changes the geometry key', () => {
+    const document = buildDocument()
+    const before = buildGeometryKey(document, 'medium')
+
+    document.panels.back.points.mid = { id: 'mid', x: 0, y: 0, kind: 'corner' }
+
+    assert.notEqual(buildGeometryKey(document, 'medium'), before)
+  })
+
+  test('particleDistance changes the geometry key', () => {
+    const document = buildDocument()
+    const before = buildGeometryKey(document, 'medium')
+
+    document.panels.back.particleDistance = 32
+
+    assert.notEqual(buildGeometryKey(document, 'medium'), before)
+  })
+
+  test('glue pins change the geometry key', () => {
+    const document = buildDocument()
+    const before = buildGeometryKey(document, 'medium')
+
+    document.panels.back.pins = [{ id: 'back-left-5', u: 0.1, v: 0.5, weight: 1 }]
+
+    assert.notEqual(buildGeometryKey(document, 'medium'), before)
+  })
+
+  test('compliance/damping changes only the live-params key, not the geometry key', () => {
+    const document = buildDocument()
+    const geometryBefore = buildGeometryKey(document, 'medium')
+    const liveBefore = buildLiveParamsKey(document, 'medium')
+
+    document.panels.back.stretchCompliance = 0.001
+    document.panels.back.damping = 0.12
+
+    assert.equal(buildGeometryKey(document, 'medium'), geometryBefore)
+    assert.notEqual(buildLiveParamsKey(document, 'medium'), liveBefore)
   })
 })
 
 function buildDocument(): PatternDocument {
   return {
-    id: 'placement-key-doc',
-    name: 'Placement Key Doc',
+    id: 'rebuild-key-doc',
+    name: 'Rebuild Key Doc',
     panels: {
       front: createPanel('front', { x: 0, y: -0.56, z: 0.26 }, { x: 0, y: 0, z: 0 }),
       back: createPanel('back', { x: 0, y: -0.56, z: -0.26 }, { x: 0, y: 0, z: 0 }),
