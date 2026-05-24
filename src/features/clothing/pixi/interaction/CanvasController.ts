@@ -17,6 +17,7 @@ import { selectTool } from './tools/selectTool'
 import { editPointsTool } from './tools/editPointsTool'
 import { rectTool, ellipseTool, circleTool, polygonTool, penTool } from './tools/shapeTools'
 import { seamTool } from './tools/seamTool'
+import { tackTool } from './tools/tackTool'
 import { panTool } from './tools/panTool'
 import { pickAt } from '../PatternPicker'
 
@@ -29,6 +30,7 @@ const TOOLS: Record<ClothingTool, ToolHandler> = {
   polygon: polygonTool,
   pen: penTool,
   seam: seamTool,
+  tack: tackTool,
   pan: panTool,
 }
 
@@ -238,7 +240,7 @@ export class CanvasController {
     if (this.activeTouches.size > 1) return false
 
     const activeTool = clothingStore.activeClothingTool
-    const alwaysHandleTouchTools: ClothingTool[] = ['rect', 'ellipse', 'circle', 'polygon', 'pen', 'seam', 'pan']
+    const alwaysHandleTouchTools: ClothingTool[] = ['rect', 'ellipse', 'circle', 'polygon', 'pen', 'seam', 'tack', 'pan']
     if (alwaysHandleTouchTools.includes(activeTool)) {
       this.touchDragPointerId = e.pointerId
       return true
@@ -306,6 +308,7 @@ export class CanvasController {
       p: 'polygon',
       n: 'pen',
       m: 'seam',
+      t: 'tack',
     }
     const t = tools[e.key.toLowerCase()]
     if (t && !meta) {

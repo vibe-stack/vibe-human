@@ -12,6 +12,7 @@ import type {
   PatternPiece,
   PatternPlacement,
   Seam,
+  Tack,
 } from './clothingTypes'
 import type { CollisionRegion } from '../simulation/types'
 
@@ -111,6 +112,55 @@ export function deleteSeam(seamId: string) {
   delete clothingStore.garment.seams[seamId]
   if (clothingStore.garment.selectedSeamId === seamId) {
     clothingStore.garment.selectedSeamId = undefined
+  }
+  markPreviewDirty()
+}
+
+// ---------------------------------------------------------------------------
+// Tacks (point-to-point constraints)
+// ---------------------------------------------------------------------------
+
+export function createTack(
+  patternIdA: string,
+  pointIdA: string,
+  patternIdB: string,
+  pointIdB: string,
+): string {
+  if (patternIdA === patternIdB && pointIdA === pointIdB) return ''
+  const patternA = clothingStore.garment.patterns[patternIdA]
+  const patternB = clothingStore.garment.patterns[patternIdB]
+  if (!patternA?.points[pointIdA] || !patternB?.points[pointIdB]) return ''
+
+  // Prevent duplicate tacks
+  const existing = Object.values(clothingStore.garment.tacks).find((t) =>
+    (t.a.patternId === patternIdA && t.a.pointId === pointIdA && t.b.patternId === patternIdB && t.b.pointId === pointIdB) ||
+    (t.a.patternId === patternIdB && t.a.pointId === pointIdB && t.b.patternId === patternIdA && t.b.pointId === pointIdA),
+  )
+  if (existing) {
+    clothingStore.garment.selectedTackId = existing.id
+    return existing.id
+  }
+
+  pushHistory()
+  const id = uid()
+  const tack: Tack = {
+    id,
+    a: { patternId: patternIdA, pointId: pointIdA },
+    b: { patternId: patternIdB, pointId: pointIdB },
+    strength: 1,
+  }
+  clothingStore.garment.tacks[id] = tack
+  clothingStore.garment.selectedTackId = id
+  markPreviewDirty()
+  return id
+}
+
+export function deleteTack(tackId: string) {
+  if (!clothingStore.garment.tacks[tackId]) return
+  pushHistory()
+  delete clothingStore.garment.tacks[tackId]
+  if (clothingStore.garment.selectedTackId === tackId) {
+    clothingStore.garment.selectedTackId = undefined
   }
   markPreviewDirty()
 }

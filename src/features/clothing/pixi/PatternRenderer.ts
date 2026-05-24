@@ -58,6 +58,13 @@ export class PatternRenderer {
         if (!result) continue
         this.renderSeam(result.pointsA, result.pointsB, seam.id === doc.selectedSeamId)
       }
+      for (const tack of Object.values(doc.tacks ?? {})) {
+        const ptA = doc.patterns[tack.a.patternId]?.points[tack.a.pointId]
+        const ptB = doc.patterns[tack.b.patternId]?.points[tack.b.pointId]
+        if (ptA && ptB) {
+          this.renderTack(ptA, ptB, tack.id === doc.selectedTackId)
+        }
+      }
     }
   }
 
@@ -212,6 +219,36 @@ export class PatternRenderer {
     this.seamGfx.setStrokeStyle({ width: 2, color, alpha })
     drawPolyline(this.seamGfx, ptsB)
     this.seamGfx.stroke()
+  }
+
+  private renderTack(ptA: { x: number; y: number }, ptB: { x: number; y: number }, selected: boolean) {
+    const color = selected ? 0xffdd44 : 0x44ddff
+    const alpha = selected ? 1 : 0.8
+
+    // Dashed connector line (3 segments)
+    const DASH = 4
+    const dx = ptB.x - ptA.x
+    const dy = ptB.y - ptA.y
+    const len = Math.hypot(dx, dy) || 1
+    const ux = dx / len
+    const uy = dy / len
+    const steps = Math.max(1, Math.round(len / (DASH * 2)))
+    this.seamGfx.setStrokeStyle({ width: 1, color, alpha: alpha * 0.5 })
+    for (let i = 0; i < steps; i++) {
+      const t0 = (i * 2 * DASH) / len
+      const t1 = Math.min(((i * 2 + 1) * DASH) / len, 1)
+      this.seamGfx.moveTo(ptA.x + ux * t0 * len, ptA.y + uy * t0 * len)
+      this.seamGfx.lineTo(ptA.x + ux * t1 * len, ptA.y + uy * t1 * len)
+      this.seamGfx.stroke()
+    }
+
+    // Cross marker at each endpoint
+    const S = 5
+    this.seamGfx.setStrokeStyle({ width: 1.5, color, alpha })
+    for (const pt of [ptA, ptB]) {
+      this.seamGfx.moveTo(pt.x - S, pt.y - S); this.seamGfx.lineTo(pt.x + S, pt.y + S); this.seamGfx.stroke()
+      this.seamGfx.moveTo(pt.x + S, pt.y - S); this.seamGfx.lineTo(pt.x - S, pt.y + S); this.seamGfx.stroke()
+    }
   }
 }
 

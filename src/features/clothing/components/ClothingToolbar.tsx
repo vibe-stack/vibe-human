@@ -18,6 +18,7 @@ import {
   Square,
   Trash2,
   Undo2,
+  Anchor,
 } from 'lucide-react'
 import type { ComponentType, ReactNode } from 'react'
 import { useSnapshot } from 'valtio'
@@ -53,6 +54,7 @@ const TOOLS: ToolDef[] = [
   { id: 'polygon',     label: 'Polygon', Icon: Hexagon,       shortcut: 'P' },
   { id: 'pen',         label: 'Pen',     Icon: Pen,           shortcut: 'N' },
   { id: 'seam',        label: 'Seam',    Icon: GitMerge,      shortcut: 'M' },
+  { id: 'tack',        label: 'Tack',    Icon: Anchor,        shortcut: 'T' },
   { id: 'pan',         label: 'Pan',     Icon: Hand,          shortcut: 'Space' },
 ]
 
@@ -80,7 +82,7 @@ export default function ClothingToolbar() {
   }
 
   return (
-    <div style={{
+    <div className="clothing-toolbar" style={{
       display: 'flex',
       alignItems: 'center',
       gap: 4,

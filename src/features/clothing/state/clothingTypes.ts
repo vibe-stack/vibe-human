@@ -62,16 +62,29 @@ export type Seam = {
   strength: number
 }
 
+/** Point-to-point tack: pins a vertex on one panel to a vertex on another.
+ *  Useful for attaching pockets, decorative stitching, or any pinned joint
+ *  that isn't a full edge seam. */
+export type Tack = {
+  id: string
+  a: { patternId: string; pointId: string }
+  b: { patternId: string; pointId: string }
+  /** 0..1 stiffness multiplier. */
+  strength: number
+}
+
 /** The top-level garment document.  Everything else derives from this. */
 export type GarmentDocument = {
   id: string
   name: string
   patterns: Record<string, PatternPiece>
   seams: Record<string, Seam>
+  tacks: Record<string, Tack>
   selectedPatternId?: string
   selectedPointId?: string
   selectedEdgeId?: string
   selectedSeamId?: string
+  selectedTackId?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -87,6 +100,7 @@ export type ClothingTool =
   | 'polygon'
   | 'pen'
   | 'seam'
+  | 'tack'
   | 'pan'
 
 export type BBox = { minX: number; minY: number; maxX: number; maxY: number }

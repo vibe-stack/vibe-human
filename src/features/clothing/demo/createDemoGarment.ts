@@ -57,7 +57,7 @@ export function createDemoGarment(): GarmentDocument {
     'right-side': stitch('right-side', 'Right Side Seam', front, 'right-side', back, 'right-side'),
     'left-side': stitch('left-side', 'Left Side Seam', front, 'left-side', back, 'left-side'),
   }
-  return { id: uid(), name: 'T-Shirt Demo', patterns: { [front.id]: front, [back.id]: back }, seams, selectedPatternId: front.id }
+  return { id: uid(), name: 'T-Shirt Demo', patterns: { [front.id]: front, [back.id]: back }, seams, tacks: {}, selectedPatternId: front.id }
 }
 
 function stitch(

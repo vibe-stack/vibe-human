@@ -1,4 +1,5 @@
 import ClothingToolbar from './ClothingToolbar'
+import MeasurementOverlay from './MeasurementOverlay'
 import PatternCanvas from '../pixi/PatternCanvas'
 
 // ---------------------------------------------------------------------------
@@ -26,6 +27,7 @@ export default function ClothingPatternEditor2D({ hideToolbar }: { hideToolbar?:
         position: 'relative',
       }}>
         <PatternCanvas />
+        <MeasurementOverlay />
       </div>
     </div>
   )

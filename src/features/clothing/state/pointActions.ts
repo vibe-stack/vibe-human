@@ -151,3 +151,67 @@ export function convertEdgeToCurve(patternId: string, edgeId: string) {
   if (!pattern || !edge || edge.curve === 'cubic') return
   toggleEdgeCurve(patternId, edgeId)
 }
+
+/**
+ * Convert a corner point to smooth by auto-computing handles from the tangents
+ * of adjacent edges.  Double-clicking a corner point in edit-points mode calls
+ * this.  If the point is already smooth/symmetric, convert it back to corner.
+ */
+export function togglePointSmooth(patternId: string, pointId: string) {
+  const pattern = clothingStore.garment.patterns[patternId]
+  const pt = pattern?.points[pointId]
+  if (!pattern || !pt) return
+  pushHistory()
+
+  if (pt.kind !== 'corner') {
+    // Cycle corner → smooth → symmetric → corner
+    if (pt.kind === 'smooth') pt.kind = 'symmetric'
+    else if (pt.kind === 'symmetric') {
+      pt.kind = 'corner'
+      delete pt.in
+      delete pt.out
+    }
+    clothingStore.dirty.previewDirty = true
+    return
+  }
+
+  // Corner → smooth: compute handles from adjacent edge midpoints
+  const incoming = pattern.edges.find((e) => e.to === pointId)
+  const outgoing = pattern.edges.find((e) => e.from === pointId)
+  const prev = incoming ? pattern.points[incoming.from] : null
+  const next = outgoing ? pattern.points[outgoing.to] : null
+
+  const len = (dx: number, dy: number) => Math.hypot(dx, dy)
+
+  if (prev && next) {
+    // Catmull-Rom-style tangent: direction prev→next, scaled to 1/3 of edge lengths
+    const tx = next.x - prev.x
+    const ty = next.y - prev.y
+    const tLen = len(tx, ty)
+    if (tLen > 1e-6) {
+      const outDist = len(next.x - pt.x, next.y - pt.y) / 3
+      const inDist  = len(prev.x - pt.x, prev.y - pt.y) / 3
+      const ux = tx / tLen
+      const uy = ty / tLen
+      pt.out = { x:  ux * outDist, y:  uy * outDist }
+      pt.in  = { x: -ux * inDist,  y: -uy * inDist  }
+    }
+  } else if (next) {
+    const outDist = len(next.x - pt.x, next.y - pt.y) / 3
+    const tx = next.x - pt.x, ty = next.y - pt.y
+    const tLen = len(tx, ty)
+    if (tLen > 1e-6) pt.out = { x: tx / tLen * outDist, y: ty / tLen * outDist }
+  } else if (prev) {
+    const inDist = len(prev.x - pt.x, prev.y - pt.y) / 3
+    const tx = pt.x - prev.x, ty = pt.y - prev.y
+    const tLen = len(tx, ty)
+    if (tLen > 1e-6) pt.in = { x: tx / tLen * inDist, y: ty / tLen * inDist }
+  }
+
+  pt.kind = 'smooth'
+  // Make both adjacent edges cubic so the handles are visible
+  if (incoming) incoming.curve = 'cubic'
+  if (outgoing) outgoing.curve = 'cubic'
+  clothingStore.dirty.previewDirty = true
+  clothingStore.dirty.triangulationDirty = true
+}

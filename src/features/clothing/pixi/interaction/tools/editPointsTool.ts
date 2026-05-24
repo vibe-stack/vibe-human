@@ -8,6 +8,7 @@ import {
   selectPattern,
   selectPoint,
   toggleEdgeCurve,
+  togglePointSmooth,
 } from '../../../state/clothingActions'
 import { pickAt } from '../../PatternPicker'
 import type { PointerEvt, ToolCtx, ToolHandler } from '../types'
@@ -30,6 +31,11 @@ export const editPointsTool: ToolHandler = {
     if (pick.type === 'point') {
       selectPattern(pick.patternId)
       selectPoint(pick.pointId)
+      if ((e.detail ?? 1) >= 2) {
+        // double-click: cycle corner → smooth → symmetric → corner
+        togglePointSmooth(pick.patternId, pick.pointId)
+        return true
+      }
       pushHistory()
       drag = { kind: 'point', patternId: pick.patternId, pointId: pick.pointId }
       ctx.setPointerCapture(ctx.pointerId)

@@ -7,10 +7,18 @@ import {
   translatePieces,
 } from '../../../state/clothingActions'
 import { bboxOfPieces } from '../../../state/transformActions'
-import { pickAt } from '../../PatternPicker'
+import { pickAt, pickAllPatterns } from '../../PatternPicker'
 import type { Vec2, GizmoHandle } from '../../../state/clothingTypes'
 import type { PointerEvt, ToolCtx, ToolHandler } from '../types'
 import { bboxCenter, hitTestGizmo } from '../Gizmo'
+
+// ---------------------------------------------------------------------------
+// Cycle state — tracks repeated clicks on the same overlapping area so the
+// user can drill through stacked pieces (like MD's repeated-click behaviour).
+// ---------------------------------------------------------------------------
+
+const CYCLE_RADIUS_WORLD = 12 // world units — clicks within this radius continue the cycle
+let cycleState: { candidates: string[]; index: number; lastPt: Vec2 } | null = null
 
 type DragState =
   | { kind: 'translate'; last: Vec2 }
@@ -80,8 +88,32 @@ export const selectTool: ToolHandler = {
         if (cur.has(hitId)) cur.delete(hitId)
         else cur.add(hitId)
         setSelectedPatterns([...cur])
-      } else if (!clothingStore.selectedPatternIds.includes(hitId)) {
-        setSelectedPatterns([hitId])
+        cycleState = null
+      } else {
+        // Check if we should cycle through overlapping pieces
+        const nearLastCycle = cycleState && Math.hypot(
+          e.world.x - cycleState.lastPt.x,
+          e.world.y - cycleState.lastPt.y,
+        ) * e.zoom < CYCLE_RADIUS_WORLD
+
+        if (nearLastCycle && cycleState) {
+          // Advance to next candidate
+          cycleState.index = (cycleState.index + 1) % cycleState.candidates.length
+          const nextId = cycleState.candidates[cycleState.index]
+          setSelectedPatterns([nextId])
+          cycleState.lastPt = e.world
+        } else {
+          // Fresh click — build candidate list
+          const candidates = pickAllPatterns(clothingStore.garment, e.world)
+          if (candidates.length > 1) {
+            cycleState = { candidates, index: 0, lastPt: e.world }
+          } else {
+            cycleState = null
+          }
+          if (!clothingStore.selectedPatternIds.includes(hitId)) {
+            setSelectedPatterns([hitId])
+          }
+        }
       }
       // Begin drag of the (possibly multi) selection
       pushHistory()
@@ -91,6 +123,7 @@ export const selectTool: ToolHandler = {
     }
 
     // 3. Empty click -> marquee
+    cycleState = null
     if (!e.native.shiftKey) setSelectedPatterns([])
     drag = { kind: 'marquee', start: e.world }
     ctx.setPointerCapture(ctx.pointerId)

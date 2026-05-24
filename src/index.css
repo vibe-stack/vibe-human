@@ -20,6 +20,14 @@ body {
   -webkit-touch-callout: none;
 }
 
+/* Clothing toolbar — hide native scrollbar while keeping scroll functionality */
+.clothing-toolbar {
+  scrollbar-width: none; /* Firefox */
+}
+.clothing-toolbar::-webkit-scrollbar {
+  display: none; /* Chrome / Safari / Edge */
+}
+
 /* Range slider styling */
 .range-slider {
   -webkit-appearance: none;

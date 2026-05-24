@@ -99,6 +99,7 @@ const EMPTY_GARMENT: GarmentDocument = {
   name: 'Untitled',
   patterns: {},
   seams: {},
+  tacks: {},
 }
 
 export const clothingStore = proxy<ClothingState>({

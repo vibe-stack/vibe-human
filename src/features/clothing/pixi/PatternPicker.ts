@@ -142,3 +142,18 @@ function pointInVerts(pt: Vec2, verts: Vec2[]) {
   }
   return inside
 }
+
+// ---------------------------------------------------------------------------
+// pickAllPatterns — returns all pattern ids whose fill contains worldPt,
+// in reverse insertion order (topmost first).  Used for selection cycling.
+// ---------------------------------------------------------------------------
+
+export function pickAllPatterns(doc: GarmentDocument, worldPt: Vec2): string[] {
+  const orderedPieces = Object.values(doc.patterns).slice().reverse()
+  const hits: string[] = []
+  for (const piece of orderedPieces) {
+    if (!piece.closed) continue
+    if (pointInPattern(worldPt, piece)) hits.push(piece.id)
+  }
+  return hits
+}
