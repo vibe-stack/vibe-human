@@ -9,6 +9,7 @@ import type {
   MeshSurfaceColliderSnapshot,
   SphereProxy,
 } from '../types'
+import { bvhQueryPointRadius, bvhQuerySegment } from './triangleBVH'
 
 const CONTACT_RESULT = new Float32Array(6)
 const TRIANGLE_RESULT = new Float32Array(6)
@@ -191,6 +192,11 @@ function pushOutOfMeshCollider(
 ) {
   const target = collider.skin + collider.thickness
   if (target <= 0) return false
+
+  if (collider.bvh) {
+    return pushOutOfMeshColliderBVH(collider, target, prevX, prevY, prevZ, px, py, pz, out)
+  }
+
   const cellSize = collider.cellSize
   const invCellSize = 1 / cellSize
   const visitStamp = nextVisitStamp(collider)
@@ -326,6 +332,161 @@ function pushOutOfMeshCollider(
     }
   }
   return pushOutOfSweptMeshCollider(collider, target, prevX, prevY, prevZ, px, py, pz, out)
+}
+
+// BVH-accelerated equivalent of pushOutOfMeshCollider. Same narrow phase and
+// signed push-out as the grid path; only the broad phase differs. The BVH prunes
+// to a tight candidate set, so we test every candidate (no visit-order-dependent
+// centroid cull) and pick the true-closest triangle — at least as accurate as
+// the grid, and with far fewer tests.
+function pushOutOfMeshColliderBVH(
+  collider: MeshSurfaceColliderSnapshot,
+  target: number,
+  prevX: number,
+  prevY: number,
+  prevZ: number,
+  px: number,
+  py: number,
+  pz: number,
+  out: Float32Array,
+) {
+  const bvh = collider.bvh!
+  const triangleNormals = collider.triangleNormals
+  const vertices = collider.vertices
+  const indices = collider.indices
+
+  if (!isOutsideBounds(collider.bounds, target, px, py, pz)) {
+    const count = bvhQueryPointRadius(bvh, px, py, pz, target)
+    let bestDistSq = Infinity
+    let bestX = 0
+    let bestY = 0
+    let bestZ = 0
+    let bestNx = 0
+    let bestNy = 1
+    let bestNz = 0
+
+    const candidates = bvh.candidates
+    for (let c = 0; c < count; c += 1) {
+      const triangle = candidates[c]
+      const nx = triangleNormals[triangle * 3]
+      const ny = triangleNormals[triangle * 3 + 1]
+      const nz = triangleNormals[triangle * 3 + 2]
+      if (nx === 0 && ny === 0 && nz === 0) continue
+      const ia = indices[triangle * 3] * 3
+      const ib = indices[triangle * 3 + 1] * 3
+      const ic = indices[triangle * 3 + 2] * 3
+      closestPointTriangleRaw(
+        px, py, pz,
+        vertices[ia], vertices[ia + 1], vertices[ia + 2],
+        vertices[ib], vertices[ib + 1], vertices[ib + 2],
+        vertices[ic], vertices[ic + 1], vertices[ic + 2],
+        TRIANGLE_RESULT,
+      )
+      const deltaX = px - TRIANGLE_RESULT[0]
+      const deltaY = py - TRIANGLE_RESULT[1]
+      const deltaZ = pz - TRIANGLE_RESULT[2]
+      const distSq = deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ
+      if (distSq < bestDistSq) {
+        bestDistSq = distSq
+        bestX = TRIANGLE_RESULT[0]
+        bestY = TRIANGLE_RESULT[1]
+        bestZ = TRIANGLE_RESULT[2]
+        bestNx = nx
+        bestNy = ny
+        bestNz = nz
+      }
+    }
+
+    if (bestDistSq !== Infinity) {
+      const dx = px - bestX
+      const dy = py - bestY
+      const dz = pz - bestZ
+      const signed = dx * bestNx + dy * bestNy + dz * bestNz
+      const dist = Math.sqrt(bestDistSq)
+      if (signed < 0 || dist < target) {
+        let nx: number
+        let ny: number
+        let nz: number
+        let correction: number
+        if (signed >= 0) {
+          if (dist > 1e-6) {
+            const inv = 1 / dist
+            nx = dx * inv
+            ny = dy * inv
+            nz = dz * inv
+          } else {
+            nx = bestNx
+            ny = bestNy
+            nz = bestNz
+          }
+          correction = target - dist
+        } else {
+          nx = bestNx
+          ny = bestNy
+          nz = bestNz
+          correction = target + dist
+        }
+        out[0] = px + nx * correction
+        out[1] = py + ny * correction
+        out[2] = pz + nz * correction
+        out[3] = nx
+        out[4] = ny
+        out[5] = nz
+        return true
+      }
+    }
+  }
+
+  return pushOutOfSweptMeshColliderBVH(collider, target, prevX, prevY, prevZ, px, py, pz, out)
+}
+
+// BVH-accelerated swept (anti-tunneling) path. Mirrors pushOutOfSweptMeshCollider
+// but pulls candidates from the BVH segment query instead of the cell box.
+function pushOutOfSweptMeshColliderBVH(
+  collider: MeshSurfaceColliderSnapshot,
+  target: number,
+  startX: number,
+  startY: number,
+  startZ: number,
+  endX: number,
+  endY: number,
+  endZ: number,
+  out: Float32Array,
+) {
+  if (segmentOutsideBounds(collider.bounds, target, startX, startY, startZ, endX, endY, endZ)) return false
+  const bvh = collider.bvh!
+  const count = bvhQuerySegment(bvh, startX, startY, startZ, endX, endY, endZ, target)
+  const candidates = bvh.candidates
+  let bestT = Infinity
+  let bestX = 0
+  let bestY = 0
+  let bestZ = 0
+  let bestNx = 0
+  let bestNy = 1
+  let bestNz = 0
+
+  for (let c = 0; c < count; c += 1) {
+    const triangle = candidates[c]
+    if (!segmentIntersectsTriangle(collider, triangle, startX, startY, startZ, endX, endY, endZ, target, SWEEP_RESULT)) continue
+    const t = SWEEP_RESULT[0]
+    if (t >= bestT) continue
+    bestT = t
+    bestX = SWEEP_RESULT[1]
+    bestY = SWEEP_RESULT[2]
+    bestZ = SWEEP_RESULT[3]
+    bestNx = SWEEP_RESULT[4]
+    bestNy = SWEEP_RESULT[5]
+    bestNz = SWEEP_RESULT[6]
+  }
+
+  if (bestT === Infinity) return false
+  out[0] = bestX + bestNx * target
+  out[1] = bestY + bestNy * target
+  out[2] = bestZ + bestNz * target
+  out[3] = bestNx
+  out[4] = bestNy
+  out[5] = bestNz
+  return true
 }
 
 function pushOutOfSweptMeshCollider(

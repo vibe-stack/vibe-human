@@ -6,6 +6,7 @@ import type {
   CollisionRegion,
   MeshSurfaceColliderSnapshot,
 } from '../simulation/types'
+import { buildTriangleBVH, refitTriangleBVH, type TriangleBVH } from '../simulation/collision/triangleBVH'
 
 type Listener = () => void
 type RegionSamples = Record<CollisionRegion, THREE.Vector3[]>
@@ -52,6 +53,7 @@ export type AvatarMeshColliderTopology = {
   optionsKey: string
   lastPoseHash: number
   lastSnapshot: MeshSurfaceColliderSnapshot | null
+  bvh: TriangleBVH | null
 }
 
 export type AvatarMeshColliderRebuild = {
@@ -384,6 +386,15 @@ export function rebuildAvatarMeshCollider(
     topology.triangleVisitMarks,
   )
 
+  // BVH broad-phase: build once for a topology, then refit (O(nodes)) each frame
+  // from the freshly re-skinned vertices. The grid is still built above as a
+  // fallback for any consumer that hasn't migrated to the BVH path.
+  if (!topology.bvh) {
+    topology.bvh = buildTriangleBVH(topology.vertices, topology.indices)
+  } else {
+    refitTriangleBVH(topology.bvh, topology.vertices)
+  }
+
   const snapshot: MeshSurfaceColliderSnapshot = {
     kind: 'mesh',
     id: options.id ?? 'avatar.mesh',
@@ -404,6 +415,7 @@ export function rebuildAvatarMeshCollider(
     skin: options.skinOffset ?? 0.022,
     thickness: options.garmentThickness ?? 0.008,
     friction: 0.74,
+    bvh: topology.bvh,
   }
   topology.cellSize = hash.cellSize
   topology.lastPoseHash = poseHash
@@ -489,6 +501,7 @@ function extractMeshColliderTopology(
     optionsKey,
     lastPoseHash: 0,
     lastSnapshot: null,
+    bvh: null,
   }
 }
 

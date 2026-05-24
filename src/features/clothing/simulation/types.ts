@@ -1,4 +1,5 @@
 import type { PatternDocument, PatternPlacement } from '../document/types'
+import type { TriangleBVH } from './collision/triangleBVH'
 
 export type ClothConstraintKind = 'stretch' | 'shear' | 'bend' | 'seam' | 'pin'
 
@@ -215,6 +216,10 @@ export type MeshSurfaceColliderSnapshot = {
   skin: number
   thickness: number
   friction: number
+  // Optional BVH broad-phase. When present, the collision solver uses it instead
+  // of the cell grid: tighter pruning, far fewer narrow-phase tests per particle.
+  // Refit (not rebuilt) each frame from the re-skinned vertices.
+  bvh?: TriangleBVH
 } & TriangleColliderAcceleration
 
 export type ColliderSnapshot = {
