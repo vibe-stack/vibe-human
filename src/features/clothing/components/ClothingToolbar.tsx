@@ -2,6 +2,8 @@ import {
   ChartSpline,
   Circle as CircleIcon,
   Copy,
+  FlipHorizontal2,
+  FlipVertical2,
   GitMerge,
   Hand,
   Hexagon,
@@ -26,6 +28,7 @@ import { clothingStore } from '../state/clothingStore'
 import {
   deletePieces,
   duplicatePieces,
+  mirrorPieces,
   redo,
   resetPatternTransforms,
   resetSim,
@@ -143,6 +146,20 @@ export default function ClothingToolbar() {
           title="Subtract topmost from rest (⌘−). Select 2+ pieces; the last selected becomes the cutter."
         >
           <Scissors size={14} />
+        </IconButton>
+        <IconButton
+          onClick={() => mirrorPieces([...clothingStore.selectedPatternIds], 'horizontal')}
+          disabled={!hasSelection}
+          title="Mirror horizontally (flip left↔right)"
+        >
+          <FlipHorizontal2 size={14} />
+        </IconButton>
+        <IconButton
+          onClick={() => mirrorPieces([...clothingStore.selectedPatternIds], 'vertical')}
+          disabled={!hasSelection}
+          title="Mirror vertically (flip top↔bottom)"
+        >
+          <FlipVertical2 size={14} />
         </IconButton>
         {hasEdgeSelected && (
           <IconButton

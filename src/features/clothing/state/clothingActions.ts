@@ -480,3 +480,47 @@ export function setRectanglePatternBounds(patternId: string, a: { x: number; y: 
   // handled by the draft system. The original use-case (live rubber-band
   // rectangle while drawing) is now drawn as a preview, not a committed piece.
 }
+
+// ---------------------------------------------------------------------------
+// Garment file export / import
+// ---------------------------------------------------------------------------
+
+type GarmentFile = {
+  version: 1
+  garment: GarmentDocument
+  placements: Record<string, PatternPlacement>
+}
+
+export function exportGarment() {
+  const { garment, placements } = clothingStore
+  const file: GarmentFile = {
+    version: 1,
+    garment: JSON.parse(JSON.stringify(garment)) as GarmentDocument,
+    placements: JSON.parse(JSON.stringify(placements)) as Record<string, PatternPlacement>,
+  }
+  const blob = new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${garment.name.replace(/\s+/g, '_') || 'garment'}.json`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+export function importGarment(file: GarmentFile) {
+  if (file.version !== 1) throw new Error(`Unknown garment file version: ${file.version}`)
+  clothingStore.garment = file.garment
+  clothingStore.placements = file.placements ?? {}
+  clothingStore.viewport2D.zoom = 1.35
+  clothingStore.viewport2D.panX = 0
+  clothingStore.viewport2D.panY = 0
+  clothingStore.viewport2D.hoveredEntityId = null
+  clothingStore.viewport2D.hoveredEntityType = null
+  clothingStore.history.past.length = 0
+  clothingStore.history.future.length = 0
+  clothingStore.selectedPatternIds = file.garment.selectedPatternId ? [file.garment.selectedPatternId] : []
+  clothingStore.dirty.previewDirty = true
+  clothingStore.dirty.triangulationDirty = true
+  clothingStore.simResetKey += 1
+  clothingStore.simRunning = false
+}

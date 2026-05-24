@@ -1,5 +1,6 @@
 import { clothingStore } from '../../../state/clothingStore'
 import {
+  ensurePointSmoothForDrag,
   insertPointOnEdge,
   moveHandleRaw,
   movePointRaw,
@@ -34,6 +35,15 @@ export const editPointsTool: ToolHandler = {
       if ((e.detail ?? 1) >= 2) {
         // double-click: cycle corner → smooth → symmetric → corner
         togglePointSmooth(pick.patternId, pick.pointId)
+        return true
+      }
+      if (e.native.ctrlKey) {
+        // ctrl+drag: pull out bezier handles (convert corner to smooth if needed,
+        // then drag the 'out' handle so the user sculpts the curve directly)
+        pushHistory()
+        ensurePointSmoothForDrag(pick.patternId, pick.pointId)
+        drag = { kind: 'handle', patternId: pick.patternId, pointId: pick.pointId, handle: 'out' }
+        ctx.setPointerCapture(ctx.pointerId)
         return true
       }
       pushHistory()

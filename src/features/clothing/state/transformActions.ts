@@ -125,6 +125,36 @@ export function scalePieces(ids: string[], pivot: Vec2, sx: number, sy: number) 
 }
 
 // ---------------------------------------------------------------------------
+// Mirror around bounding-box centre
+// ---------------------------------------------------------------------------
+
+export function mirrorPieces(ids: string[], axis: 'horizontal' | 'vertical') {
+  if (ids.length === 0) return
+  const bbox = bboxOfPieces(ids)
+  if (!bbox) return
+  pushHistory()
+  const cx = (bbox.minX + bbox.maxX) / 2
+  const cy = (bbox.minY + bbox.maxY) / 2
+  for (const id of ids) {
+    const piece = clothingStore.garment.patterns[id]
+    if (!piece) continue
+    for (const p of Object.values(piece.points)) {
+      if (axis === 'horizontal') {
+        p.x = 2 * cx - p.x
+        if (p.in)  { p.in.x  = -p.in.x  }
+        if (p.out) { p.out.x = -p.out.x }
+      } else {
+        p.y = 2 * cy - p.y
+        if (p.in)  { p.in.y  = -p.in.y  }
+        if (p.out) { p.out.y = -p.out.y }
+      }
+    }
+  }
+  clothingStore.dirty.previewDirty = true
+  clothingStore.dirty.triangulationDirty = true
+}
+
+// ---------------------------------------------------------------------------
 // Wrappers that push history *before* mutating — for one-shot ops
 // (keyboard nudges, programmatic transforms). Drag operations should call
 // pushHistory() once at drag-start and the raw helpers above.

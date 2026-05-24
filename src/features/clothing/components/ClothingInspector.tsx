@@ -1,6 +1,9 @@
+import { useRef } from 'react'
 import { useSnapshot } from 'valtio'
 import { clothingStore } from '../state/clothingStore'
 import {
+  exportGarment,
+  importGarment,
   requestCollisionAvatarBuild,
   resetSim,
   setAvatarCollisionMode,
@@ -275,11 +278,12 @@ export default function ClothingInspector() {
         <Row label="Low-res Patches" value="0" />
       </Section>
 
-      {/* Document info */}
+      {/* Document info + save/load */}
       <Section label="DOCUMENT">
         <Row label="Name"     value={garment.name} />
         <Row label="Patterns" value={String(Object.keys(garment.patterns).length)} />
         <Row label="Seams"    value={String(Object.keys(garment.seams).length)} />
+        <GarmentFileButtons />
       </Section>
     </div>
   )
@@ -499,4 +503,40 @@ function formatSliderValue(value: number, step: number) {
   if (step >= 0.01) return value.toFixed(2)
   if (step >= 0.001) return value.toFixed(3)
   return value.toFixed(4)
+}
+
+function GarmentFileButtons() {
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  function handleImport(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      try {
+        const parsed = JSON.parse(e.target?.result as string)
+        importGarment(parsed)
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('[clothing] Failed to import garment:', err)
+      }
+    }
+    reader.readAsText(file)
+    // Reset so the same file can be re-imported
+    event.target.value = ''
+  }
+
+  return (
+    <ButtonRow>
+      <SmallButton label="EXPORT" onClick={exportGarment} />
+      <SmallButton label="IMPORT" onClick={() => fileInputRef.current?.click()} />
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".json,application/json"
+        style={{ display: 'none' }}
+        onChange={handleImport}
+      />
+    </ButtonRow>
+  )
 }

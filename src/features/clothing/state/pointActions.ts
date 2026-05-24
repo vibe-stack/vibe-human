@@ -157,6 +157,59 @@ export function convertEdgeToCurve(patternId: string, edgeId: string) {
  * of adjacent edges.  Double-clicking a corner point in edit-points mode calls
  * this.  If the point is already smooth/symmetric, convert it back to corner.
  */
+/**
+ * Make a point smooth and ensure adjacent edges are cubic, WITHOUT pushing
+ * history.  Used by Ctrl+drag in the edit-points tool so the handle pull-out
+ * and the conversion share a single undo step.
+ * Safe to call on an already-smooth/symmetric point (no-op in that case).
+ */
+export function ensurePointSmoothForDrag(patternId: string, pointId: string) {
+  const pattern = clothingStore.garment.patterns[patternId]
+  const pt = pattern?.points[pointId]
+  if (!pattern || !pt) return
+  if (pt.kind !== 'corner') return // already has handles
+
+  const incoming = pattern.edges.find((e) => e.to === pointId)
+  const outgoing = pattern.edges.find((e) => e.from === pointId)
+  const prev = incoming ? pattern.points[incoming.from] : null
+  const next = outgoing ? pattern.points[outgoing.to] : null
+
+  const len = (dx: number, dy: number) => Math.hypot(dx, dy)
+
+  if (prev && next) {
+    const tx = next.x - prev.x
+    const ty = next.y - prev.y
+    const tLen = len(tx, ty)
+    if (tLen > 1e-6) {
+      const outDist = len(next.x - pt.x, next.y - pt.y) / 3
+      const inDist  = len(prev.x - pt.x, prev.y - pt.y) / 3
+      const ux = tx / tLen
+      const uy = ty / tLen
+      pt.out = { x:  ux * outDist, y:  uy * outDist }
+      pt.in  = { x: -ux * inDist,  y: -uy * inDist  }
+    }
+  } else if (next) {
+    const outDist = len(next.x - pt.x, next.y - pt.y) / 3
+    const tx = next.x - pt.x, ty = next.y - pt.y
+    const tLen = len(tx, ty)
+    if (tLen > 1e-6) pt.out = { x: tx / tLen * outDist, y: ty / tLen * outDist }
+  } else if (prev) {
+    const inDist = len(prev.x - pt.x, prev.y - pt.y) / 3
+    const tx = pt.x - prev.x, ty = pt.y - prev.y
+    const tLen = len(tx, ty)
+    if (tLen > 1e-6) pt.in = { x: tx / tLen * inDist, y: ty / tLen * inDist }
+  }
+
+  // Fallback: zero handles so the drag creates them from scratch
+  pt.out = pt.out ?? { x: 0, y: 0 }
+  pt.in  = pt.in  ?? { x: 0, y: 0 }
+  pt.kind = 'smooth'
+  if (incoming) incoming.curve = 'cubic'
+  if (outgoing) outgoing.curve = 'cubic'
+  clothingStore.dirty.previewDirty = true
+  clothingStore.dirty.triangulationDirty = true
+}
+
 export function togglePointSmooth(patternId: string, pointId: string) {
   const pattern = clothingStore.garment.patterns[patternId]
   const pt = pattern?.points[pointId]
