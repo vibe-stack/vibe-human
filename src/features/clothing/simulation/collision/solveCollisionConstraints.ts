@@ -325,7 +325,6 @@ function pushOutOfMeshCollider(
       }
     }
   }
-
   return pushOutOfSweptMeshCollider(collider, target, prevX, prevY, prevZ, px, py, pz, out)
 }
 
@@ -723,8 +722,12 @@ function clamp01(value: number) {
   return value < 0 ? 0 : value > 1 ? 1 : value
 }
 
-function colliderSearchRadius(target: number, cellSize: number) {
-  return Math.min(MAX_COLLIDER_SEARCH_RADIUS, Math.max(1, Math.ceil(target / cellSize) + 1))
+export function colliderSearchRadius(target: number, cellSize: number) {
+  // Triangles are hashed into every cell their AABB overlaps, so a particle only
+  // needs to scan cells within ceil(target/cellSize) of its own cell to see any
+  // triangle within `target`. The previous +1 pad doubled the scanned volume for
+  // no coverage benefit.
+  return Math.min(MAX_COLLIDER_SEARCH_RADIUS, Math.max(1, Math.ceil(target / cellSize)))
 }
 
 function nextVisitStamp(collider: TriangleColliderSurface) {
