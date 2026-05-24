@@ -22,7 +22,6 @@ export function buildSeamConstraints(
     if (!resolved) continue
     const pointsA = resolved.pointsA
     const pointsB = resolved.pointsB
-    console.debug(`[SeamResolver] ${seam.id} orientation=${resolved.reversedB ? 'reversed' : 'forward'} forward=${resolved.forwardCost.toFixed(4)} reversed=${resolved.reversedCost.toFixed(4)}`)
     const edgeParticlesA = orderedEdgeParticles(panelA, meshA, pointsA)
     const edgeParticlesB = orderedEdgeParticles(panelB, meshB, pointsB)
     const count = Math.max(edgeParticlesA.length, edgeParticlesB.length)
@@ -40,11 +39,16 @@ export function buildSeamConstraints(
         if (particleA < 0 || particleB < 0 || particleA === particleB) continue
         const key = particleA < particleB ? `${particleA}:${particleB}` : `${particleB}:${particleA}`
         if (seen.has(key)) continue
+        const rest = particleDistance(meshA, particleA, meshB, particleB)
+        // Conforming meshes place real particles on the outline, so two paired
+        // edge particles can already be coincident (shared corner). They need no
+        // seam constraint — skip degenerate near-zero pairs.
+        if (rest <= 1e-6) continue
         seen.add(key)
         constraints.push({
           a: particleA,
           b: particleB,
-          rest: particleDistance(meshA, particleA, meshB, particleB),
+          rest,
           targetRest: 0,
           compliance: 0.00002 + (1 - seam.strength) * 0.0003,
           kind: 'seam',
@@ -62,11 +66,13 @@ export function buildSeamConstraints(
       if (particleA < 0 || particleB < 0 || particleA === particleB) continue
       const key = particleA < particleB ? `${particleA}:${particleB}` : `${particleB}:${particleA}`
       if (seen.has(key)) continue
+      const rest = particleDistance(meshA, particleA, meshB, particleB)
+      if (rest <= 1e-6) continue
       seen.add(key)
       constraints.push({
         a: particleA,
         b: particleB,
-        rest: particleDistance(meshA, particleA, meshB, particleB),
+        rest,
         targetRest: 0,
         compliance: 0.00002 + (1 - seam.strength) * 0.0003,
         kind: 'seam',

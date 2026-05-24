@@ -1,4 +1,5 @@
 import { evaluateEdgeAt, sampleEdgeLoop, samplePatternOutline } from '../geometry/patternSampling'
+import { triangulatePanel, pointInPolygon } from '../geometry/triangulate'
 import type { PatternPanel, Vec2 } from '../document/types'
 import type { CompilerOptions } from './types'
 import type {
@@ -45,24 +46,34 @@ export function buildPanelSimMesh(
 ): CompiledPanelSimMesh {
   const preset = QUALITY_PRESETS[options.quality]
   const stretchCompliance = panel.stretchCompliance ?? preset.stretchCompliance
-  const shearCompliance = panel.shearCompliance ?? preset.shearCompliance
   const bendCompliance = panel.bendCompliance ?? preset.bendCompliance
   const bounds = boundsOf(panel)
-  const worldWidth = bounds.width * PATTERN_UNIT_SCALE
-  const worldHeight = bounds.height * PATTERN_UNIT_SCALE
-  const cols = clampInt(
-    Math.round(Math.max(worldWidth, 0.08) / preset.spacing) + 1,
-    preset.minDim,
-    preset.maxDim,
-  )
-  const rows = clampInt(
-    Math.round(Math.max(worldHeight, 0.08) / preset.spacing) + 1,
-    preset.minDim,
-    preset.maxDim,
-  )
 
-  const active = buildActiveMask(cols, rows, panel, bounds)
-  const gridToParticle = new Int32Array(cols * rows).fill(-1)
+  // Target particle spacing in pattern (mm) space, derived from the quality
+  // preset's world-space spacing.
+  const spacingPattern = preset.spacing / PATTERN_UNIT_SCALE
+  // Clamp how many particles span the panel so tiny/huge panels stay sane.
+  const spanForDim = (length: number, minDim: number, maxDim: number) => {
+    const cells = clampInt(Math.round(length / spacingPattern), Math.max(1, minDim - 1), maxDim - 1)
+    return Math.max(1e-3, length / cells)
+  }
+  const stepX = spanForDim(bounds.width, preset.minDim, preset.maxDim)
+  const stepY = spanForDim(bounds.height, preset.minDim, preset.maxDim)
+  const step = Math.min(stepX, stepY)
+
+  // --- Build the conforming point set -------------------------------------
+  // Boundary samples become real mesh vertices ON the outline, so diagonal and
+  // curved edges are followed exactly (no staircase) and seams can bind to true
+  // edge particles. Interior Steiner points fill the panel on a regular lattice.
+  const outline = resamplePolyline(samplePatternOutline(panel, 12), step)
+  const holeLoops = (panel.holes ?? [])
+    .map((hole) => resamplePolyline(sampleEdgeLoop(panel, hole, 12), step))
+    .filter((hole) => hole.length >= 3)
+  const interior = buildInteriorPoints(bounds, step, outline, holeLoops)
+
+  const mesh = triangulatePanel(outline, interior, holeLoops)
+
+  // --- Emit particles -----------------------------------------------------
   const positions: number[] = []
   const invMass: number[] = []
   const panelIds: string[] = []
@@ -71,70 +82,90 @@ export function buildPanelSimMesh(
   const seamSamplePoints: Array<{ particle: number; x: number; y: number }> = []
   const particleIndices: number[] = []
 
-  for (let row = 0; row < rows; row += 1) {
-    for (let col = 0; col < cols; col += 1) {
-      const gridIndex = row * cols + col
-      if (!active[gridIndex]) continue
-      const u = col / (cols - 1)
-      const v = row / (rows - 1)
-      const localX = (u - 0.5) * worldWidth
-      const localY = (0.5 - v) * worldHeight
-      const world = applyPlacement(localX, localY, 0, panel.placement)
-      const particle = particleOffset + particleIndices.length
-      gridToParticle[gridIndex] = particle
-      particleIndices.push(particle)
-      positions.push(world.x, world.y, world.z)
-      invMass.push(1 / 0.018)
-      panelIds.push(panel.id)
-      panelUvs.push(u, v)
-      panelLocalPositions.push(bounds.minX + u * bounds.width, bounds.minY + v * bounds.height)
-      seamSamplePoints.push({ particle, x: bounds.minX + u * bounds.width, y: bounds.minY + v * bounds.height })
-    }
+  for (let i = 0; i < mesh.points.length; i += 1) {
+    const p = mesh.points[i]
+    const u = (p.x - bounds.minX) / bounds.width
+    const v = (p.y - bounds.minY) / bounds.height
+    const localX = (u - 0.5) * bounds.width * PATTERN_UNIT_SCALE
+    const localY = (0.5 - v) * bounds.height * PATTERN_UNIT_SCALE
+    const world = applyPlacement(localX, localY, 0, panel.placement)
+    const particle = particleOffset + particleIndices.length
+    particleIndices.push(particle)
+    positions.push(world.x, world.y, world.z)
+    invMass.push(1 / 0.018)
+    panelIds.push(panel.id)
+    panelUvs.push(u, v)
+    panelLocalPositions.push(p.x, p.y)
+    seamSamplePoints.push({ particle, x: p.x, y: p.y })
   }
 
+  // --- Derive constraints from triangulation edges ------------------------
+  // Distance constraints over unique triangle edges resist stretch *and* shear
+  // (an irregular triangle mesh has no separate diagonal set, so all live in
+  // stretchConstraints). For bending we add a distance constraint between the
+  // two apex vertices of each pair of triangles sharing an edge, at their rest
+  // separation — as the fabric folds across that edge, the apexes move apart/
+  // together, so holding their distance resists the fold. These go in
+  // shearConstraints (also distance-solved) tagged with bend compliance; the
+  // grid-style midpoint bend solver doesn't fit an irregular mesh.
   const stretchConstraints: DistanceConstraint[] = []
   const shearConstraints: DistanceConstraint[] = []
   const bendConstraints: BendConstraint[] = []
-  const triangles: number[] = []
-  const spacingX = worldWidth / Math.max(1, cols - 1)
-  const spacingY = worldHeight / Math.max(1, rows - 1)
-  const diag = Math.hypot(spacingX, spacingY)
-  const idx = (col: number, row: number) => row * cols + col
-  const map = (col: number, row: number) => gridToParticle[idx(col, row)]
-  const has = (col: number, row: number) =>
-    col >= 0 && col < cols && row >= 0 && row < rows && gridToParticle[idx(col, row)] >= 0
+  const triangleIndices: number[] = []
 
-  for (let row = 0; row < rows; row += 1) {
-    for (let col = 0; col < cols; col += 1) {
-      const a = map(col, row)
-      if (a < 0) continue
+  const localToGlobal = (local: number) => particleIndices[local]
+  const restOfLocal = (la: number, lb: number) =>
+    Math.hypot(
+      positions[lb * 3] - positions[la * 3],
+      positions[lb * 3 + 1] - positions[la * 3 + 1],
+      positions[lb * 3 + 2] - positions[la * 3 + 2],
+    )
 
-      if (has(col + 1, row)) {
-        stretchConstraints.push({ a, b: map(col + 1, row), rest: spacingX, compliance: stretchCompliance, kind: 'stretch' })
-      }
-      if (has(col, row + 1)) {
-        stretchConstraints.push({ a, b: map(col, row + 1), rest: spacingY, compliance: stretchCompliance, kind: 'stretch' })
-      }
-      if (has(col + 1, row + 1)) {
-        shearConstraints.push({ a, b: map(col + 1, row + 1), rest: diag, compliance: shearCompliance, kind: 'shear' })
-      }
-      if (has(col + 1, row - 1)) {
-        shearConstraints.push({ a, b: map(col + 1, row - 1), rest: diag, compliance: shearCompliance, kind: 'shear' })
-      }
-      if (has(col - 1, row) && has(col + 1, row)) {
-        bendConstraints.push({ a: map(col - 1, row), b: a, c: map(col + 1, row), rest: 0, compliance: bendCompliance, kind: 'bend' })
-      }
-      if (has(col, row - 1) && has(col, row + 1)) {
-        bendConstraints.push({ a: map(col, row - 1), b: a, c: map(col, row + 1), rest: 0, compliance: bendCompliance, kind: 'bend' })
-      }
+  const edgeSeen = new Set<string>()
+  // Map each undirected edge -> apex vertices of triangles touching it.
+  const edgeApexes = new Map<string, number[]>()
+  const edgeKey = (a: number, b: number) => (a < b ? `${a}:${b}` : `${b}:${a}`)
 
-      if (has(col + 1, row) && has(col, row + 1) && has(col + 1, row + 1)) {
-        const b = map(col + 1, row)
-        const c = map(col, row + 1)
-        const d = map(col + 1, row + 1)
-        triangles.push(a, b, c, b, d, c)
+  for (let t = 0; t < mesh.triangles.length; t += 3) {
+    const a = mesh.triangles[t]
+    const b = mesh.triangles[t + 1]
+    const c = mesh.triangles[t + 2]
+    triangleIndices.push(localToGlobal(a), localToGlobal(b), localToGlobal(c))
+
+    const edges: Array<[number, number, number]> = [
+      [a, b, c], // edge (a,b), apex c
+      [b, c, a], // edge (b,c), apex a
+      [c, a, b], // edge (c,a), apex b
+    ]
+    for (const [e0, e1, apex] of edges) {
+      const key = edgeKey(e0, e1)
+      if (!edgeSeen.has(key)) {
+        edgeSeen.add(key)
+        stretchConstraints.push({
+          a: localToGlobal(e0),
+          b: localToGlobal(e1),
+          rest: restOfLocal(e0, e1),
+          compliance: stretchCompliance,
+          kind: 'stretch',
+        })
       }
+      const apexes = edgeApexes.get(key)
+      if (apexes) apexes.push(apex)
+      else edgeApexes.set(key, [apex])
     }
+  }
+
+  for (const apexes of edgeApexes.values()) {
+    if (apexes.length < 2) continue // boundary edge: no opposing triangle
+    const a = apexes[0]
+    const c = apexes[1]
+    shearConstraints.push({
+      a: localToGlobal(a),
+      b: localToGlobal(c),
+      rest: restOfLocal(a, c),
+      compliance: bendCompliance,
+      kind: 'shear',
+    })
   }
 
   const pinConstraints = buildPinConstraints(panel, seamSamplePoints)
@@ -144,7 +175,7 @@ export function buildPanelSimMesh(
       panelId: panel.id,
       placement: panel.placement,
       particleIndices,
-      triangleIndices: new Uint32Array(triangles),
+      triangleIndices: new Uint32Array(triangleIndices),
     },
     positions,
     invMass,
@@ -182,60 +213,87 @@ function buildPinConstraints(
   return pins
 }
 
-function buildActiveMask(
-  cols: number,
-  rows: number,
-  panel: PatternPanel,
+/**
+ * Resample a closed polyline to a roughly uniform vertex spacing (in pattern
+ * mm). Keeps corners reasonably and guarantees no two boundary vertices are far
+ * apart, so the triangulated edge stays smooth without exploding vertex count.
+ */
+function resamplePolyline(loop: Vec2[], step: number): Vec2[] {
+  if (loop.length < 2) return loop
+  // Build the closed perimeter as segments.
+  const pts = [...loop, loop[0]]
+  let total = 0
+  const segLen: number[] = []
+  for (let i = 0; i < pts.length - 1; i += 1) {
+    const len = Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y)
+    segLen.push(len)
+    total += len
+  }
+  if (total <= 1e-6) return loop
+  const count = Math.max(3, Math.round(total / step))
+  const spacing = total / count
+  const out: Vec2[] = []
+  let seg = 0
+  let segStart = 0
+  for (let i = 0; i < count; i += 1) {
+    const target = i * spacing
+    while (seg < segLen.length - 1 && segStart + segLen[seg] < target) {
+      segStart += segLen[seg]
+      seg += 1
+    }
+    const t = segLen[seg] > 1e-9 ? (target - segStart) / segLen[seg] : 0
+    out.push({
+      x: pts[seg].x + (pts[seg + 1].x - pts[seg].x) * t,
+      y: pts[seg].y + (pts[seg + 1].y - pts[seg].y) * t,
+    })
+  }
+  return out
+}
+
+/**
+ * Regular lattice of interior Steiner points, kept a half-step away from the
+ * boundary (and holes) so the triangulation doesn't produce slivers hugging the
+ * edge. Boundary smoothness comes from the resampled outline; these just fill
+ * the inside so the cloth has body.
+ */
+function buildInteriorPoints(
   bounds: { minX: number; minY: number; width: number; height: number },
-) {
-  const outer = samplePatternOutline(panel, 12)
-  const holes = (panel.holes ?? []).map((hole) => sampleEdgeLoop(panel, hole, 12)).filter((hole) => hole.length >= 3)
-  const active = new Array<boolean>(cols * rows).fill(true)
-  for (let row = 0; row < rows; row += 1) {
-    for (let col = 0; col < cols; col += 1) {
-      const px = bounds.minX + (col / Math.max(1, cols - 1)) * bounds.width
-      const py = bounds.minY + (row / Math.max(1, rows - 1)) * bounds.height
-      active[row * cols + col] = pointInPanel({ x: px, y: py }, outer, holes)
+  step: number,
+  outline: Vec2[],
+  holes: Vec2[][],
+): Vec2[] {
+  const margin = step * 0.5
+  const out: Vec2[] = []
+  for (let y = bounds.minY + margin; y < bounds.minY + bounds.height - margin * 0.5; y += step) {
+    for (let x = bounds.minX + margin; x < bounds.minX + bounds.width - margin * 0.5; x += step) {
+      if (!pointInPolygon(x, y, outline)) continue
+      if (distanceToPolyline(x, y, outline) < margin) continue
+      let nearHole = false
+      for (const hole of holes) {
+        if (pointInPolygon(x, y, hole) || distanceToPolyline(x, y, hole) < margin) { nearHole = true; break }
+      }
+      if (nearHole) continue
+      out.push({ x, y })
     }
   }
-  return active
+  return out
 }
 
-function pointInPanel(pt: Vec2, outer: Vec2[], holes: Vec2[][]) {
-  const outerClass = classifyPointInPolygon(pt, outer)
-  if (outerClass === 'outside') return false
-  for (const hole of holes) {
-    if (classifyPointInPolygon(pt, hole) === 'inside') return false
+function distanceToPolyline(x: number, y: number, loop: Vec2[]): number {
+  let best = Infinity
+  for (let i = 0; i < loop.length; i += 1) {
+    const a = loop[i]
+    const b = loop[(i + 1) % loop.length]
+    const abx = b.x - a.x
+    const aby = b.y - a.y
+    const lenSq = abx * abx + aby * aby
+    const t = lenSq <= 1e-9 ? 0 : Math.max(0, Math.min(1, ((x - a.x) * abx + (y - a.y) * aby) / lenSq))
+    const dx = x - (a.x + abx * t)
+    const dy = y - (a.y + aby * t)
+    const dist = Math.hypot(dx, dy)
+    if (dist < best) best = dist
   }
-  return true
-}
-
-function classifyPointInPolygon(point: Vec2, polygon: Vec2[]): 'inside' | 'boundary' | 'outside' {
-  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-    if (pointOnSegment(point, polygon[j], polygon[i])) return 'boundary'
-  }
-  let inside = false
-  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-    const a = polygon[i]
-    const b = polygon[j]
-    const intersect = (a.y > point.y) !== (b.y > point.y)
-      && point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y) + a.x
-    if (intersect) inside = !inside
-  }
-  return inside ? 'inside' : 'outside'
-}
-
-function pointOnSegment(point: Vec2, a: Vec2, b: Vec2) {
-  const abx = b.x - a.x
-  const aby = b.y - a.y
-  const apx = point.x - a.x
-  const apy = point.y - a.y
-  const cross = abx * apy - aby * apx
-  if (Math.abs(cross) > 1e-6) return false
-  const dot = apx * abx + apy * aby
-  if (dot < -1e-6) return false
-  const lenSq = abx * abx + aby * aby
-  return dot - lenSq <= 1e-6
+  return best
 }
 
 function boundsOf(panel: PatternPanel) {

@@ -12,6 +12,7 @@ import type {
   CollisionRegion,
   GarmentRuntime,
   MeshSurfaceColliderSnapshot,
+  RenderPanelRuntime,
   SolverParams,
 } from '../simulation/types'
 import {
@@ -41,7 +42,13 @@ const SOLVER_PRESETS: Record<CompileQuality, SolverParams> = {
 
 type RenderPanelEntry = {
   panelId: string
+  panel: RenderPanelRuntime
   geometry: THREE.BufferGeometry
+  positionArray: Float32Array
+  normalArray: Float32Array
+  smoothScratch: Float32Array
+  vertexCount: number
+  indices: Uint32Array
   neighborOffsets: Uint32Array
   neighbors: Uint32Array
 }
@@ -612,40 +619,101 @@ function rotateVec(x: number, y: number, z: number, qx: number, qy: number, qz: 
 }
 
 function createRenderPanelEntry(panel: GarmentRuntime['renderPanels'][number]): RenderPanelEntry {
+  const vertexCount = panel.panelUvs.length / 2
+  const positionArray = new Float32Array(vertexCount * 3)
+  const normalArray = new Float32Array(vertexCount * 3)
   const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array((panel.panelUvs.length / 2) * 3), 3))
+  geometry.setAttribute('position', new THREE.BufferAttribute(positionArray, 3))
+  geometry.setAttribute('normal', new THREE.BufferAttribute(normalArray, 3))
   geometry.setAttribute('uv', new THREE.BufferAttribute(panel.panelUvs, 2))
   geometry.setIndex(new THREE.BufferAttribute(panel.indices, 1))
-  const adjacency = buildAdjacency(panel.panelUvs.length / 2, panel.indices)
+  const adjacency = buildAdjacency(vertexCount, panel.indices)
   return {
     panelId: panel.panelId,
+    panel,
     geometry,
+    positionArray,
+    normalArray,
+    smoothScratch: new Float32Array(vertexCount * 3),
+    vertexCount,
+    indices: panel.indices,
     neighborOffsets: adjacency.offsets,
     neighbors: adjacency.neighbors,
   }
 }
 
-function updateRenderPanels(runtime: GarmentRuntime, entries: RenderPanelEntry[], positions: Float32Array) {
+function updateRenderPanels(_runtime: GarmentRuntime, entries: RenderPanelEntry[], positions: Float32Array) {
   for (const entry of entries) {
-    const panel = runtime.renderPanels.find((item) => item.panelId === entry.panelId)
-    if (!panel) continue
-    const attr = entry.geometry.getAttribute('position') as THREE.BufferAttribute
-    const array = attr.array as Float32Array
-    for (let vertex = 0; vertex < panel.panelUvs.length / 2; vertex += 1) {
-      const ia = panel.embedding.simTriangles[vertex * 3] * 3
-      const ib = panel.embedding.simTriangles[vertex * 3 + 1] * 3
-      const ic = panel.embedding.simTriangles[vertex * 3 + 2] * 3
-      const wa = panel.embedding.barycentrics[vertex * 3]
-      const wb = panel.embedding.barycentrics[vertex * 3 + 1]
-      const wc = panel.embedding.barycentrics[vertex * 3 + 2]
-      array[vertex * 3] = positions[ia] * wa + positions[ib] * wb + positions[ic] * wc
-      array[vertex * 3 + 1] = positions[ia + 1] * wa + positions[ib + 1] * wb + positions[ic + 1] * wc
-      array[vertex * 3 + 2] = positions[ia + 2] * wa + positions[ib + 2] * wb + positions[ic + 2] * wc
+    const { panel, vertexCount } = entry
+    const array = entry.positionArray
+    const simTriangles = panel.embedding.simTriangles
+    const barycentrics = panel.embedding.barycentrics
+    for (let vertex = 0; vertex < vertexCount; vertex += 1) {
+      const base = vertex * 3
+      const ia = simTriangles[base] * 3
+      const ib = simTriangles[base + 1] * 3
+      const ic = simTriangles[base + 2] * 3
+      const wa = barycentrics[base]
+      const wb = barycentrics[base + 1]
+      const wc = barycentrics[base + 2]
+      array[base] = positions[ia] * wa + positions[ib] * wb + positions[ic] * wc
+      array[base + 1] = positions[ia + 1] * wa + positions[ib + 1] * wb + positions[ic + 1] * wc
+      array[base + 2] = positions[ia + 2] * wa + positions[ib + 2] * wb + positions[ic + 2] * wc
     }
-    smoothVisualMeshPositions(array, entry.neighborOffsets, entry.neighbors, VISUAL_SMOOTHING_PASSES, VISUAL_SMOOTHING_ALPHA)
-    smoothVisualMeshPositions(array, entry.neighborOffsets, entry.neighbors, 1, VISUAL_SMOOTHING_SHRINK)
-    attr.needsUpdate = true
-    entry.geometry.computeVertexNormals()
+    smoothVisualMeshPositions(array, entry.smoothScratch, entry.neighborOffsets, entry.neighbors, VISUAL_SMOOTHING_PASSES, VISUAL_SMOOTHING_ALPHA)
+    smoothVisualMeshPositions(array, entry.smoothScratch, entry.neighborOffsets, entry.neighbors, 1, VISUAL_SMOOTHING_SHRINK)
+    computeVertexNormalsFlat(array, entry.indices, entry.normalArray, vertexCount)
+    ;(entry.geometry.getAttribute('position') as THREE.BufferAttribute).needsUpdate = true
+    ;(entry.geometry.getAttribute('normal') as THREE.BufferAttribute).needsUpdate = true
+  }
+}
+
+// Specialized, allocation-free replacement for THREE's computeVertexNormals on a
+// fixed indexed topology. Replicates THREE exactly: area-weighted face normal
+// (C-B)x(A-B) accumulated per vertex, then per-vertex normalize (zero-length
+// stays zero, matching Vector3.normalize()).
+export function computeVertexNormalsFlat(
+  positions: Float32Array,
+  indices: Uint32Array,
+  normals: Float32Array,
+  vertexCount: number,
+) {
+  const normalLen = vertexCount * 3
+  for (let i = 0; i < normalLen; i += 1) normals[i] = 0
+
+  for (let i = 0; i < indices.length; i += 3) {
+    const vA = indices[i]
+    const vB = indices[i + 1]
+    const vC = indices[i + 2]
+    const iA = vA * 3
+    const iB = vB * 3
+    const iC = vC * 3
+
+    const cbx = positions[iC] - positions[iB]
+    const cby = positions[iC + 1] - positions[iB + 1]
+    const cbz = positions[iC + 2] - positions[iB + 2]
+    const abx = positions[iA] - positions[iB]
+    const aby = positions[iA + 1] - positions[iB + 1]
+    const abz = positions[iA + 2] - positions[iB + 2]
+
+    const nx = cby * abz - cbz * aby
+    const ny = cbz * abx - cbx * abz
+    const nz = cbx * aby - cby * abx
+
+    normals[iA] += nx; normals[iA + 1] += ny; normals[iA + 2] += nz
+    normals[iB] += nx; normals[iB + 1] += ny; normals[iB + 2] += nz
+    normals[iC] += nx; normals[iC + 1] += ny; normals[iC + 2] += nz
+  }
+
+  for (let i = 0; i < normalLen; i += 3) {
+    const x = normals[i]
+    const y = normals[i + 1]
+    const z = normals[i + 2]
+    const len = Math.sqrt(x * x + y * y + z * z) || 1
+    const inv = 1 / len
+    normals[i] = x * inv
+    normals[i + 1] = y * inv
+    normals[i + 2] = z * inv
   }
 }
 
@@ -676,13 +744,13 @@ function buildAdjacency(vertexCount: number, indices: Uint32Array) {
 
 function smoothVisualMeshPositions(
   positions: Float32Array,
+  scratch: Float32Array,
   neighborOffsets: Uint32Array,
   neighbors: Uint32Array,
   passes: number,
   alpha: number,
 ) {
   if (passes <= 0 || alpha <= 0) return
-  const scratch = new Float32Array(positions.length)
   const vertexCount = neighborOffsets.length - 1
   for (let pass = 0; pass < passes; pass += 1) {
     scratch.set(positions)
