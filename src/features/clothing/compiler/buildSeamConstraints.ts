@@ -50,7 +50,7 @@ export function buildSeamConstraints(
           b: particleB,
           rest,
           targetRest: 0,
-          compliance: (1 - seam.strength) * 0.0003,
+          compliance: 0.00002 + (1 - seam.strength) * 0.0003,
           kind: 'seam',
         })
       }
@@ -74,7 +74,7 @@ export function buildSeamConstraints(
         b: particleB,
         rest,
         targetRest: 0,
-        compliance: (1 - seam.strength) * 0.0003,
+        compliance: 0.00002 + (1 - seam.strength) * 0.0003,
         kind: 'seam',
       })
     }

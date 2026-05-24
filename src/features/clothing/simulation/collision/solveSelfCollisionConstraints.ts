@@ -28,6 +28,7 @@ export class ClothSelfCollisionSolver {
   private readonly adjacencyOffsets: Uint32Array
   private readonly adjacency: Uint32Array
   private readonly topologyMarks: Uint32Array
+  private readonly topologyQueue: Uint32Array
   private topologyStamp = 0
 
   constructor(mesh: ClothSimMesh) {
@@ -49,6 +50,7 @@ export class ClothSelfCollisionSolver {
     this.adjacencyOffsets = adjacency.offsets
     this.adjacency = adjacency.neighbors
     this.topologyMarks = new Uint32Array(mesh.particleCount)
+    this.topologyQueue = new Uint32Array(mesh.particleCount)
   }
 
   solve(mesh: ClothSimMesh, options: SelfCollisionOptions) {
@@ -368,15 +370,30 @@ export class ClothSelfCollisionSolver {
       stamp = 1
     }
     this.topologyStamp = stamp
+    const queue = this.topologyQueue
+    let read = 0
+    let write = 0
     this.topologyMarks[particle] = stamp
-    const start = this.adjacencyOffsets[particle]
-    const end = this.adjacencyOffsets[particle + 1]
-    for (let i = start; i < end; i += 1) {
-      const neighbor = this.adjacency[i]
-      this.topologyMarks[neighbor] = stamp
-      const nStart = this.adjacencyOffsets[neighbor]
-      const nEnd = this.adjacencyOffsets[neighbor + 1]
-      for (let n = nStart; n < nEnd; n += 1) this.topologyMarks[this.adjacency[n]] = stamp
+    queue[write] = particle
+    write += 1
+
+    for (let depth = 0; depth < 4 && read < write; depth += 1) {
+      const levelEnd = write
+      while (read < levelEnd) {
+        const current = queue[read]
+        read += 1
+        const start = this.adjacencyOffsets[current]
+        const end = this.adjacencyOffsets[current + 1]
+        for (let i = start; i < end; i += 1) {
+          const neighbor = this.adjacency[i]
+          if (this.topologyMarks[neighbor] === stamp) continue
+          this.topologyMarks[neighbor] = stamp
+          if (write < queue.length) {
+            queue[write] = neighbor
+            write += 1
+          }
+        }
+      }
     }
   }
 }

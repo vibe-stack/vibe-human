@@ -47,8 +47,6 @@ export function buildPanelSimMesh(
 ): CompiledPanelSimMesh {
   const preset = QUALITY_PRESETS[options.quality]
   const stretchCompliance = panel.stretchCompliance ?? preset.stretchCompliance
-  const shearCompliance = panel.shearCompliance ?? preset.shearCompliance
-  const bendCompliance = Math.max(0.025, panel.bendCompliance ?? preset.bendCompliance)
   const bounds = boundsOf(panel)
 
   // Target particle spacing in pattern (mm) space, derived from the quality
@@ -102,10 +100,10 @@ export function buildPanelSimMesh(
   }
 
   // --- Derive constraints from triangulation edges ------------------------
-  // Boundary and near-grain edges carry structural stretch. Diagonal-ish
-  // interior edges carry shear so the material sliders control distinct parts
-  // of the in-plane response. Fold resistance is a separate distance constraint
-  // between the two apex vertices of adjacent triangles.
+  // Distance constraints over unique triangle edges resist in-plane stretch.
+  // Keep irregular topology conservative: diagonal/apex bend-distance solves can
+  // easily invert skinny triangles and create seam spikes on arbitrary Delaunay
+  // meshes.
   const stretchConstraints: DistanceConstraint[] = []
   const shearConstraints: DistanceConstraint[] = []
   const bendDistanceConstraints: DistanceConstraint[] = []
@@ -120,8 +118,7 @@ export function buildPanelSimMesh(
       positions[lb * 3 + 2] - positions[la * 3 + 2],
     )
 
-  // Map each undirected edge -> endpoints + apex vertices of triangles touching it.
-  const edgeMap = new Map<string, { a: number; b: number; apexes: number[] }>()
+  const edgeSeen = new Set<string>()
   const edgeKey = (a: number, b: number) => (a < b ? `${a}:${b}` : `${b}:${a}`)
 
   for (let t = 0; t < mesh.triangles.length; t += 3) {
@@ -135,38 +132,18 @@ export function buildPanelSimMesh(
       [b, c, a], // edge (b,c), apex a
       [c, a, b], // edge (c,a), apex b
     ]
-    for (const [e0, e1, apex] of edges) {
+    for (const [e0, e1] of edges) {
       const key = edgeKey(e0, e1)
-      const entry = edgeMap.get(key)
-      if (entry) entry.apexes.push(apex)
-      else edgeMap.set(key, { a: e0, b: e1, apexes: [apex] })
+      if (edgeSeen.has(key)) continue
+      edgeSeen.add(key)
+      stretchConstraints.push({
+        a: localToGlobal(e0),
+        b: localToGlobal(e1),
+        rest: restOfLocal(e0, e1),
+        compliance: stretchCompliance,
+        kind: 'stretch',
+      })
     }
-  }
-
-  for (const edge of edgeMap.values()) {
-    const target = edge.apexes.length < 2 || isStructuralEdge(mesh.points[edge.a], mesh.points[edge.b])
-      ? stretchConstraints
-      : shearConstraints
-    target.push({
-      a: localToGlobal(edge.a),
-      b: localToGlobal(edge.b),
-      rest: restOfLocal(edge.a, edge.b),
-      compliance: target === stretchConstraints ? stretchCompliance : shearCompliance,
-      kind: target === stretchConstraints ? 'stretch' : 'shear',
-    })
-  }
-
-  for (const { apexes } of edgeMap.values()) {
-    if (apexes.length < 2) continue // boundary edge: no opposing triangle
-    const a = apexes[0]
-    const c = apexes[1]
-    bendDistanceConstraints.push({
-      a: localToGlobal(a),
-      b: localToGlobal(c),
-      rest: restOfLocal(a, c),
-      compliance: bendCompliance,
-      kind: 'shear',
-    })
   }
 
   const pinConstraints = buildPinConstraints(panel, seamSamplePoints)
@@ -296,14 +273,6 @@ function distanceToPolyline(x: number, y: number, loop: Vec2[]): number {
     if (dist < best) best = dist
   }
   return best
-}
-
-function isStructuralEdge(a: Vec2, b: Vec2) {
-  const dx = Math.abs(b.x - a.x)
-  const dy = Math.abs(b.y - a.y)
-  const len = Math.hypot(dx, dy)
-  if (len <= 1e-9) return true
-  return Math.max(dx, dy) / len > 0.82
 }
 
 function boundsOf(panel: PatternPanel) {
