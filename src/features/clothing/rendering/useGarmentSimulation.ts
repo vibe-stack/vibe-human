@@ -478,18 +478,17 @@ function applyLiveSolverParams(solver: XPBDClothSolver, document: PatternDocumen
  * Used for resolution changes *and* 2D pattern edits (moving / adding / deleting
  * points, edges, holes) — anything short of a full reset.
  *
- * Matching is done in pattern space (`panelLocalPositions`, in mm) rather than
- * grid (u, v): a panel edit moves the bounding box that (u, v) is normalised
- * against, so the same (u, v) would point at different fabric. Pattern-space
- * coords are stable per fabric location, so each new particle inherits the
- * draped world position of the nearest old particle that occupied roughly the
- * same spot on the cloth. Particles in newly-grown regions snap to the closest
- * existing fabric (MD-style "extend the panel"); particles whose fabric was
- * deleted simply have no successor. Velocities are zeroed — the reprojected
- * drape becomes the new grid's rest state.
+ * Matching is done in centroid-relative pattern space: for each panel we first
+ * compute the centroid offset between the old and new grids and subtract it
+ * before comparing distances.  This makes pure 2D translations transparent
+ * (the same fabric point maps to itself regardless of how far the panel was
+ * moved), while local shape edits still find the nearest old particle in the
+ * fabric-local neighbourhood — exactly what MD does when you reshape a panel
+ * with an existing drape.  Velocities are zeroed; the reprojected drape
+ * becomes the new grid's rest state.
  */
 function reprojectDrape(previous: GarmentRuntime['simMesh'], next: GarmentRuntime['simMesh']) {
-  // Bucket previous particles by panel for a cheap nearest-neighbour lookup.
+  // Bucket previous particles by panel.
   const byPanel = new Map<string, number[]>()
   for (let i = 0; i < previous.particleCount; i += 1) {
     const panelId = previous.panelIds[i]
@@ -498,14 +497,45 @@ function reprojectDrape(previous: GarmentRuntime['simMesh'], next: GarmentRuntim
     bucket.push(i)
   }
 
+  // Bucket next particles by panel (needed for centroid computation).
+  const nextByPanel = new Map<string, number[]>()
+  for (let i = 0; i < next.particleCount; i += 1) {
+    const panelId = next.panelIds[i]
+    let bucket = nextByPanel.get(panelId)
+    if (!bucket) { bucket = []; nextByPanel.set(panelId, bucket) }
+    bucket.push(i)
+  }
+
+  // Per-panel centroid offset: how much the grid has been translated in
+  // 2D pattern space.  Subtracting this from the new particle coordinates
+  // before comparing against old ones makes the comparison translation-invariant.
+  const centroidOffset = new Map<string, { dx: number; dy: number }>()
+  for (const [panelId, oldBucket] of byPanel) {
+    const newBucket = nextByPanel.get(panelId)
+    if (!newBucket || newBucket.length === 0) continue
+
+    let oldCx = 0; let oldCy = 0
+    for (const i of oldBucket) { oldCx += previous.panelLocalPositions[i * 2]; oldCy += previous.panelLocalPositions[i * 2 + 1] }
+    oldCx /= oldBucket.length; oldCy /= oldBucket.length
+
+    let newCx = 0; let newCy = 0
+    for (const i of newBucket) { newCx += next.panelLocalPositions[i * 2]; newCy += next.panelLocalPositions[i * 2 + 1] }
+    newCx /= newBucket.length; newCy /= newBucket.length
+
+    centroidOffset.set(panelId, { dx: oldCx - newCx, dy: oldCy - newCy })
+  }
+
   const { positions, prevPositions, velocities, panelIds, panelLocalPositions, particleCount } = next
   for (let particle = 0; particle < particleCount; particle += 1) {
-    const bucket = byPanel.get(panelIds[particle])
+    const panelId = panelIds[particle]
+    const bucket = byPanel.get(panelId)
     const offset = particle * 3
     if (!bucket || bucket.length === 0) continue
 
-    const px = panelLocalPositions[particle * 2]
-    const py = panelLocalPositions[particle * 2 + 1]
+    const co = centroidOffset.get(panelId) ?? { dx: 0, dy: 0 }
+    // Shift new coords into old centroid frame so translation is cancelled out.
+    const px = panelLocalPositions[particle * 2] + co.dx
+    const py = panelLocalPositions[particle * 2 + 1] + co.dy
     let best = bucket[0]
     let bestDist = Infinity
     for (const candidate of bucket) {

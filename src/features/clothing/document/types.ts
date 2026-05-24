@@ -77,11 +77,19 @@ export type PatternSeam = {
   strength: number
 }
 
+export type PatternTack = {
+  id: string
+  a: { panelId: string; x: number; y: number }
+  b: { panelId: string; x: number; y: number }
+  strength: number
+}
+
 export type PatternDocument = {
   id: string
   name: string
   panels: Record<string, PatternPanel>
   seams: Record<string, PatternSeam>
+  tacks?: Record<string, PatternTack>
   fabrics?: Record<string, FabricDefinition>
   metadata?: Record<string, unknown>
 }

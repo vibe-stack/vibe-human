@@ -1,4 +1,4 @@
-import type { PatternDocument, PatternPanel, PatternPlacement, PanelPin } from './types'
+import type { PatternDocument, PatternPanel, PatternPlacement, PatternTack, PanelPin } from './types'
 import { DEMO_GARMENT_PLACEMENTS } from '../demo/createDemoGarment'
 import type { GarmentDocument } from '../state/clothingTypes'
 
@@ -31,11 +31,24 @@ export function toPatternDocument(
     ]),
   )
 
+  const tacks: Record<string, PatternTack> = Object.fromEntries(
+    Object.values(garment.tacks ?? {}).map((tack) => [
+      tack.id,
+      {
+        id: tack.id,
+        a: { panelId: tack.a.patternId, x: tack.a.x, y: tack.a.y },
+        b: { panelId: tack.b.patternId, x: tack.b.x, y: tack.b.y },
+        strength: tack.strength,
+      },
+    ]),
+  )
+
   return {
     id: garment.id,
     name: garment.name,
     panels,
     seams,
+    tacks,
   }
 }
 

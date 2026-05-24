@@ -122,20 +122,30 @@ export function deleteSeam(seamId: string) {
 
 export function createTack(
   patternIdA: string,
-  pointIdA: string,
+  xA: number,
+  yA: number,
   patternIdB: string,
-  pointIdB: string,
+  xB: number,
+  yB: number,
 ): string {
-  if (patternIdA === patternIdB && pointIdA === pointIdB) return ''
+  if (patternIdA === patternIdB && xA === xB && yA === yB) return ''
   const patternA = clothingStore.garment.patterns[patternIdA]
   const patternB = clothingStore.garment.patterns[patternIdB]
-  if (!patternA?.points[pointIdA] || !patternB?.points[pointIdB]) return ''
+  if (!patternA || !patternB) return ''
 
-  // Prevent duplicate tacks
-  const existing = Object.values(clothingStore.garment.tacks).find((t) =>
-    (t.a.patternId === patternIdA && t.a.pointId === pointIdA && t.b.patternId === patternIdB && t.b.pointId === pointIdB) ||
-    (t.a.patternId === patternIdB && t.a.pointId === pointIdB && t.b.patternId === patternIdA && t.b.pointId === pointIdA),
-  )
+  // Prevent near-duplicate tacks (within 5 pattern units of each anchor)
+  const DUPE_TOL_SQ = 25
+  const existing = Object.values(clothingStore.garment.tacks).find((t) => {
+    const sameDir = t.a.patternId === patternIdA
+      && (t.a.x - xA) ** 2 + (t.a.y - yA) ** 2 < DUPE_TOL_SQ
+      && t.b.patternId === patternIdB
+      && (t.b.x - xB) ** 2 + (t.b.y - yB) ** 2 < DUPE_TOL_SQ
+    const revDir = t.a.patternId === patternIdB
+      && (t.a.x - xB) ** 2 + (t.a.y - yB) ** 2 < DUPE_TOL_SQ
+      && t.b.patternId === patternIdA
+      && (t.b.x - xA) ** 2 + (t.b.y - yA) ** 2 < DUPE_TOL_SQ
+    return sameDir || revDir
+  })
   if (existing) {
     clothingStore.garment.selectedTackId = existing.id
     return existing.id
@@ -145,8 +155,8 @@ export function createTack(
   const id = uid()
   const tack: Tack = {
     id,
-    a: { patternId: patternIdA, pointId: pointIdA },
-    b: { patternId: patternIdB, pointId: pointIdB },
+    a: { patternId: patternIdA, x: xA, y: yA },
+    b: { patternId: patternIdB, x: xB, y: yB },
     strength: 1,
   }
   clothingStore.garment.tacks[id] = tack

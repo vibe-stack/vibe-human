@@ -62,13 +62,15 @@ export type Seam = {
   strength: number
 }
 
-/** Point-to-point tack: pins a vertex on one panel to a vertex on another.
- *  Useful for attaching pockets, decorative stitching, or any pinned joint
- *  that isn't a full edge seam. */
+/** Point-to-point tack: pins an arbitrary surface location on one panel to a
+ *  surface location on another.  Coordinates are in 2D pattern space (same as
+ *  PatternPoint.x/y), so you can tack anywhere on the fabric — not just at
+ *  explicit mesh vertices.  The compiler finds the nearest simulation particle
+ *  to each anchor and creates a weld-style distance constraint. */
 export type Tack = {
   id: string
-  a: { patternId: string; pointId: string }
-  b: { patternId: string; pointId: string }
+  a: { patternId: string; x: number; y: number }
+  b: { patternId: string; x: number; y: number }
   /** 0..1 stiffness multiplier. */
   strength: number
 }

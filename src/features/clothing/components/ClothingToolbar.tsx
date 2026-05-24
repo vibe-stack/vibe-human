@@ -90,8 +90,6 @@ export default function ClothingToolbar() {
       background: 'rgba(8,8,16,0.95)',
       borderBottom: '1px solid rgba(255,255,255,0.07)',
       flexShrink: 0,
-      flexWrap: 'nowrap',
-      overflowX: 'auto',
       overflowY: 'hidden',
       WebkitOverflowScrolling: 'touch',
       position: 'sticky',

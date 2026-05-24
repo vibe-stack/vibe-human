@@ -20,12 +20,22 @@ body {
   -webkit-touch-callout: none;
 }
 
-/* Clothing toolbar — hide native scrollbar while keeping scroll functionality */
+/* Clothing toolbar — wraps to multiple rows on desktop, scrolls on mobile */
 .clothing-toolbar {
-  scrollbar-width: none; /* Firefox */
+  flex-wrap: wrap;
+  overflow-x: visible;
 }
-.clothing-toolbar::-webkit-scrollbar {
-  display: none; /* Chrome / Safari / Edge */
+
+/* On narrow/touch screens: single scrolling row, no native scrollbar */
+@media (max-width: 767px) {
+  .clothing-toolbar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .clothing-toolbar::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 /* Range slider styling */

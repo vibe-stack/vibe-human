@@ -59,9 +59,10 @@ export class PatternRenderer {
         this.renderSeam(result.pointsA, result.pointsB, seam.id === doc.selectedSeamId)
       }
       for (const tack of Object.values(doc.tacks ?? {})) {
-        const ptA = doc.patterns[tack.a.patternId]?.points[tack.a.pointId]
-        const ptB = doc.patterns[tack.b.patternId]?.points[tack.b.pointId]
-        if (ptA && ptB) {
+        const ptA = { x: tack.a.x, y: tack.a.y }
+        const ptB = { x: tack.b.x, y: tack.b.y }
+        // Only render if both panels exist (one or both might be off-canvas)
+        if (doc.patterns[tack.a.patternId] && doc.patterns[tack.b.patternId]) {
           this.renderTack(ptA, ptB, tack.id === doc.selectedTackId)
         }
       }
@@ -242,12 +243,15 @@ export class PatternRenderer {
       this.seamGfx.stroke()
     }
 
-    // Cross marker at each endpoint
-    const S = 5
-    this.seamGfx.setStrokeStyle({ width: 1.5, color, alpha })
+    // Filled circle at each anchor — indicates "anywhere on surface" rather than an explicit vertex
+    const R = 4
     for (const pt of [ptA, ptB]) {
-      this.seamGfx.moveTo(pt.x - S, pt.y - S); this.seamGfx.lineTo(pt.x + S, pt.y + S); this.seamGfx.stroke()
-      this.seamGfx.moveTo(pt.x + S, pt.y - S); this.seamGfx.lineTo(pt.x - S, pt.y + S); this.seamGfx.stroke()
+      this.seamGfx.setFillStyle({ color, alpha })
+      this.seamGfx.circle(pt.x, pt.y, R)
+      this.seamGfx.fill()
+      this.seamGfx.setStrokeStyle({ width: 1, color: 0xffffff, alpha: 0.4 })
+      this.seamGfx.circle(pt.x, pt.y, R)
+      this.seamGfx.stroke()
     }
   }
 }
