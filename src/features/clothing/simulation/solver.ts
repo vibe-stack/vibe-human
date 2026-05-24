@@ -3,6 +3,7 @@ import { solveBendConstraintsFlat } from './constraints/solveBendConstraints'
 import { solveDistanceConstraintsFlat } from './constraints/solveDistanceConstraints'
 import { solvePinConstraints } from './constraints/solvePinConstraints'
 import { solveCollisionConstraints } from './collision/solveCollisionConstraints'
+import { ClothSelfCollisionSolver } from './collision/solveSelfCollisionConstraints'
 
 type DistanceSet = {
   a: Uint32Array
@@ -46,6 +47,7 @@ export class XPBDClothSolver {
   private seamTouched: Uint8Array
   private seamTouchedList: Uint32Array
   private seamTouchedCount = 0
+  private selfCollision: ClothSelfCollisionSolver
 
   constructor(
     mesh: ClothSimMesh,
@@ -63,6 +65,7 @@ export class XPBDClothSolver {
     this.seamAccumW = new Float32Array(mesh.particleCount)
     this.seamTouched = new Uint8Array(mesh.particleCount)
     this.seamTouchedList = new Uint32Array(mesh.particleCount)
+    this.selfCollision = new ClothSelfCollisionSolver(mesh)
   }
 
   // ---------------------------------------------------------------------------
@@ -144,6 +147,7 @@ export class XPBDClothSolver {
         solvePinConstraints(this.mesh)
         this.applyGrabPin(dt)
       }
+      this.solveSelfCollision(sewingProgress)
       solveCollisionConstraints(this.mesh, this.colliders)
       if (sewingProgress >= 1) this.weldSeamPairs()
       this.deriveVelocities(dt, this.velocityRetentionForAssembly(sewingProgress))
@@ -340,6 +344,18 @@ export class XPBDClothSolver {
       positions[offset] = groundY
       prevPositions[offset] = groundY
     }
+  }
+
+  private solveSelfCollision(sewingProgress: number) {
+    const radius = this.params.selfCollisionRadius ?? 0
+    const stiffness = this.params.selfCollisionStiffness ?? 0
+    if (radius <= 0 || stiffness <= 0) return
+    const ramp = smooth01((sewingProgress - 0.12) / 0.38)
+    if (ramp <= 0) return
+    this.selfCollision.solve(this.mesh, {
+      radius: radius * (0.65 + 0.35 * ramp),
+      stiffness: stiffness * ramp,
+    })
   }
 
   private sewingProgress() {

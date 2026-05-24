@@ -237,6 +237,8 @@ export type SolverParams = {
   dt: number
   groundY: number
   maxVelocity?: number
+  selfCollisionRadius?: number
+  selfCollisionStiffness?: number
   sewingTime?: number
   gravityDelayTime?: number
   gravityRampTime?: number

@@ -34,10 +34,10 @@ const CLOTH_GROUND_Y = -3.15
 const PATTERN_UNIT_SCALE = 0.004
 
 const SOLVER_PRESETS: Record<CompileQuality, SolverParams> = {
-  low: { gravity: -9.81, damping: 0.08, substeps: 1, iterations: 4, dt: FIXED_DT, groundY: CLOTH_GROUND_Y, maxVelocity: 6, sewingTime: 0.65, gravityDelayTime: 0.05, gravityRampTime: 0.2 },
-  medium: { gravity: -9.81, damping: 0.07, substeps: 2, iterations: 6, dt: FIXED_DT, groundY: CLOTH_GROUND_Y, maxVelocity: 6, sewingTime: 0.65, gravityDelayTime: 0.05, gravityRampTime: 0.2 },
-  high: { gravity: -9.81, damping: 0.06, substeps: 3, iterations: 8, dt: FIXED_DT, groundY: CLOTH_GROUND_Y, maxVelocity: 7, sewingTime: 0.65, gravityDelayTime: 0.05, gravityRampTime: 0.2 },
-  ultra: { gravity: -9.81, damping: 0.05, substeps: 4, iterations: 10, dt: FIXED_DT, groundY: CLOTH_GROUND_Y, maxVelocity: 8, sewingTime: 0.65, gravityDelayTime: 0.05, gravityRampTime: 0.2 },
+  low: { gravity: -9.81, damping: 0.08, substeps: 1, iterations: 4, dt: FIXED_DT, groundY: CLOTH_GROUND_Y, maxVelocity: 6, selfCollisionRadius: 0.012, selfCollisionStiffness: 0.32, sewingTime: 0.65, gravityDelayTime: 0.05, gravityRampTime: 0.2 },
+  medium: { gravity: -9.81, damping: 0.07, substeps: 2, iterations: 6, dt: FIXED_DT, groundY: CLOTH_GROUND_Y, maxVelocity: 6, selfCollisionRadius: 0.014, selfCollisionStiffness: 0.4, sewingTime: 0.65, gravityDelayTime: 0.05, gravityRampTime: 0.2 },
+  high: { gravity: -9.81, damping: 0.06, substeps: 3, iterations: 8, dt: FIXED_DT, groundY: CLOTH_GROUND_Y, maxVelocity: 7, selfCollisionRadius: 0.016, selfCollisionStiffness: 0.5, sewingTime: 0.65, gravityDelayTime: 0.05, gravityRampTime: 0.2 },
+  ultra: { gravity: -9.81, damping: 0.05, substeps: 4, iterations: 10, dt: FIXED_DT, groundY: CLOTH_GROUND_Y, maxVelocity: 8, selfCollisionRadius: 0.018, selfCollisionStiffness: 0.58, sewingTime: 0.65, gravityDelayTime: 0.05, gravityRampTime: 0.2 },
 }
 
 type RenderPanelEntry = {
