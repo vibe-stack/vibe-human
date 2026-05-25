@@ -22,6 +22,7 @@ import type {
   GeneratedStrand,
   GroomAsset,
   GroomModifierSettings,
+  GroomRenderMode,
   ScalpMapChannel,
   ScalpPaintChannel,
   GroomTool,
@@ -42,6 +43,9 @@ type GroomState = {
   generatedStrands: GeneratedStrand[]
   availableMeshes: RegisteredGroomMesh[]
   sceneSelectionMeshId: string | null
+  renderMode: GroomRenderMode
+  /** 0..1 — fraction of max card groups to emit in hair-cards mode */
+  cardComplexity: number
 }
 
 const registeredMeshes = new Map<string, THREE.Mesh>()
@@ -180,6 +184,8 @@ export const groomStore = proxy<GroomState>({
   generatedStrands: [],
   availableMeshes: [],
   sceneSelectionMeshId: null,
+  renderMode: 'strands',
+  cardComplexity: 0.75,
 })
 
 export function getRegisteredGroomMesh(meshId: string | null) {
@@ -479,6 +485,14 @@ export function setShowScalpMask(value: boolean) {
 
 export function regenerateGeneratedStrands() {
   regenerateGeneratedStrandsInternal()
+}
+
+export function setRenderMode(mode: GroomRenderMode) {
+  groomStore.renderMode = mode
+}
+
+export function setCardComplexity(value: number) {
+  groomStore.cardComplexity = Math.min(1, Math.max(0.05, value))
 }
 
 export function replaceActiveGroomAsset(asset: GroomAsset) {

@@ -28,6 +28,9 @@ import {
   EyeOff,
   Brush,
   X,
+  Rows3,
+  LayoutGrid,
+  PackageOpen,
 } from 'lucide-react'
 import { exportGroomAsset, importGroomAsset } from '../core/groomSerialization'
 import {
@@ -41,13 +44,17 @@ import {
   setActiveGroomTool,
   setBrushSize,
   setBrushStrength,
+  setCardComplexity,
   setHairMaterialSetting,
   setModifierSetting,
+  setRenderMode,
   setShowGeneratedStrands,
   setShowGuides,
   setShowScalpMask,
   useSelectedMeshAsGroomTarget,
 } from '../store/groomStore'
+import { getLatestHairCardMesh } from '../core/hairCardExportState'
+import { exportGeometryAsGLB } from '../core/exportGroomMesh'
 import type { GroomTool, ScalpPaintChannel } from '../core/types'
 
 // ---------------------------------------------------------------------------
@@ -403,8 +410,11 @@ export default function GroomPanel() {
     activeScalpPaintChannel,
     availableMeshes,
     sceneSelectionMeshId,
+    renderMode,
+    cardComplexity,
   } = useSnapshot(groomStore)
   const importRef = useRef<HTMLInputElement | null>(null)
+  const isCardMode = renderMode === 'hair-cards'
 
   const selectedSceneMesh = availableMeshes.find((m) => m.id === sceneSelectionMeshId) ?? null
   const targetMesh = availableMeshes.find((m) => m.id === activeGroomAsset.targetMeshId) ?? null
@@ -423,6 +433,13 @@ export default function GroomPanel() {
     } catch {
       // Clipboard is optional; file download is the primary export path.
     }
+  }
+
+  const handleExportGLB = async () => {
+    const mesh = getLatestHairCardMesh()
+    if (!mesh) return
+    const name = activeGroomAsset.name.replace(/\s+/g, '-').toLowerCase() || 'hair-cards'
+    await exportGeometryAsGLB(mesh, `${name}.glb`)
   }
 
   return (
@@ -453,6 +470,64 @@ export default function GroomPanel() {
 
       {/* Scrollable body */}
       <div className="facs-scroll" style={{ overflowY: 'auto', flex: 1 }}>
+
+        {/* RENDER MODE */}
+        <div style={{ padding: '10px 12px', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <span style={{ ...monoLabel, color: 'rgba(255,255,255,0.3)' }}>RENDER MODE</span>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
+            <button
+              onClick={() => setRenderMode('strands')}
+              style={{
+                ...btn,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                color: !isCardMode ? pink : 'rgba(255,255,255,0.45)',
+                borderColor: !isCardMode ? 'rgba(244,114,182,0.36)' : 'rgba(255,255,255,0.09)',
+                background: !isCardMode ? 'rgba(244,114,182,0.12)' : 'rgba(255,255,255,0.04)',
+              }}
+            >
+              <Rows3 size={11} /> STRANDS
+            </button>
+            <button
+              onClick={() => setRenderMode('hair-cards')}
+              style={{
+                ...btn,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                color: isCardMode ? pink : 'rgba(255,255,255,0.45)',
+                borderColor: isCardMode ? 'rgba(244,114,182,0.36)' : 'rgba(255,255,255,0.09)',
+                background: isCardMode ? 'rgba(244,114,182,0.12)' : 'rgba(255,255,255,0.04)',
+              }}
+            >
+              <LayoutGrid size={11} /> HAIR CARDS
+            </button>
+          </div>
+          {isCardMode && (
+            <>
+              <SliderRow
+                label="Card Complexity"
+                value={cardComplexity}
+                min={0.05}
+                max={1}
+                step={0.01}
+                onChange={setCardComplexity}
+              />
+              <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.22)', lineHeight: 1.5 }}>
+                Low = fewer, wider cards (game-ready). High = denser coverage.
+              </div>
+              <button
+                onClick={handleExportGLB}
+                style={{
+                  ...btn,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                  color: 'rgba(134,239,172,0.85)',
+                  borderColor: 'rgba(134,239,172,0.25)',
+                  background: 'rgba(134,239,172,0.08)',
+                }}
+              >
+                <PackageOpen size={10} /> EXPORT GLB
+              </button>
+            </>
+          )}
+        </div>
 
         {/* TARGET */}
         <Section icon={<Crosshair size={12} />} title="TARGET">

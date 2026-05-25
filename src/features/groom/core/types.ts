@@ -137,6 +137,8 @@ export type GeneratedStrand = {
   clumpId: number
 }
 
+export type GroomRenderMode = 'strands' | 'hair-cards'
+
 export type GroomTool =
   | 'none'
   | 'paint-scalp'

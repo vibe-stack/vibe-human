@@ -5,7 +5,10 @@ import * as THREE from 'three/webgpu'
 import { createHairStrandMaterial, updateHairStrandMaterialUniforms, type HairMaterialOptions } from '../shaders/hairStrandMaterial'
 import { groomStore, getRegisteredGroomMesh, registerHairMaterialForGroom, unregisterHairMaterialForGroom } from '../store/groomStore'
 import type { GeneratedStrand } from '../core/types'
+import { buildHairCardMesh } from '../core/hairCardBuilder'
+import { setLatestHairCardMesh } from '../core/hairCardExportState'
 
+// Gap-filler cards rendered *behind* strands — subtle, semi-transparent.
 const CARD_MATERIAL_OPTIONS: HairMaterialOptions = {
   widthScale: 1,
   opacityScale: 0.82,
@@ -17,6 +20,7 @@ const CARD_MATERIAL_OPTIONS: HairMaterialOptions = {
   densityShadowScale: 1.45,
   flyawayOpacityBoost: 0,
 }
+
 
 const DETAIL_MATERIAL_OPTIONS: HairMaterialOptions = {
   widthScale: 1,
@@ -164,13 +168,15 @@ function smoothstep(edge0: number, edge1: number, value: number) {
   return t * t * (3 - 2 * t)
 }
 
-function buildCardGroups(strands: readonly GeneratedStrand[], guideCount: number): CardGroup[] {
+function buildCardGroups(strands: readonly GeneratedStrand[], guideCount: number, complexity = 1, primaryMode = false): CardGroup[] {
   if (!strands.length) return []
 
   const grouped = new Map<number, GeneratedStrand[]>()
   for (const strand of strands) {
     if (strand.points.length < 2 || strandIsFlyaway(strand)) continue
-    if (strandDensityScore(strand) < 0.34) continue
+    // In primary card mode include all strands so the full scalp is covered,
+    // not just high-density zones.
+    if (!primaryMode && strandDensityScore(strand) < 0.34) continue
     const group = grouped.get(strand.clumpId)
     if (group) group.push(strand)
     else grouped.set(strand.clumpId, [strand])
@@ -186,17 +192,21 @@ function buildCardGroups(strands: readonly GeneratedStrand[], guideCount: number
     groups.push({ strands: groupStrands, score: score / groupStrands.length + Math.min(groupStrands.length, 18) * 0.045 })
   }
 
-  const targetCount = Math.min(
+  // At complexity=1 we match the full groom density; at complexity=0.05 we
+  // merge everything down to ~guideCount cards (one per guide area).
+  const maxFull = Math.min(
     520,
     Math.max(48, guideCount * 4, Math.round(Math.sqrt(strands.length) * 2.2)),
   )
+  const minCards = Math.max(guideCount, 8)
+  const targetCount = Math.round(minCards + (maxFull - minCards) * complexity)
 
   return groups
     .sort((a, b) => b.score - a.score)
     .slice(0, targetCount)
 }
 
-function buildClumpCardGeometry(cardGroups: readonly CardGroup[], clumpRadius: number) {
+function buildClumpCardGeometry(cardGroups: readonly CardGroup[], clumpRadius: number, primaryMode = false) {
   const validGroups = cardGroups.filter((group) => group.strands.some((strand) => strand.points.length >= 2))
   let vertCount = 0
   let idxCount = 0
@@ -235,7 +245,7 @@ function buildClumpCardGeometry(cardGroups: readonly CardGroup[], clumpRadius: n
   for (const group of validGroups) {
     const source = [...group.strands]
       .sort((a, b) => strandDensityScore(b) - strandDensityScore(a))
-      .slice(0, 14)
+      .slice(0, primaryMode ? 24 : 14)
     const pointCount = Math.min(...source.map((strand) => strand.points.length))
     if (pointCount < 2) continue
 
@@ -284,11 +294,20 @@ function buildClumpCardGeometry(cardGroups: readonly CardGroup[], clumpRadius: n
     }
     side.normalize()
 
-    const width = THREE.MathUtils.clamp(
-      Math.max(clumpRadius * 1.85, rootSpread * 3.2, source[0].widthRoot * 9),
-      0.004,
-      0.055,
-    )
+    // In primary card mode the width represents actual strand coverage, not a
+    // gap-filler halo. Use the real spread with a tight cap so cards abut
+    // rather than overlap. In gap-filler mode we keep the generous multipliers.
+    const width = primaryMode
+      ? THREE.MathUtils.clamp(
+          Math.max(rootSpread * 2.0, source[0].widthRoot * 6, clumpRadius * 1.2),
+          0.002,
+          0.022,
+        )
+      : THREE.MathUtils.clamp(
+          Math.max(clumpRadius * 1.85, rootSpread * 3.2, source[0].widthRoot * 9),
+          0.004,
+          0.055,
+        )
     const last = pointCount - 1
 
     for (let i = 0; i < pointCount; i += 1) {
@@ -422,9 +441,10 @@ function selectFlyawayStrands(strands: readonly GeneratedStrand[]) {
 }
 
 export default function GroomRenderer() {
-  const { activeGroomAsset, generatedStrands, showGeneratedStrands, showGuides } = useSnapshot(groomStore)
+  const { activeGroomAsset, generatedStrands, showGeneratedStrands, showGuides, renderMode, cardComplexity } = useSnapshot(groomStore)
   const targetMesh = getRegisteredGroomMesh(activeGroomAsset.targetMeshId)
   const transformRef = useRef<THREE.Group>(null)
+  const isCardMode = renderMode === 'hair-cards'
 
   const strandMaterial = useMemo(
     () => createHairStrandMaterial(activeGroomAsset.material, DETAIL_MATERIAL_OPTIONS),
@@ -452,7 +472,6 @@ export default function GroomRenderer() {
     // Material is built once; all settings flow through uniform updates below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
   useEffect(() => {
     updateHairStrandMaterialUniforms(strandMaterial, activeGroomAsset.material, DETAIL_MATERIAL_OPTIONS)
     updateHairStrandMaterialUniforms(flyawayMaterial, activeGroomAsset.material, FLYAWAY_MATERIAL_OPTIONS)
@@ -464,26 +483,38 @@ export default function GroomRenderer() {
     [],
   )
 
+  // Gap-filler volume cards shown behind strands in STRANDS mode.
   const volumeCardGeometry = useMemo(() => {
-    if (!showGeneratedStrands || !generatedStrands.length) return null
+    if (isCardMode || !showGeneratedStrands || !generatedStrands.length) return null
     const cardGroups = buildCardGroups(generatedStrands as GeneratedStrand[], activeGroomAsset.guides.length)
     if (!cardGroups.length) return null
     return buildClumpCardGeometry(cardGroups, activeGroomAsset.settings.clumpRadius)
-  }, [activeGroomAsset.guides.length, activeGroomAsset.settings.clumpRadius, generatedStrands, showGeneratedStrands])
+  }, [isCardMode, activeGroomAsset.guides.length, activeGroomAsset.settings.clumpRadius, generatedStrands, showGeneratedStrands])
+
+  // Hair cards: atlas baked with correct melanin color, rendered with MeshBasicMaterial.
+  const hairCardMesh = useMemo(() => {
+    if (!isCardMode || !showGeneratedStrands || !generatedStrands.length) return null
+    return buildHairCardMesh(generatedStrands as GeneratedStrand[], cardComplexity, activeGroomAsset.material)
+  }, [isCardMode, cardComplexity, generatedStrands, showGeneratedStrands, activeGroomAsset.material])
+
+  useEffect(() => {
+    setLatestHairCardMesh(hairCardMesh)
+    return () => setLatestHairCardMesh(null)
+  }, [hairCardMesh])
 
   const strandGeometry = useMemo(() => {
-    if (!showGeneratedStrands || !generatedStrands.length) return null
+    if (isCardMode || !showGeneratedStrands || !generatedStrands.length) return null
     const strands = selectBodyStrands(generatedStrands as GeneratedStrand[])
     if (!strands.length) return null
     return buildRibbonGeometry(strands)
-  }, [generatedStrands, showGeneratedStrands])
+  }, [isCardMode, generatedStrands, showGeneratedStrands])
 
   const flyawayGeometry = useMemo(() => {
-    if (!showGeneratedStrands || !generatedStrands.length) return null
+    if (isCardMode || !showGeneratedStrands || !generatedStrands.length) return null
     const strands = selectFlyawayStrands(generatedStrands as GeneratedStrand[])
     if (!strands.length) return null
     return buildRibbonGeometry(strands)
-  }, [generatedStrands, showGeneratedStrands])
+  }, [isCardMode, generatedStrands, showGeneratedStrands])
 
   const guideGeometry = useMemo(() => {
     if (!showGuides || !activeGroomAsset.guides.length) return null
@@ -514,17 +545,33 @@ export default function GroomRenderer() {
   useEffect(() => () => cardMaterial.dispose(), [cardMaterial])
   useEffect(() => () => guideMaterial.dispose(), [guideMaterial])
   useEffect(() => () => volumeCardGeometry?.dispose(), [volumeCardGeometry])
+  useEffect(() => () => { hairCardMesh?.geometry.dispose(); hairCardMesh?.atlas.dispose() }, [hairCardMesh])
   useEffect(() => () => strandGeometry?.dispose(), [strandGeometry])
   useEffect(() => () => flyawayGeometry?.dispose(), [flyawayGeometry])
   useEffect(() => () => guideGeometry?.dispose(), [guideGeometry])
 
-  if (!targetMesh || (!volumeCardGeometry && !strandGeometry && !flyawayGeometry && !guideGeometry)) return null
+  const hasContent = volumeCardGeometry || hairCardMesh || strandGeometry || flyawayGeometry || guideGeometry
+  if (!targetMesh || !hasContent) return null
 
   return (
     <group ref={transformRef} matrixAutoUpdate={false}>
       {volumeCardGeometry && (
         <mesh geometry={volumeCardGeometry} renderOrder={58}>
           <primitive object={cardMaterial} attach="material" />
+        </mesh>
+      )}
+      {hairCardMesh && (
+        <mesh geometry={hairCardMesh.geometry} renderOrder={60}>
+          <meshStandardMaterial
+            map={hairCardMesh.atlas}
+            side={THREE.FrontSide}
+            alphaTest={0.5}
+            transparent={false}
+            depthWrite
+            depthTest
+            roughness={0.88}
+            metalness={0}
+          />
         </mesh>
       )}
       {strandGeometry && (
