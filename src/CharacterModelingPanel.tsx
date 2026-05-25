@@ -1,5 +1,6 @@
 import {
   type ReactNode,
+  type CSSProperties,
   useMemo,
   memo,
   useRef,
