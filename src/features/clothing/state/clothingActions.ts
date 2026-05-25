@@ -313,6 +313,7 @@ export function createPatternPiece(): string {
     edges: [],
     closed: false,
     particleDistance: 20,
+    friction: 1,
   }
   clothingStore.garment.patterns[id] = piece
   return id
@@ -386,6 +387,10 @@ export function setAvatarSkinOffset(value: number) {
 
 export function setGarmentCollisionThickness(value: number) {
   clothingStore.collisionAvatar.garmentThickness = Math.max(0, Math.min(0.06, value))
+}
+
+export function setAvatarBodyFriction(value: number) {
+  clothingStore.collisionAvatar.bodyFriction = Math.max(0, Math.min(5, value))
 }
 
 export function setAvatarMeshCellSize(value: number) {

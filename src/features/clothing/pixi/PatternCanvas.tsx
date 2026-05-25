@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import 'pixi.js/browser'
 import * as PIXI from 'pixi.js'
 import { clothingStore } from '../state/clothingStore'
 import { setHoveredEntity } from '../state/clothingActions'
@@ -26,10 +27,22 @@ export default function PatternCanvas() {
     const app = new PIXI.Application()
     let mounted = true
     let controller: CanvasController | null = null
+    let resizeObserver: ResizeObserver | null = null
+
+    const resizeRenderer = () => {
+      if (!mounted) return
+      const width = Math.max(1, Math.floor(container.clientWidth))
+      const height = Math.max(1, Math.floor(container.clientHeight))
+      app.renderer?.resize(width, height)
+    }
 
     app.init({
       resizeTo: container,
       background: COLORS.background,
+      backgroundColor: COLORS.background,
+      width: Math.max(1, container.clientWidth),
+      height: Math.max(1, container.clientHeight),
+      manageImports: false,
       antialias: true,
       resolution: window.devicePixelRatio,
       autoDensity: true,
@@ -39,6 +52,13 @@ export default function PatternCanvas() {
       container.appendChild(app.canvas as HTMLCanvasElement)
       const canvas = app.canvas as HTMLCanvasElement
       canvas.style.touchAction = 'none'
+      canvas.style.display = 'block'
+      canvas.style.width = '100%'
+      canvas.style.height = '100%'
+
+      resizeObserver = new ResizeObserver(resizeRenderer)
+      resizeObserver.observe(container)
+      requestAnimationFrame(resizeRenderer)
 
       // Scene graph
       const world = new PIXI.Container()
@@ -76,6 +96,7 @@ export default function PatternCanvas() {
         const { garment, viewport2D, previewOptions, selectedPatternIds } = clothingStore
         const viewW = canvas.clientWidth || app.renderer.width / window.devicePixelRatio
         const viewH = canvas.clientHeight || app.renderer.height / window.devicePixelRatio
+        if (viewW <= 1 || viewH <= 1) return
 
         world.x = -viewport2D.panX * viewport2D.zoom + viewW / 2
         world.y = -viewport2D.panY * viewport2D.zoom + viewH / 2
@@ -101,6 +122,8 @@ export default function PatternCanvas() {
       ;(controller as unknown as { _hoverCleanup?: () => void })._hoverCleanup = () => {
         canvas.removeEventListener('pointermove', onHoverMove)
       }
+    }).catch((error: unknown) => {
+      if (mounted) console.error('Failed to initialise clothing pattern canvas:', error)
     })
 
     return () => {
@@ -110,6 +133,8 @@ export default function PatternCanvas() {
         controller.destroy()
         controller = null
       }
+      resizeObserver?.disconnect()
+      resizeObserver = null
       try { app.destroy(true, { children: true }) } catch {}
     }
   }, [])
@@ -121,6 +146,7 @@ export default function PatternCanvas() {
         width: '100%', height: '100%',
         overflow: 'hidden', position: 'relative',
         touchAction: 'none',
+        background: '#141421',
       }}
     />
   )

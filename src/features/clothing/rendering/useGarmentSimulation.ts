@@ -71,6 +71,7 @@ export function useGarmentSimulation(args: {
     perRegionInflate: Partial<Record<CollisionRegion, number>>
     skinOffset: number
     garmentThickness: number
+    bodyFriction: number
     meshCellSize: number
     meshSampleStride: number
     enableVertexTriangle: boolean
@@ -413,6 +414,7 @@ function updateColliderSnapshotForStep(
       id: 'avatar.mesh',
       skinOffset: collision.skinOffset,
       garmentThickness: collision.garmentThickness,
+      friction: collision.bodyFriction,
       cellSize: collision.meshCellSize,
       triangleStride: collision.meshSampleStride,
       debugPerf: collision.debugPerf,
@@ -478,7 +480,7 @@ export function buildGeometryKey(document: PatternDocument, quality: CompileQual
  */
 export function buildLiveParamsKey(document: PatternDocument, quality: CompileQuality) {
   const panelKeys = Object.values(document.panels)
-    .map((panel) => `${panel.id}:${panel.stretchCompliance ?? ''}:${panel.shearCompliance ?? ''}:${panel.bendCompliance ?? ''}:${panel.damping ?? ''}`)
+    .map((panel) => `${panel.id}:${panel.stretchCompliance ?? ''}:${panel.shearCompliance ?? ''}:${panel.bendCompliance ?? ''}:${panel.damping ?? ''}:${panel.friction ?? ''}`)
     .sort()
     .join('||')
   return `${quality}|${panelKeys}`
@@ -515,6 +517,14 @@ function applyLiveSolverParams(solver: XPBDClothSolver, document: PatternDocumen
   solver.setBendCompliance(avg((panel) => panel.bendCompliance, preset.bendCompliance))
   solver.setDamping(avg((panel) => panel.damping, SOLVER_PRESETS[quality].damping))
   solver.setSolverIterations(SOLVER_PRESETS[quality].substeps, SOLVER_PRESETS[quality].iterations)
+  applyPanelFrictions(solver.mesh, document)
+}
+
+function applyPanelFrictions(mesh: GarmentRuntime['simMesh'], document: PatternDocument) {
+  const { panelIds, particleFrictions, particleCount } = mesh
+  for (let particle = 0; particle < particleCount; particle += 1) {
+    particleFrictions[particle] = document.panels[panelIds[particle]]?.friction ?? 1
+  }
 }
 
 /**

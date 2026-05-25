@@ -30,10 +30,11 @@ export function solveCollisionConstraints(mesh: ClothSimMesh, snapshot: Collider
       && (snapshot.lowResMeshPatches?.length ?? 0) === 0
     )
   ) return
-  const { positions, prevPositions, invMass, particleCount } = mesh
+  const { positions, prevPositions, invMass, particleCount, particleFrictions } = mesh
 
   for (let particle = 0; particle < particleCount; particle += 1) {
     if (invMass[particle] === 0) continue
+    const garmentFriction = particleFrictions?.[particle] ?? 1
     const offset = particle * 3
     const prevX = prevPositions[offset]
     const prevY = prevPositions[offset + 1]
@@ -50,7 +51,7 @@ export function solveCollisionConstraints(mesh: ClothSimMesh, snapshot: Collider
       py = CONTACT_RESULT[1]
       pz = CONTACT_RESULT[2]
       const penM = (px - predMx) * CONTACT_RESULT[3] + (py - predMy) * CONTACT_RESULT[4] + (pz - predMz) * CONTACT_RESULT[5]
-      applyContactFriction(prevPositions, offset, px, py, pz, CONTACT_RESULT[3], CONTACT_RESULT[4], CONTACT_RESULT[5], meshCollider.friction, penM)
+      applyContactFriction(prevPositions, offset, px, py, pz, CONTACT_RESULT[3], CONTACT_RESULT[4], CONTACT_RESULT[5], combineContactFriction(meshCollider.friction, garmentFriction), penM)
       hit = true
     }
 
@@ -61,7 +62,7 @@ export function solveCollisionConstraints(mesh: ClothSimMesh, snapshot: Collider
       py = CONTACT_RESULT[1]
       pz = CONTACT_RESULT[2]
       const penP = (px - predPx) * CONTACT_RESULT[3] + (py - predPy) * CONTACT_RESULT[4] + (pz - predPz) * CONTACT_RESULT[5]
-      applyContactFriction(prevPositions, offset, px, py, pz, CONTACT_RESULT[3], CONTACT_RESULT[4], CONTACT_RESULT[5], patch.friction, penP)
+      applyContactFriction(prevPositions, offset, px, py, pz, CONTACT_RESULT[3], CONTACT_RESULT[4], CONTACT_RESULT[5], combineContactFriction(patch.friction, garmentFriction), penP)
       hit = true
     }
 
@@ -72,7 +73,7 @@ export function solveCollisionConstraints(mesh: ClothSimMesh, snapshot: Collider
       py = CONTACT_RESULT[1]
       pz = CONTACT_RESULT[2]
       const penQ = (px - predQx) * CONTACT_RESULT[3] + (py - predQy) * CONTACT_RESULT[4] + (pz - predQz) * CONTACT_RESULT[5]
-      applyContactFriction(prevPositions, offset, px, py, pz, CONTACT_RESULT[3], CONTACT_RESULT[4], CONTACT_RESULT[5], proxy.friction, penQ)
+      applyContactFriction(prevPositions, offset, px, py, pz, CONTACT_RESULT[3], CONTACT_RESULT[4], CONTACT_RESULT[5], combineContactFriction(proxy.friction, garmentFriction), penQ)
       hit = true
     }
 
@@ -84,6 +85,10 @@ export function solveCollisionConstraints(mesh: ClothSimMesh, snapshot: Collider
   }
 
   solveTriangleCollisionConstraints(mesh, snapshot)
+}
+
+function combineContactFriction(colliderFriction: number, garmentFriction: number) {
+  return Math.max(0, Math.min(colliderFriction, garmentFriction))
 }
 
 function solveTriangleCollisionConstraints(mesh: ClothSimMesh, snapshot: ColliderSnapshot) {

@@ -81,6 +81,7 @@ type ClothingState = {
     mode: AvatarCollisionMode
     skinOffset: number
     garmentThickness: number
+    bodyFriction: number
     meshCellSize: number
     meshSampleStride: number
     enableVertexTriangle: boolean
@@ -145,6 +146,7 @@ export const clothingStore = proxy<ClothingState>({
     mode: 'authoring',
     skinOffset: 0.022,
     garmentThickness: 0.008,
+    bodyFriction: 0.74,
     meshCellSize: 0.09,
     meshSampleStride: 1,
     enableVertexTriangle: true,

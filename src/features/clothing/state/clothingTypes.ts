@@ -42,6 +42,7 @@ export type PatternPiece = {
   shearCompliance?: number
   bendCompliance?: number
   damping?: number
+  friction?: number
   gluedEdgeIds?: string[]
 }
 

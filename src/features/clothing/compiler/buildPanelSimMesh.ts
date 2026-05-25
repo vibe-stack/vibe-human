@@ -30,6 +30,7 @@ export type CompiledPanelSimMesh = {
   positions: number[]
   invMass: number[]
   panelIds: string[]
+  particleFrictions: number[]
   panelUvs: number[]
   panelLocalPositions: number[]
   stretchConstraints: DistanceConstraint[]
@@ -77,6 +78,7 @@ export function buildPanelSimMesh(
   const positions: number[] = []
   const invMass: number[] = []
   const panelIds: string[] = []
+  const particleFrictions: number[] = []
   const panelUvs: number[] = []
   const panelLocalPositions: number[] = []
   const seamSamplePoints: Array<{ particle: number; x: number; y: number }> = []
@@ -94,6 +96,7 @@ export function buildPanelSimMesh(
     positions.push(world.x, world.y, world.z)
     invMass.push(1 / 0.018)
     panelIds.push(panel.id)
+    particleFrictions.push(panel.friction ?? 1)
     panelUvs.push(u, v)
     panelLocalPositions.push(p.x, p.y)
     seamSamplePoints.push({ particle, x: p.x, y: p.y })
@@ -158,6 +161,7 @@ export function buildPanelSimMesh(
     positions,
     invMass,
     panelIds,
+    particleFrictions,
     panelUvs,
     panelLocalPositions,
     stretchConstraints,

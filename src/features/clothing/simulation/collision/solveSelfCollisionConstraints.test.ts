@@ -87,6 +87,7 @@ function makeMesh(input: { positions: number[]; local: number[]; triangles?: num
     velocities: new Float32Array(positions.length),
     invMass: new Float32Array(positions.length / 3).fill(1),
     panelIds: new Array<string>(positions.length / 3).fill('panel'),
+    particleFrictions: new Float32Array(positions.length / 3).fill(1),
     panelUvs: new Float32Array((positions.length / 3) * 2),
     panelLocalPositions: new Float32Array(input.local),
     triangles: new Uint32Array(input.triangles ?? []),

@@ -29,6 +29,7 @@ export type FabricDefinition = {
   shearCompliance?: number
   bendCompliance?: number
   damping?: number
+  friction?: number
   density?: number
 }
 
@@ -57,6 +58,7 @@ export type PatternPanel = {
   shearCompliance?: number
   bendCompliance?: number
   damping?: number
+  friction?: number
   placement: PatternPlacement
   pins?: PanelPin[]
   grain?: GrainDirection

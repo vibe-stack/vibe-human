@@ -82,16 +82,14 @@ function ExportSceneRegistration() {
   return null
 }
 
-let demoGarmentBootstrapped = false
-
 /** Loads the demo garment once when clothing mode is first activated. */
 function ClothingBootstrapper() {
+  const { garment } = useSnapshot(clothingStore)
+
   useEffect(() => {
-    if (demoGarmentBootstrapped) return
-    demoGarmentBootstrapped = true
     if (Object.keys(clothingStore.garment.patterns).length > 0) return
     loadDemoGarment(createDemoGarment())
-  }, [])
+  }, [garment.patterns])
   return null
 }
 

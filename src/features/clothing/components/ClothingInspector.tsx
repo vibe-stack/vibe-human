@@ -6,6 +6,7 @@ import {
   importGarment,
   requestCollisionAvatarBuild,
   resetSim,
+  setAvatarBodyFriction,
   setAvatarCollisionMode,
   setAvatarMeshCellSize,
   setAvatarSkinOffset,
@@ -174,6 +175,17 @@ export default function ClothingInspector() {
             }}
           />
           <InspectorSlider
+            label="Garment Friction"
+            value={selectedPattern.friction ?? 1}
+            min={0}
+            max={5}
+            step={0.01}
+            onChange={(value) => {
+              clothingStore.garment.patterns[selectedPattern.id].friction = value
+              clothingStore.dirty.previewDirty = true
+            }}
+          />
+          <InspectorSlider
             label="Substeps"
             value={simQuality === 'low' ? 1 : simQuality === 'medium' ? 2 : simQuality === 'high' ? 3 : 4}
             min={1}
@@ -247,6 +259,7 @@ export default function ClothingInspector() {
         <Row label="Hash Cells" value={String(collisionAvatar.spatialHashCellCount)} />
         <InspectorSlider label="Avatar Skin Offset" value={collisionAvatar.skinOffset} min={0} max={0.08} step={0.002} onChange={setAvatarSkinOffset} />
         <InspectorSlider label="Garment Thickness" value={collisionAvatar.garmentThickness} min={0} max={0.04} step={0.001} onChange={setGarmentCollisionThickness} />
+        <InspectorSlider label="Body Friction" value={collisionAvatar.bodyFriction} min={0} max={5} step={0.01} onChange={setAvatarBodyFriction} />
         <InspectorSlider label="Proxy Inflate" value={collisionAvatar.globalInflate} min={0} max={0.08} step={0.002} onChange={setCollisionGlobalInflate} />
         <InspectorSlider label="Hash Cell Size" value={collisionAvatar.meshCellSize} min={0.04} max={0.2} step={0.005} onChange={setAvatarMeshCellSize} />
         <Toggle

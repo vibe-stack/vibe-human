@@ -18,6 +18,7 @@ export function compileGarmentTopology(document: PatternDocument, options: Compi
   const prevPositions = new Float32Array(positions)
   const velocities = new Float32Array(positions.length)
   const invMass = new Float32Array(flatten(Object.values(panels).flatMap((panel) => panel.invMass)))
+  const particleFrictions = new Float32Array(flatten(Object.values(panels).flatMap((panel) => panel.particleFrictions)))
   const panelUvs = new Float32Array(flatten(Object.values(panels).flatMap((panel) => panel.panelUvs)))
   const panelLocalPositions = new Float32Array(flatten(Object.values(panels).flatMap((panel) => panel.panelLocalPositions)))
   const triangles = new Uint32Array(flatten(Object.values(panels).flatMap((panel) => Array.from(panel.panelInfo.triangleIndices))))
@@ -29,6 +30,7 @@ export function compileGarmentTopology(document: PatternDocument, options: Compi
     velocities,
     invMass,
     panelIds: Object.values(panels).flatMap((panel) => panel.panelIds),
+    particleFrictions,
     panelUvs,
     panelLocalPositions,
     triangles,

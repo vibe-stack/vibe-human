@@ -51,6 +51,7 @@ export default function ClothScene({ controlsEnabled = true }: { controlsEnabled
       perRegionInflate: { ...collisionAvatar.perRegionInflate },
       skinOffset: collisionAvatar.skinOffset,
       garmentThickness: collisionAvatar.garmentThickness,
+      bodyFriction: collisionAvatar.bodyFriction,
       meshCellSize: collisionAvatar.meshCellSize,
       meshSampleStride: collisionAvatar.meshSampleStride,
       enableVertexTriangle: collisionAvatar.enableVertexTriangle,

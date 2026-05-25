@@ -34,6 +34,7 @@ type AvatarMeshColliderOptions = {
   id?: string
   skinOffset?: number
   garmentThickness?: number
+  friction?: number
   cellSize?: number
   triangleStride?: number
   includeRegions?: Set<CollisionRegion>
@@ -344,7 +345,7 @@ export function buildAvatarMeshColliderSnapshotFromSkinnedMeshes(
     bounds: hash.bounds,
     skin: options.skinOffset ?? 0.022,
     thickness: options.garmentThickness ?? 0.008,
-    friction: 0.74,
+    friction: options.friction ?? 0.74,
   }
 }
 
@@ -372,6 +373,7 @@ export function rebuildAvatarMeshCollider(
     const reused = topology.lastSnapshot
     reused.skin = options.skinOffset ?? reused.skin
     reused.thickness = options.garmentThickness ?? reused.thickness
+    reused.friction = options.friction ?? reused.friction
     return { snapshot: reused, topology }
   }
 
@@ -414,7 +416,7 @@ export function rebuildAvatarMeshCollider(
     bounds: hash.bounds,
     skin: options.skinOffset ?? 0.022,
     thickness: options.garmentThickness ?? 0.008,
-    friction: 0.74,
+    friction: options.friction ?? 0.74,
     bvh: topology.bvh,
   }
   topology.cellSize = hash.cellSize

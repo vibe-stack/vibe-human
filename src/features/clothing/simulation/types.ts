@@ -37,6 +37,7 @@ export type ClothSimMesh = {
   velocities: Float32Array
   invMass: Float32Array
   panelIds: string[]
+  particleFrictions: Float32Array
   panelUvs: Float32Array
   panelLocalPositions: Float32Array
   triangles: Uint32Array
