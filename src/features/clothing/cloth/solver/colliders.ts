@@ -47,21 +47,38 @@ export function projectColliders(state: ClothSolverState) {
       else if (c.kind === 'capsule') r = pushOutOfCapsule(c, px, py, pz)
       else if (c.kind === 'mesh') r = pushOutOfMesh(c, px, py, pz)
       if (r) {
+        // Save predicted position before pushout so we can compute penetration depth.
+        const predX = px, predY = py, predZ = pz
         px = r.x; py = r.y; pz = r.z
-        // Friction: damp the tangential motion since last frame.
+        // Friction: Coulomb model — static friction fully stops tangential slip when
+        // it falls within μ × penDepth; kinetic friction clamps it otherwise.
         const fr = c.friction
         if (fr > 0) {
           const opx = prevPositions[o], opy = prevPositions[o + 1], opz = prevPositions[o + 2]
-          // tangential displacement
-          const dx = px - opx, dy = py - opy, dz = pz - opz
           const nx = r.nx, ny = r.ny, nz = r.nz
+          // Tangential displacement (same whether measured from pushed or predicted pos
+          // because the pushout correction is purely normal).
+          const dx = px - opx, dy = py - opy, dz = pz - opz
           const dn = dx * nx + dy * ny + dz * nz
           const tx = dx - nx * dn, ty = dy - ny * dn, tz = dz - nz * dn
-          // Subtract some of the tangential motion (stick the cloth)
-          const f = Math.min(1, fr)
-          prevPositions[o]     = opx + tx * f
-          prevPositions[o + 1] = opy + ty * f
-          prevPositions[o + 2] = opz + tz * f
+          // Penetration depth = pushout correction projected onto the contact normal.
+          const penDepth = (px - predX) * nx + (py - predY) * ny + (pz - predZ) * nz
+          if (penDepth > 1e-6) {
+            const tangMagSq = tx * tx + ty * ty + tz * tz
+            const coulombLimit = fr * penDepth
+            if (tangMagSq <= coulombLimit * coulombLimit) {
+              // Static friction: zero tangential velocity entirely.
+              prevPositions[o]     = opx + tx
+              prevPositions[o + 1] = opy + ty
+              prevPositions[o + 2] = opz + tz
+            } else {
+              // Kinetic friction: clamp tangential displacement to μ × penDepth.
+              const scale = coulombLimit / Math.sqrt(tangMagSq)
+              prevPositions[o]     = opx + tx * scale
+              prevPositions[o + 1] = opy + ty * scale
+              prevPositions[o + 2] = opz + tz * scale
+            }
+          }
         }
         touched = true
       }

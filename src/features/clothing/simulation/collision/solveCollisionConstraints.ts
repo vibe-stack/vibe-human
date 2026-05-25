@@ -44,29 +44,35 @@ export function solveCollisionConstraints(mesh: ClothSimMesh, snapshot: Collider
     let hit = false
 
     for (const meshCollider of snapshot.meshColliders ?? []) {
+      const predMx = px, predMy = py, predMz = pz
       if (!pushOutOfMeshCollider(meshCollider, prevX, prevY, prevZ, px, py, pz, CONTACT_RESULT)) continue
       px = CONTACT_RESULT[0]
       py = CONTACT_RESULT[1]
       pz = CONTACT_RESULT[2]
-      applyContactFriction(prevPositions, offset, px, py, pz, CONTACT_RESULT[3], CONTACT_RESULT[4], CONTACT_RESULT[5], meshCollider.friction)
+      const penM = (px - predMx) * CONTACT_RESULT[3] + (py - predMy) * CONTACT_RESULT[4] + (pz - predMz) * CONTACT_RESULT[5]
+      applyContactFriction(prevPositions, offset, px, py, pz, CONTACT_RESULT[3], CONTACT_RESULT[4], CONTACT_RESULT[5], meshCollider.friction, penM)
       hit = true
     }
 
     for (const patch of snapshot.lowResMeshPatches ?? []) {
+      const predPx = px, predPy = py, predPz = pz
       if (!pushOutOfLowResPatch(patch, px, py, pz, CONTACT_RESULT)) continue
       px = CONTACT_RESULT[0]
       py = CONTACT_RESULT[1]
       pz = CONTACT_RESULT[2]
-      applyContactFriction(prevPositions, offset, px, py, pz, CONTACT_RESULT[3], CONTACT_RESULT[4], CONTACT_RESULT[5], patch.friction)
+      const penP = (px - predPx) * CONTACT_RESULT[3] + (py - predPy) * CONTACT_RESULT[4] + (pz - predPz) * CONTACT_RESULT[5]
+      applyContactFriction(prevPositions, offset, px, py, pz, CONTACT_RESULT[3], CONTACT_RESULT[4], CONTACT_RESULT[5], patch.friction, penP)
       hit = true
     }
 
     for (const proxy of snapshot.proxies) {
+      const predQx = px, predQy = py, predQz = pz
       if (!pushOut(proxy, px, py, pz, CONTACT_RESULT)) continue
       px = CONTACT_RESULT[0]
       py = CONTACT_RESULT[1]
       pz = CONTACT_RESULT[2]
-      applyContactFriction(prevPositions, offset, px, py, pz, CONTACT_RESULT[3], CONTACT_RESULT[4], CONTACT_RESULT[5], proxy.friction)
+      const penQ = (px - predQx) * CONTACT_RESULT[3] + (py - predQy) * CONTACT_RESULT[4] + (pz - predQz) * CONTACT_RESULT[5]
+      applyContactFriction(prevPositions, offset, px, py, pz, CONTACT_RESULT[3], CONTACT_RESULT[4], CONTACT_RESULT[5], proxy.friction, penQ)
       hit = true
     }
 
@@ -162,7 +168,9 @@ function applyContactFriction(
   ny: number,
   nz: number,
   friction: number,
+  penDepth: number,
 ) {
+  if (penDepth <= 1e-6) return
   const dx = px - prevPositions[offset]
   const dy = py - prevPositions[offset + 1]
   const dz = pz - prevPositions[offset + 2]
@@ -170,10 +178,21 @@ function applyContactFriction(
   const tx = dx - nx * normalDot
   const ty = dy - ny * normalDot
   const tz = dz - nz * normalDot
-  const limitedFriction = Math.min(1, friction)
-  prevPositions[offset] += tx * limitedFriction
-  prevPositions[offset + 1] += ty * limitedFriction
-  prevPositions[offset + 2] += tz * limitedFriction
+  // Coulomb friction: static cone fully zeroes tangential slip; kinetic clamps it.
+  const tangMagSq = tx * tx + ty * ty + tz * tz
+  const coulombLimit = friction * penDepth
+  if (tangMagSq <= coulombLimit * coulombLimit) {
+    // Static friction: completely stop tangential motion.
+    prevPositions[offset] += tx
+    prevPositions[offset + 1] += ty
+    prevPositions[offset + 2] += tz
+  } else {
+    // Kinetic friction: clamp tangential displacement to μ × penDepth.
+    const scale = coulombLimit / Math.sqrt(tangMagSq)
+    prevPositions[offset] += tx * scale
+    prevPositions[offset + 1] += ty * scale
+    prevPositions[offset + 2] += tz * scale
+  }
 }
 
 function pushOutOfLowResPatch(
