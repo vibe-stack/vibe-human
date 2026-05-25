@@ -55,6 +55,7 @@ type AppState = {
   showHair: boolean
   showTest: boolean
   showClothing: boolean
+  showExport: boolean
   characterRenderMode: CharacterRenderMode
   poseTestEnabled: boolean
   poseTestStatus: string
@@ -105,6 +106,7 @@ export const appState = proxy<AppState>({
   showHair: false,
   showTest: false,
   showClothing: false,
+  showExport: false,
   characterRenderMode: 'solid',
   poseTestEnabled: false,
   poseTestStatus: 'Idle',
@@ -227,6 +229,14 @@ export function setShowTest(value: boolean) {
   appState.showTest = value
 }
 
+export function setShowClothing(value: boolean) {
+  appState.showClothing = value
+}
+
+export function setShowExport(value: boolean) {
+  appState.showExport = value
+}
+
 export function setCharacterRenderMode(mode: CharacterRenderMode) {
   appState.characterRenderMode = mode
 }
@@ -272,7 +282,7 @@ export function setPoseTestWorldLandmarks(value: PoseTestLandmark[] | null) {
   appState.poseTestFrameTime = value ? performance.now() : 0
 }
 
-function activatePanel(key: 'showExpressions' | 'showModeling' | 'showSkinning' | 'showHair' | 'showTest' | 'showClothing') {
+function activatePanel(key: 'showExpressions' | 'showModeling' | 'showSkinning' | 'showHair' | 'showTest' | 'showClothing' | 'showExport') {
   const next = !appState[key]
   appState.showExpressions = false
   appState.showModeling = false
@@ -280,6 +290,7 @@ function activatePanel(key: 'showExpressions' | 'showModeling' | 'showSkinning' 
   appState.showHair = false
   appState.showTest = false
   appState.showClothing = false
+  appState.showExport = false
   appState[key] = next
 }
 
@@ -305,4 +316,8 @@ export function toggleShowTest() {
 
 export function toggleShowClothing() {
   activatePanel('showClothing')
+}
+
+export function toggleShowExport() {
+  activatePanel('showExport')
 }

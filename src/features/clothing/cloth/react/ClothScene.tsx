@@ -17,7 +17,7 @@ const _ndc = new THREE.Vector2()
 const _hitScratch = new THREE.Vector3()
 
 /** Renders all cloth pieces + optional collision-surface debug viz. */
-export default function ClothScene() {
+export default function ClothScene({ controlsEnabled = true }: { controlsEnabled?: boolean }) {
   const { garment, placements, previewOptions, simRunning, simResetKey, simQuality, transformMode, collisionAvatar } = useSnapshot(clothingStore)
   const document = useMemo(
     () => toPatternDocument(garment as unknown as GarmentDocument, placements),
@@ -89,7 +89,7 @@ export default function ClothScene() {
             <mesh
               geometry={panel.geometry}
               frustumCulled={false}
-              onPointerDown={(event) => {
+              onPointerDown={controlsEnabled ? (event) => {
                 event.stopPropagation()
                 if (!simRunning) {
                   selectPattern(panel.panelId)
@@ -154,7 +154,7 @@ export default function ClothScene() {
                 canvas.addEventListener('lostpointercapture', state.onRelease)
                 grabRef.current = state
                 grab.start(particle, grabPoint.x, grabPoint.y, grabPoint.z)
-              }}
+              } : undefined}
             >
               <meshStandardMaterial
                 color={displayColor}
@@ -174,6 +174,7 @@ export default function ClothScene() {
               selected={selected}
               simRunning={simRunning}
               transformMode={transformMode}
+              controlsEnabled={controlsEnabled}
             />
           </group>
         )
@@ -197,12 +198,14 @@ function PanelTransformHandle({
   selected,
   simRunning,
   transformMode,
+  controlsEnabled,
 }: {
   panelId: string
   placement: PatternPlacement
   selected: boolean
   simRunning: boolean
   transformMode: 'translate' | 'rotate'
+  controlsEnabled: boolean
 }) {
   const handleRef = useRef<THREE.Object3D>(null)
   const [handleNode, setHandleNode] = useState<THREE.Object3D | null>(null)
@@ -234,7 +237,7 @@ function PanelTransformHandle({
         position={[placement.position.x, placement.position.y, placement.position.z]}
         rotation={[placement.rotation.x, placement.rotation.y, placement.rotation.z]}
       />
-      {selected && !simRunning && handleNode && (
+      {controlsEnabled && selected && !simRunning && handleNode && (
         <TransformControls
           object={handleNode}
           mode={transformMode}

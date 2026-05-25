@@ -1202,12 +1202,8 @@ export default function HumanModel() {
         <ModelingOverlay bones={modelingBones} />
       )}
 
-      {showHair && (
-        <>
-          <GroomRenderer />
-          <GroomViewportTools />
-        </>
-      )}
+      <GroomRenderer />
+      {showHair && <GroomViewportTools />}
     </>
   )
 }

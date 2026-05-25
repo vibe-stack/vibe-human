@@ -556,12 +556,12 @@ export default function GroomRenderer() {
   return (
     <group ref={transformRef} matrixAutoUpdate={false}>
       {volumeCardGeometry && (
-        <mesh geometry={volumeCardGeometry} renderOrder={58}>
+        <mesh name="HairVolumeCards" geometry={volumeCardGeometry} renderOrder={58}>
           <primitive object={cardMaterial} attach="material" />
         </mesh>
       )}
       {hairCardMesh && (
-        <mesh geometry={hairCardMesh.geometry} renderOrder={60}>
+        <mesh name="HairCardsPreview" geometry={hairCardMesh.geometry} renderOrder={60}>
           <meshStandardMaterial
             map={hairCardMesh.atlas}
             side={THREE.FrontSide}
@@ -575,12 +575,12 @@ export default function GroomRenderer() {
         </mesh>
       )}
       {strandGeometry && (
-        <mesh geometry={strandGeometry} renderOrder={60}>
+        <mesh name="HairStrands" geometry={strandGeometry} renderOrder={60}>
           <primitive object={strandMaterial} attach="material" />
         </mesh>
       )}
       {flyawayGeometry && (
-        <mesh geometry={flyawayGeometry} renderOrder={62}>
+        <mesh name="HairFlyaways" geometry={flyawayGeometry} renderOrder={62}>
           <primitive object={flyawayMaterial} attach="material" />
         </mesh>
       )}

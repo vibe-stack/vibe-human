@@ -9,7 +9,7 @@ export const DEFAULT_OILINESS = 0.08
 export const DEFAULT_SURFACE_ROUGHNESS = 0.68
 export const DEFAULT_TONE_DEPTH = 0.571
 export const DEFAULT_SUBSURFACE_STRENGTH = 0.68
-const EYE_TEXTURE_DEFAULT = 'textures/eyes.png'
+export const EYE_TEXTURE_DEFAULT = 'textures/eyes.png'
 
 export const SKIN_TEXTURE_SLOTS = [
   'colorFinal',
@@ -46,7 +46,7 @@ export const SKIN_TEXTURE_DEFAULTS: Record<SkinTextureSlot, string> = {
   sss:          'textures/sss.png',
 }
 
-const BODY_SKIN_TEXTURE_DEFAULTS: Record<SkinTextureSlot, string | null> = {
+export const BODY_SKIN_TEXTURE_DEFAULTS: Record<SkinTextureSlot, string | null> = {
   colorFinal:   'textures/body/albedo.png',
   subdermal:    'textures/body/subdermal.png',
   epidermal:    'textures/body/epidermal.png',

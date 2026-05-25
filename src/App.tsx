@@ -2,7 +2,7 @@ import { Suspense, useEffect, useState } from 'react'
 import { Canvas, extend, useThree, type ThreeToJSXElements } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import * as THREE from 'three/webgpu'
-import { Activity, Smile, Box, Layers, Scissors, Shirt, Orbit } from 'lucide-react'
+import { Activity, Smile, Box, Layers, Scissors, Shirt, Orbit, FileArchive } from 'lucide-react'
 import { useSnapshot } from 'valtio'
 import { Group, Panel, Separator } from 'react-resizable-panels'
 import { cn } from './lib/utils'
@@ -23,10 +23,12 @@ import GarmentPreviewMesh from './features/clothing/three/GarmentPreviewMesh'
 import ClothingPatternEditor2D from './features/clothing/components/ClothingPatternEditor2D'
 import ClothingToolbar from './features/clothing/components/ClothingToolbar'
 import { ClothingInspector } from './features/clothing/index'
+import ExportPanel from './features/export/ExportPanel'
+import { setCurrentExportScene } from './features/export/exportSession'
 import { clothingStore } from './features/clothing/state/clothingStore'
-import { loadDemoGarment } from './features/clothing/state/clothingActions'
+import { loadDemoGarment, requestCollisionAvatarBuild } from './features/clothing/state/clothingActions'
 import { createDemoGarment } from './features/clothing/demo/createDemoGarment'
-import { appState, setCharacterRenderMode, toggleShowExpressions, toggleShowHair, toggleShowModeling, toggleShowSkinning, toggleShowTest, toggleShowClothing, type CharacterRenderMode } from './appState'
+import { appState, setCharacterRenderMode, toggleShowExpressions, toggleShowHair, toggleShowModeling, toggleShowSkinning, toggleShowTest, toggleShowClothing, toggleShowExport, type CharacterRenderMode } from './appState'
 
 function FovUpdater() {
   const { camera, invalidate } = useThree()
@@ -69,9 +71,25 @@ function CanvasResizeUpdater({ watch }: { watch: boolean }) {
   return null
 }
 
+function ExportSceneRegistration() {
+  const { scene } = useThree()
+
+  useEffect(() => {
+    setCurrentExportScene(scene)
+    return () => setCurrentExportScene(null)
+  }, [scene])
+
+  return null
+}
+
+let demoGarmentBootstrapped = false
+
 /** Loads the demo garment once when clothing mode is first activated. */
 function ClothingBootstrapper() {
   useEffect(() => {
+    if (demoGarmentBootstrapped) return
+    demoGarmentBootstrapped = true
+    if (Object.keys(clothingStore.garment.patterns).length > 0) return
     loadDemoGarment(createDemoGarment())
   }, [])
   return null
@@ -129,11 +147,12 @@ function ClothingOrbitToggle() {
 }
 
 export default function App() {
-  const { fov, isTransforming, showExpressions, showHair, showModeling, showSkinning, showTest, showClothing } = useSnapshot(appState)
+  const { fov, isTransforming, showExpressions, showHair, showModeling, showSkinning, showTest, showClothing, showExport, modelingValues } = useSnapshot(appState)
   const { previewOptions } = useSnapshot(clothingStore)
   const [isMobile, setIsMobile] = useState(false)
+  const [clothingRuntimeEnabled, setClothingRuntimeEnabled] = useState(false)
 
-  const anyPanelActive = showExpressions || showHair || showModeling || showSkinning || showTest || showClothing
+  const anyPanelActive = showExpressions || showHair || showModeling || showSkinning || showTest || showClothing || showExport
 
   const panels = [
     { key: 'test', label: 'Test', Icon: Activity, active: showTest, toggle: toggleShowTest },
@@ -142,7 +161,15 @@ export default function App() {
     { key: 'skinning', label: 'Skinning', Icon: Layers, active: showSkinning, toggle: toggleShowSkinning },
     { key: 'hair', label: 'Hair', Icon: Scissors, active: showHair, toggle: toggleShowHair },
     { key: 'clothing', label: 'Clothing', Icon: Shirt, active: showClothing, toggle: toggleShowClothing },
+    { key: 'export', label: 'Export', Icon: FileArchive, active: showExport, toggle: toggleShowExport },
   ]
+
+  useEffect(() => {
+    if (!showClothing) return
+    setClothingRuntimeEnabled(true)
+    const frame = requestAnimationFrame(() => requestCollisionAvatarBuild())
+    return () => cancelAnimationFrame(frame)
+  }, [showClothing, modelingValues])
 
   useEffect(() => {
     const media = window.matchMedia('(max-width: 960px)')
@@ -196,6 +223,7 @@ export default function App() {
               }}
               className="w-full h-full"
             >
+              <ExportSceneRegistration />
               <FovUpdater />
               <CanvasResizeUpdater watch={showClothing} />
               <color attach="background" args={['#565656']} />
@@ -206,9 +234,9 @@ export default function App() {
               <Suspense fallback={null}>
                 <HumanModel />
               </Suspense>
-              {showClothing && (
+              {clothingRuntimeEnabled && (
                 <Suspense fallback={null}>
-                  <GarmentPreviewMesh />
+                  <GarmentPreviewMesh controlsEnabled={showClothing} />
                 </Suspense>
               )}
               <OrbitControls
@@ -221,7 +249,7 @@ export default function App() {
                 target={[0, 0, 0]}
               />
             </Canvas>
-            {showClothing && <ClothingBootstrapper />}
+            {clothingRuntimeEnabled && <ClothingBootstrapper />}
             <CharacterRenderModeTabs />
             {showClothing && <ClothingOrbitToggle />}
             {showHair && <BrushToolbar />}
@@ -243,6 +271,7 @@ export default function App() {
             {showSkinning && <SkinningPanel />}
             {showHair && <GroomPanel />}
             {showClothing && <ClothingInspector />}
+            {showExport && <ExportPanel />}
             {!anyPanelActive && (
               <div className="min-h-full flex flex-col items-center justify-center gap-2 opacity-20 select-none">
                 <span className="text-[18px]">◧</span>
@@ -269,6 +298,7 @@ export default function App() {
               }}
               className="w-full h-full"
             >
+              <ExportSceneRegistration />
               <FovUpdater />
               <CanvasResizeUpdater watch={showClothing} />
               <color attach="background" args={['#565656']} />
@@ -286,9 +316,9 @@ export default function App() {
               </Suspense>
 
               {/* Garment panels — added to this canvas, not a separate one */}
-              {showClothing && (
+              {clothingRuntimeEnabled && (
                 <Suspense fallback={null}>
-                  <GarmentPreviewMesh />
+                  <GarmentPreviewMesh controlsEnabled={showClothing} />
                 </Suspense>
               )}
 
@@ -302,7 +332,7 @@ export default function App() {
                 target={[0, 0, 0]}
               />
             </Canvas>
-            {showClothing && <ClothingBootstrapper />}
+            {clothingRuntimeEnabled && <ClothingBootstrapper />}
             <CharacterRenderModeTabs />
             {showClothing && <ClothingOrbitToggle />}
             {showHair && <BrushToolbar />}
@@ -335,6 +365,7 @@ export default function App() {
             {showSkinning && <SkinningPanel />}
             {showHair && <GroomPanel />}
             {showClothing && <ClothingInspector />}
+            {showExport && <ExportPanel />}
             {!anyPanelActive && (
               <div className="flex-1 flex flex-col items-center justify-center gap-2 opacity-20 select-none">
                 <span className="text-[18px]">◧</span>

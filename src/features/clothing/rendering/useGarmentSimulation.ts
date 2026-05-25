@@ -141,6 +141,19 @@ export function useGarmentSimulation(args: {
   }, [collision])
 
   useEffect(() => {
+    const runtime = runtimeRef.current
+    if (!enabledRef.current || !runtime) return
+    updateColliderSnapshotForStep(
+      Boolean(runtime.simMesh.particleCount),
+      avatarRef,
+      avatarBuildRequestRef,
+      meshColliderRef,
+      meshColliderTopologyRef,
+      collisionRef.current,
+    )
+  }, [collision.buildRequestId])
+
+  useEffect(() => {
     enabledRef.current = enabled
     if (!enabled) clearBodyProxySnapshot()
   }, [enabled])

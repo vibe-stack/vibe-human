@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { useSnapshot } from 'valtio'
+import { SliderComfortable } from '@/components/ui/slider'
 import {
   Paintbrush,
   Eraser,
@@ -113,22 +114,19 @@ function SliderRow({
   step: number
   onChange: (v: number) => void
 }) {
+  const decimals = step >= 1 ? 0 : step >= 0.01 ? 2 : step >= 0.001 ? 3 : 4
+
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-        <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)' }}>{label}</span>
-        <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', fontFamily: 'monospace' }}>
-          {value.toFixed(step < 1 ? 3 : 0)}
-        </span>
-      </div>
-      <input
-        type="range"
+    <div style={{ minWidth: 0 }}>
+      <SliderComfortable
+        variant="scrubber"
+        label={label}
+        value={value}
         min={min}
         max={max}
         step={step}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="range-slider"
+        onChange={onChange}
+        formatValue={(v) => v.toFixed(decimals)}
       />
     </div>
   )
@@ -349,47 +347,39 @@ export function BrushToolbar() {
       {sep}
 
       {/* Brush size */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 150 }}>
         <CircleDot size={11} style={{ color: 'rgba(255,255,255,0.28)', flexShrink: 0 }} />
-        <div>
-          <div style={{ ...monoLabel, marginBottom: 2, color: 'rgba(255,255,255,0.22)' }}>SIZE</div>
-          <input
-            type="range"
+        <div style={{ width: 112 }}>
+          <SliderComfortable
+            variant="scrubber"
+            label="SIZE"
+            value={brushSize}
             min={0.005}
             max={0.16}
             step={0.001}
-            value={brushSize}
-            onChange={(e) => setBrushSize(Number(e.target.value))}
-            className="range-slider"
-            style={{ width: 72 }}
+            onChange={setBrushSize}
+            formatValue={(v) => v.toFixed(3)}
           />
         </div>
-        <span style={{ fontSize: 9, fontFamily: 'monospace', color: 'rgba(255,255,255,0.22)', width: 32 }}>
-          {brushSize.toFixed(3)}
-        </span>
       </div>
 
       {sep}
 
       {/* Brush strength */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 140 }}>
         <Gauge size={11} style={{ color: 'rgba(255,255,255,0.28)', flexShrink: 0 }} />
-        <div>
-          <div style={{ ...monoLabel, marginBottom: 2, color: 'rgba(255,255,255,0.22)' }}>STR</div>
-          <input
-            type="range"
+        <div style={{ width: 102 }}>
+          <SliderComfortable
+            variant="scrubber"
+            label="STR"
+            value={brushStrength}
             min={0.05}
             max={1}
             step={0.01}
-            value={brushStrength}
-            onChange={(e) => setBrushStrength(Number(e.target.value))}
-            className="range-slider"
-            style={{ width: 72 }}
+            onChange={setBrushStrength}
+            formatValue={(v) => v.toFixed(2)}
           />
         </div>
-        <span style={{ fontSize: 9, fontFamily: 'monospace', color: 'rgba(255,255,255,0.22)', width: 22 }}>
-          {brushStrength.toFixed(2)}
-        </span>
       </div>
       </div>
     </div>

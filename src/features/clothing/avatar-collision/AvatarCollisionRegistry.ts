@@ -428,6 +428,12 @@ function computePoseHash(meshes: THREE.SkinnedMesh[]) {
   for (let i = 0; i < meshes.length; i += 1) {
     const skeleton = meshes[i].skeleton
     if (!skeleton) continue
+    const morphInfluences = meshes[i].morphTargetInfluences
+    if (morphInfluences?.length) {
+      for (let m = 0; m < morphInfluences.length; m += 1) {
+        hash = mix32(hash, floatBits(morphInfluences[m] ?? 0))
+      }
+    }
     const bones = skeleton.bones
     for (let b = 0; b < bones.length; b += 1) {
       const m = bones[b].matrixWorld.elements
@@ -527,7 +533,7 @@ function reskinTopologyVertices(topology: AvatarMeshColliderTopology) {
     const mesh = meshes[meshIndex]
     const position = positionAttrs[meshIndex]
     if (!mesh || !position) continue
-    _samplePoint.fromBufferAttribute(position, vertexIndex)
+    copyMorphedLocalVertex(mesh, position, vertexIndex, _samplePoint)
     mesh.applyBoneTransform(vertexIndex, _samplePoint)
     _samplePoint.applyMatrix4(mesh.matrixWorld)
     const offset = vertex * 3
@@ -810,8 +816,30 @@ function copySkinnedWorldVertex(
   vertexIndex: number,
   target: THREE.Vector3,
 ) {
-  target.fromBufferAttribute(position, vertexIndex)
+  copyMorphedLocalVertex(mesh, position, vertexIndex, target)
   mesh.applyBoneTransform(vertexIndex, target)
+  return target
+}
+
+function copyMorphedLocalVertex(
+  mesh: THREE.SkinnedMesh,
+  position: THREE.BufferAttribute,
+  vertexIndex: number,
+  target: THREE.Vector3,
+) {
+  target.fromBufferAttribute(position, vertexIndex)
+  const morphPositions = mesh.geometry.morphAttributes.position ?? []
+  const influences = mesh.morphTargetInfluences ?? []
+  if (!morphPositions.length || !influences.length) return target
+
+  _scratchA.copy(target)
+  for (let i = 0; i < morphPositions.length; i += 1) {
+    const influence = influences[i] ?? 0
+    if (Math.abs(influence) <= 1e-6) continue
+    _scratchB.fromBufferAttribute(morphPositions[i] as THREE.BufferAttribute, vertexIndex)
+    if (mesh.geometry.morphTargetsRelative) target.addScaledVector(_scratchB, influence)
+    else target.addScaledVector(_scratchB.sub(_scratchA), influence)
+  }
   return target
 }
 
