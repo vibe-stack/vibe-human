@@ -1,8 +1,7 @@
-import { useRef } from "react";
+import { useRef, memo, useCallback } from "react";
 import { useSnapshot } from "valtio";
 import { Button } from "@/components/ui/button";
 import { SliderComfortable } from "@/components/ui/slider";
-import { Elevated } from "@/lib/elevated";
 import {
   appState,
   setFlipNormalY,
@@ -28,6 +27,66 @@ import {
   SKIN_TEXTURE_SLOTS,
   type SkinTextureSlot,
 } from "./skinMaterial";
+
+// ---------------------------------------------------------------------------
+// SliderRow — memoised so only the dragged row re-renders on every tick
+// ---------------------------------------------------------------------------
+
+const SliderRow = memo(function SliderRow({
+  label,
+  value,
+  min,
+  max,
+  step,
+  defaultValue,
+  onChange,
+}: {
+  label: string
+  value: number
+  min: number
+  max: number
+  step: number
+  defaultValue: number
+  onChange: (value: number) => void
+}) {
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
+  const stableChange = useCallback((v: number) => onChangeRef.current(v), [])
+  const stableReset  = useCallback(() => onChangeRef.current(defaultValue), [defaultValue])
+  const decimals = step >= 1 ? 0 : step >= 0.01 ? 2 : 3
+
+  return (
+    <div className="px-3 py-2 border-b border-border/30">
+      <SliderComfortable
+        variant="scrubber"
+        label={label}
+        value={value}
+        min={min}
+        max={max}
+        step={step}
+        onChange={stableChange}
+        formatValue={(v) => v.toFixed(decimals)}
+      />
+      {/* Fixed-height slot so layout never shifts */}
+      <div className="h-5 flex justify-end mt-1">
+        <Button
+          variant="ghost"
+          size="sm"
+          className={`h-5 px-1.5 text-[10px] transition-opacity ${value !== defaultValue ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+          onClick={stableReset}
+        >
+          ↺ Reset
+        </Button>
+      </div>
+    </div>
+  )
+}, (prev, next) =>
+  prev.value === next.value &&
+  prev.label === next.label &&
+  prev.defaultValue === next.defaultValue &&
+  prev.min === next.min &&
+  prev.max === next.max &&
+  prev.step === next.step)
 
 const labelStyle = {
   fontSize: 9,
@@ -92,43 +151,6 @@ export default function SkinningPanel() {
     (toneDepth !== DEFAULT_TONE_DEPTH ? 1 : 0) +
     (subsurfaceStrength !== DEFAULT_SUBSURFACE_STRENGTH ? 1 : 0);
 
-  const sliderRow = (
-    label: string,
-    value: number,
-    min: number,
-    max: number,
-    step: number,
-    defaultValue: number,
-    onChange: (value: number) => void,
-  ) => (
-    <div className="px-3 py-2 border-b border-border/30">
-      <SliderComfortable
-        label={label}
-        value={value}
-        min={min}
-        max={max}
-        step={step}
-        onChange={onChange}
-        formatValue={(v) => {
-          const decimals = step >= 1 ? 0 : step >= 0.01 ? 2 : 3;
-          return v.toFixed(decimals);
-        }}
-      />
-      {value !== defaultValue && (
-        <div className="flex justify-end mt-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-5 px-1.5 text-[10px]"
-            onClick={() => onChange(defaultValue)}
-          >
-            ↺ Reset
-          </Button>
-        </div>
-      )}
-    </div>
-  );
-
   const sectionLabel = (text: string) => (
     <div className="px-3 py-2 text-[8px] font-bold tracking-[0.16em] text-foreground/20 font-mono border-b border-border/20">
       {text}
@@ -155,71 +177,15 @@ export default function SkinningPanel() {
 
       <div className="flex-1 min-h-0 overflow-y-auto">
         {sectionLabel("APPEARANCE")}
-        {sliderRow(
-          "OILINESS",
-          oiliness,
-          0,
-          1,
-          0.01,
-          DEFAULT_OILINESS,
-          setOiliness,
-        )}
-        {sliderRow(
-          "SURFACE ROUGHNESS",
-          surfaceRoughness,
-          0.1,
-          1,
-          0.01,
-          DEFAULT_SURFACE_ROUGHNESS,
-          setSurfaceRoughness,
-        )}
-        {sliderRow(
-          "TONE DEPTH",
-          toneDepth,
-          0,
-          1,
-          0.01,
-          DEFAULT_TONE_DEPTH,
-          setToneDepth,
-        )}
-        {sliderRow(
-          "SUBSURFACE",
-          subsurfaceStrength,
-          0,
-          1,
-          0.01,
-          DEFAULT_SUBSURFACE_STRENGTH,
-          setSubsurfaceStrength,
-        )}
+        <SliderRow label="OILINESS" value={oiliness} min={0} max={1} step={0.01} defaultValue={DEFAULT_OILINESS} onChange={setOiliness} />
+        <SliderRow label="SURFACE ROUGHNESS" value={surfaceRoughness} min={0.1} max={1} step={0.01} defaultValue={DEFAULT_SURFACE_ROUGHNESS} onChange={setSurfaceRoughness} />
+        <SliderRow label="TONE DEPTH" value={toneDepth} min={0} max={1} step={0.01} defaultValue={DEFAULT_TONE_DEPTH} onChange={setToneDepth} />
+        <SliderRow label="SUBSURFACE" value={subsurfaceStrength} min={0} max={1} step={0.01} defaultValue={DEFAULT_SUBSURFACE_STRENGTH} onChange={setSubsurfaceStrength} />
 
         {sectionLabel("DETAIL")}
-        {sliderRow(
-          "PORE SCALE",
-          poreScale,
-          4,
-          90,
-          1,
-          DEFAULT_PORE_SCALE,
-          setPoreScale,
-        )}
-        {sliderRow(
-          "PORE NORMAL",
-          poreNormalStrength,
-          0,
-          2,
-          0.05,
-          DEFAULT_PORE_NORMAL_STRENGTH,
-          setPoreNormalStrength,
-        )}
-        {sliderRow(
-          "WRINKLE NORMAL",
-          wrinkleNormalStrength,
-          0,
-          2,
-          0.05,
-          DEFAULT_WRINKLE_NORMAL_STRENGTH,
-          setWrinkleNormalStrength,
-        )}
+        <SliderRow label="PORE SCALE" value={poreScale} min={4} max={90} step={1} defaultValue={DEFAULT_PORE_SCALE} onChange={setPoreScale} />
+        <SliderRow label="PORE NORMAL" value={poreNormalStrength} min={0} max={2} step={0.05} defaultValue={DEFAULT_PORE_NORMAL_STRENGTH} onChange={setPoreNormalStrength} />
+        <SliderRow label="WRINKLE NORMAL" value={wrinkleNormalStrength} min={0} max={2} step={0.05} defaultValue={DEFAULT_WRINKLE_NORMAL_STRENGTH} onChange={setWrinkleNormalStrength} />
 
         <div className="flex items-center justify-between px-3 py-2 border-b border-border/30">
           <span style={{ ...labelStyle, color: "rgba(255,255,255,0.48)" }}>

@@ -1,6 +1,9 @@
 import {
   type ReactNode,
   useMemo,
+  memo,
+  useRef,
+  useCallback,
 } from 'react'
 
 import { useSnapshot } from 'valtio'
@@ -285,7 +288,7 @@ function SelectedInspector({
   )
 }
 
-function AreaSlider({
+const AreaSlider = memo(function AreaSlider({
   control,
   primary,
   value,
@@ -296,27 +299,34 @@ function AreaSlider({
   value: number
   onChange: (value: number) => void
 }) {
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
+  const stableChange = useCallback((v: number) => onChangeRef.current(v), [])
   const positiveOnly = control.min >= 0
 
   return (
     <Elevated offset={1} className={`rounded-md p-1.5 ${primary ? 'ring-1 ring-sky-400/20' : ''}`}>
       <SliderComfortable
+        variant="scrubber"
         label={`${control.label}${primary ? ' ★' : ''}`}
         value={value}
         min={control.min}
         max={control.max}
         step={0.01}
-        onChange={onChange}
-        formatValue={(v) => v.toFixed(2)}
+        onChange={stableChange}
+        formatValue={(v) => {
+          if (!positiveOnly && Math.abs(v) < 0.005) return 'Base'
+          if (Math.abs(v - control.min) < 0.005) return control.negativeLabel
+          if (Math.abs(v - control.max) < 0.005) return control.positiveLabel
+          return v.toFixed(2)
+        }}
       />
-      <div className="flex justify-between mt-1 text-[8px] text-foreground/30 font-mono">
-        <span>{control.negativeLabel.toUpperCase()}</span>
-        <span>{positiveOnly ? '' : 'BASE'}</span>
-        <span>{control.positiveLabel.toUpperCase()}</span>
-      </div>
     </Elevated>
   )
-}
+}, (prev, next) =>
+  prev.value === next.value &&
+  prev.primary === next.primary &&
+  prev.control === next.control)
 
 function MetaPill({ children }: { children: ReactNode }) {
   return (

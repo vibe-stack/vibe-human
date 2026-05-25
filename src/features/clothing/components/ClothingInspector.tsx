@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, memo, useCallback } from 'react'
 import { useSnapshot } from 'valtio'
 import { clothingStore } from '../state/clothingStore'
 import {
@@ -382,7 +382,7 @@ function Toggle({
   )
 }
 
-function InspectorSlider({
+const InspectorSlider = memo(function InspectorSlider({
   label,
   value,
   min,
@@ -397,18 +397,27 @@ function InspectorSlider({
   step: number
   onChange: (value: number) => void
 }) {
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
+  const stableChange = useCallback((v: number) => onChangeRef.current(v), [])
   return (
     <SliderComfortable
+      variant="scrubber"
       label={label}
       value={value}
       min={min}
       max={max}
       step={step}
-      onChange={onChange}
+      onChange={stableChange}
       formatValue={(v) => formatSliderValue(v, step)}
     />
   )
-}
+}, (prev, next) =>
+  prev.value === next.value &&
+  prev.label === next.label &&
+  prev.min === next.min &&
+  prev.max === next.max &&
+  prev.step === next.step)
 
 function formatSliderValue(value: number, step: number) {
   if (step >= 1) return value.toFixed(0)

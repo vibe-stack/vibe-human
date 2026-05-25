@@ -2,6 +2,7 @@
 
 import {
   forwardRef,
+  memo,
   useRef,
   useState,
   useEffect,
@@ -1018,11 +1019,11 @@ interface SliderComfortableProps
   disabled?: boolean;
 }
 
-const SliderComfortable = forwardRef<HTMLDivElement, SliderComfortableProps>(
+const SliderComfortableBase = forwardRef<HTMLDivElement, SliderComfortableProps>(
   (
     {
       value,
-      onChange,
+      onChange: onChangeProp,
       min = 0,
       max = 100,
       step = 1,
@@ -1038,6 +1039,10 @@ const SliderComfortable = forwardRef<HTMLDivElement, SliderComfortableProps>(
     const containerRef = useRef<HTMLDivElement>(null);
     const dragging = useRef(false);
     const handleDragging = useRef(false);
+    // Stable onChange — keeps latest handler without invalidating callbacks
+    const onChangeRef = useRef(onChangeProp);
+    useLayoutEffect(() => { onChangeRef.current = onChangeProp; });
+    const onChange = useCallback((v: number) => onChangeRef.current(v), []);
     const [isHovered, setIsHovered] = useState(false);
     const [isPressed, setIsPressed] = useState(false);
     const [isFocused, setIsFocused] = useState(false);
@@ -1565,6 +1570,22 @@ const SliderComfortable = forwardRef<HTMLDivElement, SliderComfortableProps>(
   }
 );
 
+SliderComfortableBase.displayName = "SliderComfortable";
+
+// Memoised wrapper — only re-renders when slider data changes, not when the
+// parent re-renders (which would otherwise produce a new `onChange` closure).
+const SliderComfortable = memo(
+  SliderComfortableBase,
+  (prev, next) =>
+    prev.value === next.value &&
+    prev.min === next.min &&
+    prev.max === next.max &&
+    prev.step === next.step &&
+    prev.label === next.label &&
+    prev.disabled === next.disabled &&
+    prev.variant === next.variant &&
+    prev.className === next.className
+) as typeof SliderComfortableBase;
 SliderComfortable.displayName = "SliderComfortable";
 
 export { Slider, SliderComfortable };

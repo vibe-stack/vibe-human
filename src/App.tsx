@@ -6,7 +6,6 @@ import { Activity, Smile, Box, Layers, Scissors, Shirt, Orbit } from 'lucide-rea
 import { useSnapshot } from 'valtio'
 import { Group, Panel, Separator } from 'react-resizable-panels'
 import { cn } from './lib/utils'
-import "./index.css"
 
 declare module '@react-three/fiber' {
   // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- Module augmentation extends Three Fiber's intrinsic JSX map.
