@@ -24,7 +24,7 @@ import { surfaceClasses } from "@/lib/surface-classes";
 import { useIcon } from "@/lib/icon-context";
 import { Slider } from "@/components/ui/slider";
 import { Dropdown, useDropdown } from "@/components/ui/dropdown";
-import { Tooltip } from "@/components/tooltip";
+import { Tooltip } from "@/components/ui/tooltip";
 
 // ---------------------------------------------------------------------------
 // Types

@@ -1,10 +1,12 @@
 import {
-  type CSSProperties,
   type ReactNode,
   useMemo,
 } from 'react'
 
 import { useSnapshot } from 'valtio'
+import { Button } from '@/components/ui/button'
+import { SliderComfortable } from '@/components/ui/slider'
+import { Elevated } from '@/lib/elevated'
 import {
   appState,
   setModelingMode,
@@ -108,49 +110,35 @@ export default function CharacterModelingPanel() {
           overflowY: 'auto',
         }}
       >
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-            <SegmentButton active={mode === 'transform'} onClick={() => setModelingMode('transform')}>
-              TRANSFORM
-            </SegmentButton>
-            <SegmentButton active={mode === 'sculpt'} onClick={() => setModelingMode('sculpt')}>
-              SCULPT
-            </SegmentButton>
+          <div className="grid grid-cols-2 gap-1.5">
+            <Button variant={mode === 'transform' ? 'secondary' : 'ghost'} size="sm" className="w-full text-[10px]" onClick={() => setModelingMode('transform')}>
+              Transform
+            </Button>
+            <Button variant={mode === 'sculpt' ? 'secondary' : 'ghost'} size="sm" className="w-full text-[10px]" onClick={() => setModelingMode('sculpt')}>
+              Sculpt
+            </Button>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-            <SegmentButton active={symmetric} onClick={() => setModelingSymmetric(true)}>
-              SYMMETRIC
-            </SegmentButton>
-            <SegmentButton active={!symmetric} onClick={() => setModelingSymmetric(false)}>
-              SINGLE SIDE
-            </SegmentButton>
+          <div className="grid grid-cols-2 gap-1.5">
+            <Button variant={symmetric ? 'secondary' : 'ghost'} size="sm" className="w-full text-[10px]" onClick={() => setModelingSymmetric(true)}>
+              Symmetric
+            </Button>
+            <Button variant={!symmetric ? 'secondary' : 'ghost'} size="sm" className="w-full text-[10px]" onClick={() => setModelingSymmetric(false)}>
+              Single Side
+            </Button>
           </div>
 
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr auto',
-            gap: 8,
-            alignItems: 'center',
-            padding: '7px 8px',
-            borderRadius: 6,
-            background: 'rgba(255,255,255,0.035)',
-            border: '1px solid rgba(255,255,255,0.06)',
-          }}>
+          <Elevated offset={1} className="rounded-lg p-2 grid gap-2" style={{ gridTemplateColumns: '1fr auto', alignItems: 'center' }}>
             <div>
               <div style={labelStyle}>{mode.toUpperCase()} DOTS</div>
               <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', marginTop: 3 }}>
                 {handlesInMode.length} visible dots
               </div>
             </div>
-            <button onClick={resetAll} style={smallButtonStyle}>RESET ALL</button>
-          </div>
+            <Button variant="secondary" size="sm" onClick={resetAll}>Reset All</Button>
+          </Elevated>
 
-          <div style={{
-            borderRadius: 6,
-            padding: 10,
-            background: selectedControls.length ? 'rgba(125,211,252,0.07)' : 'rgba(255,255,255,0.025)',
-            border: selectedControls.length ? '1px solid rgba(125,211,252,0.2)' : '1px solid rgba(255,255,255,0.05)',
-          }}>
+          <Elevated offset={1} className={`rounded-lg p-2.5 ${selectedControls.length ? 'ring-1 ring-sky-400/20' : ''}`}>
             {selectedControl && selectedHandle && selectedControls.length ? (
               <SelectedInspector
                 label={selectedHandle.label}
@@ -171,7 +159,7 @@ export default function CharacterModelingPanel() {
                 </div>
               </div>
             )}
-          </div>
+          </Elevated>
 
           {bodyControls.length > 0 && (
             <BodyGlobalSliders
@@ -207,12 +195,7 @@ function BodyGlobalSliders({
   const active = controls.some((control) => Math.abs(values[control.id] ?? 0) > 0.001)
 
   return (
-    <div style={{
-      borderRadius: 6,
-      padding: 10,
-      background: active ? 'rgba(125,211,252,0.055)' : 'rgba(255,255,255,0.025)',
-      border: active ? '1px solid rgba(125,211,252,0.16)' : '1px solid rgba(255,255,255,0.05)',
-    }}>
+    <Elevated offset={1} className={`rounded-lg p-2.5 ${active ? 'ring-1 ring-sky-400/15' : ''}`}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'center', marginBottom: 9 }}>
         <div>
           <div style={{ ...labelStyle, color: active ? 'rgba(125,211,252,0.86)' : 'rgba(255,255,255,0.45)' }}>
@@ -222,10 +205,10 @@ function BodyGlobalSliders({
             {controls.length} sliders
           </div>
         </div>
-        <button onClick={onReset} style={smallButtonStyle}>RESET</button>
+        <Button variant="secondary" size="sm" onClick={onReset}>Reset</Button>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+      <div className="flex flex-col gap-1.5">
         {controls.map((control) => (
           <AreaSlider
             key={control.id}
@@ -236,7 +219,7 @@ function BodyGlobalSliders({
           />
         ))}
       </div>
-    </div>
+    </Elevated>
   )
 }
 
@@ -279,7 +262,7 @@ function SelectedInspector({
             {controls.length > 1 && <MetaPill>{controls.length} KEYS</MetaPill>}
           </div>
         </div>
-        <button onClick={onClear} style={smallButtonStyle}>CLOSE</button>
+        <Button variant="ghost" size="sm" onClick={onClear}>Close</Button>
       </div>
 
       <div
@@ -297,9 +280,7 @@ function SelectedInspector({
         ))}
       </div>
 
-      <button onClick={onReset} style={{ ...smallButtonStyle, width: '100%' }}>
-        RESET AREA
-      </button>
+      <Button variant="secondary" size="sm" className="w-full" onClick={onReset}>Reset Area</Button>
     </div>
   )
 }
@@ -315,104 +296,32 @@ function AreaSlider({
   value: number
   onChange: (value: number) => void
 }) {
-  const active = Math.abs(value) > 0.001
   const positiveOnly = control.min >= 0
 
   return (
-    <div style={{
-      borderRadius: 5,
-      padding: '6px 7px',
-      background: primary ? 'rgba(125,211,252,0.08)' : 'rgba(255,255,255,0.025)',
-      border: primary ? '1px solid rgba(125,211,252,0.18)' : '1px solid rgba(255,255,255,0.045)',
-    }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 40px', gap: 6, alignItems: 'center', marginBottom: 5 }}>
-        <span style={{ fontSize: 10, color: primary ? 'rgba(255,255,255,0.78)' : 'rgba(255,255,255,0.62)' }}>
-          {control.label}{primary ? ' *' : ''}
-        </span>
-        <span style={{
-          fontSize: 9,
-          color: active ? 'rgba(125,211,252,0.9)' : 'rgba(255,255,255,0.36)',
-          fontFamily: 'monospace',
-          textAlign: 'right',
-        }}>
-          {value.toFixed(2)}
-        </span>
-      </div>
-      <input
-        type="range"
+    <Elevated offset={1} className={`rounded-md p-1.5 ${primary ? 'ring-1 ring-sky-400/20' : ''}`}>
+      <SliderComfortable
+        label={`${control.label}${primary ? ' ★' : ''}`}
+        value={value}
         min={control.min}
         max={control.max}
         step={0.01}
-        value={value}
-        onChange={(event) => onChange(parseFloat(event.target.value))}
-        className="range-slider modeling-range"
-        aria-label={control.label}
+        onChange={onChange}
+        formatValue={(v) => v.toFixed(2)}
       />
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontSize: 8, color: 'rgba(255,255,255,0.31)', fontFamily: 'monospace' }}>
+      <div className="flex justify-between mt-1 text-[8px] text-foreground/30 font-mono">
         <span>{control.negativeLabel.toUpperCase()}</span>
         <span>{positiveOnly ? '' : 'BASE'}</span>
         <span>{control.positiveLabel.toUpperCase()}</span>
       </div>
-    </div>
-  )
-}
-
-function SegmentButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean
-  onClick: () => void
-  children: string
-}) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        borderRadius: 5,
-        padding: '7px 8px',
-        fontSize: 9,
-        fontWeight: 700,
-        fontFamily: "'Courier New', monospace",
-        letterSpacing: '0.1em',
-        cursor: 'pointer',
-        border: active ? '1px solid rgba(125,211,252,0.38)' : '1px solid rgba(255,255,255,0.065)',
-        background: active ? 'rgba(125,211,252,0.13)' : 'rgba(255,255,255,0.035)',
-        color: active ? 'rgba(125,211,252,0.96)' : 'rgba(255,255,255,0.46)',
-      }}
-    >
-      {children}
-    </button>
+    </Elevated>
   )
 }
 
 function MetaPill({ children }: { children: ReactNode }) {
   return (
-    <span style={{
-      borderRadius: 4,
-      padding: '3px 5px',
-      fontSize: 8,
-      fontWeight: 700,
-      letterSpacing: '0.08em',
-      fontFamily: 'monospace',
-      background: 'rgba(255,255,255,0.055)',
-      color: 'rgba(255,255,255,0.5)',
-    }}>
+    <span className="rounded px-1.5 py-0.5 text-[8px] font-bold tracking-wide font-mono bg-foreground/5 text-foreground/50">
       {children}
     </span>
   )
-}
-
-const smallButtonStyle: CSSProperties = {
-  borderRadius: 4,
-  padding: '5px 7px',
-  fontSize: 8,
-  fontWeight: 700,
-  fontFamily: "'Courier New', monospace",
-  letterSpacing: '0.08em',
-  cursor: 'pointer',
-  background: 'rgba(255,255,255,0.04)',
-  color: 'rgba(255,255,255,0.52)',
-  border: '1px solid rgba(255,255,255,0.08)',
 }

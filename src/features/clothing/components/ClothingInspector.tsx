@@ -16,6 +16,10 @@ import {
   toggleSimRunning,
 } from '../state/clothingActions'
 import type { AvatarCollisionMode, ClothSimQuality, ClothingTransformMode } from '../state/clothingTypes'
+import { Button } from '@/components/ui/button'
+import { SliderComfortable } from '@/components/ui/slider'
+import { ColorPicker } from '@/components/ui/color-picker'
+import { Elevated } from '@/lib/elevated'
 
 const QUALITY_OPTIONS: Array<{ id: ClothSimQuality; label: string }> = [
   { id: 'low', label: 'Low' },
@@ -55,17 +59,7 @@ export default function ClothingInspector() {
     : null
 
   return (
-    <div style={{
-      flex: 1,
-      overflowY: 'auto',
-      padding: '12px 10px',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 16,
-      color: 'rgba(255,255,255,0.75)',
-      fontSize: 11,
-      fontFamily: "'Courier New', monospace",
-    }}>
+    <div className="flex flex-col flex-1 overflow-y-auto gap-4 p-3 text-[11px] text-foreground/75">
       {/* Active tool */}
       <Section label="TOOL">
         <Row label="Active" value={activeClothingTool.toUpperCase()} />
@@ -121,7 +115,7 @@ export default function ClothingInspector() {
           <Row label="Mode" value="PARTICLE SPRINGS" />
           <Row label="Quality" value={simQuality.toUpperCase()} />
           <Row label="Particle Dist" value={`${selectedPattern.particleDistance} u`} />
-          <Slider
+          <InspectorSlider
             label="Particle Distance"
             value={selectedPattern.particleDistance}
             min={8}
@@ -135,7 +129,7 @@ export default function ClothingInspector() {
               // Resolution change rebuilds the grid but keeps the draped shape.
             }}
           />
-          <Slider
+          <InspectorSlider
             label="Stretch Compliance"
             value={selectedPattern.stretchCompliance ?? 0.0002}
             min={0}
@@ -146,7 +140,7 @@ export default function ClothingInspector() {
               clothingStore.dirty.previewDirty = true
             }}
           />
-          <Slider
+          <InspectorSlider
             label="Shear Compliance"
             value={selectedPattern.shearCompliance ?? 0.00028}
             min={0}
@@ -157,7 +151,7 @@ export default function ClothingInspector() {
               clothingStore.dirty.previewDirty = true
             }}
           />
-          <Slider
+          <InspectorSlider
             label="Bend Compliance"
             value={selectedPattern.bendCompliance ?? 0.25}
             min={0.025}
@@ -168,7 +162,7 @@ export default function ClothingInspector() {
               clothingStore.dirty.previewDirty = true
             }}
           />
-          <Slider
+          <InspectorSlider
             label="Damping"
             value={selectedPattern.damping ?? 0.07}
             min={0}
@@ -179,7 +173,7 @@ export default function ClothingInspector() {
               clothingStore.dirty.previewDirty = true
             }}
           />
-          <Slider
+          <InspectorSlider
             label="Substeps"
             value={simQuality === 'low' ? 1 : simQuality === 'medium' ? 2 : simQuality === 'high' ? 3 : 4}
             min={1}
@@ -251,10 +245,10 @@ export default function ClothingInspector() {
         <Row label="Collider Verts" value={String(collisionAvatar.meshColliderVertexCount)} />
         <Row label="Collider Tris" value={String(collisionAvatar.meshColliderTriangleCount)} />
         <Row label="Hash Cells" value={String(collisionAvatar.spatialHashCellCount)} />
-        <Slider label="Avatar Skin Offset" value={collisionAvatar.skinOffset} min={0} max={0.08} step={0.002} onChange={setAvatarSkinOffset} />
-        <Slider label="Garment Thickness" value={collisionAvatar.garmentThickness} min={0} max={0.04} step={0.001} onChange={setGarmentCollisionThickness} />
-        <Slider label="Proxy Inflate" value={collisionAvatar.globalInflate} min={0} max={0.08} step={0.002} onChange={setCollisionGlobalInflate} />
-        <Slider label="Hash Cell Size" value={collisionAvatar.meshCellSize} min={0.04} max={0.2} step={0.005} onChange={setAvatarMeshCellSize} />
+        <InspectorSlider label="Avatar Skin Offset" value={collisionAvatar.skinOffset} min={0} max={0.08} step={0.002} onChange={setAvatarSkinOffset} />
+        <InspectorSlider label="Garment Thickness" value={collisionAvatar.garmentThickness} min={0} max={0.04} step={0.001} onChange={setGarmentCollisionThickness} />
+        <InspectorSlider label="Proxy Inflate" value={collisionAvatar.globalInflate} min={0} max={0.08} step={0.002} onChange={setCollisionGlobalInflate} />
+        <InspectorSlider label="Hash Cell Size" value={collisionAvatar.meshCellSize} min={0.04} max={0.2} step={0.005} onChange={setAvatarMeshCellSize} />
         <Toggle
           label="Capsules"
           value={previewOptions.showCollisionCapsules}
@@ -295,62 +289,38 @@ export default function ClothingInspector() {
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div>
-      <div style={{
-        fontSize: 8,
-        letterSpacing: '0.14em',
-        color: 'rgba(255,255,255,0.3)',
-        marginBottom: 6,
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
-        paddingBottom: 3,
-      }}>
+    <Elevated offset={1} className="rounded-lg p-2.5 flex flex-col gap-1">
+      <div className="text-[8px] tracking-[0.14em] text-foreground/30 mb-1 border-b border-border/30 pb-1">
         {label}
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div className="flex flex-col gap-1">
         {children}
       </div>
-    </div>
+    </Elevated>
   )
 }
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-      <span style={{ opacity: 0.45 }}>{label}</span>
-      <span style={{ color: 'rgba(255,255,255,0.9)', textAlign: 'right', maxWidth: 120, wordBreak: 'break-all' }}>
-        {value}
-      </span>
+    <div className="flex justify-between gap-2">
+      <span className="opacity-45">{label}</span>
+      <span className="text-foreground/90 text-right max-w-30 break-all">{value}</span>
     </div>
   )
 }
 
 function ColorRow({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-      <span style={{ opacity: 0.45 }}>{label}</span>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span style={{ color: 'rgba(255,255,255,0.9)' }}>{value.toUpperCase()}</span>
-        <input
-          type="color"
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          style={{
-            width: 22,
-            height: 18,
-            padding: 0,
-            border: '1px solid rgba(255,255,255,0.15)',
-            background: 'transparent',
-            cursor: 'pointer',
-          }}
-        />
-      </div>
+    <div className="flex justify-between items-center gap-2">
+      <span className="opacity-45">{label}</span>
+      <ColorPicker value={value} onValueChange={onChange} />
     </div>
   )
 }
 
 function ButtonRow({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+    <div className="flex gap-1.5 mt-1">
       {children}
     </div>
   )
@@ -358,24 +328,9 @@ function ButtonRow({ children }: { children: React.ReactNode }) {
 
 function SmallButton({ label, onClick }: { label: string; onClick: () => void }) {
   return (
-    <button
-      onClick={onClick}
-      style={{
-        flex: 1,
-        padding: '4px 6px',
-        borderRadius: 4,
-        border: '1px solid rgba(255,255,255,0.14)',
-        background: 'rgba(255,255,255,0.06)',
-        color: 'rgba(255,255,255,0.72)',
-        fontSize: 9,
-        fontFamily: "'Courier New', monospace",
-        fontWeight: 700,
-        letterSpacing: '0.08em',
-        cursor: 'pointer',
-      }}
-    >
+    <Button onClick={onClick} variant="secondary" size="sm" className="flex-1">
       {label}
-    </button>
+    </Button>
   )
 }
 
@@ -389,41 +344,19 @@ function SegmentedControl<T extends string>({
   onChange: (value: T) => void
 }) {
   return (
-    <div style={{
-      display: 'grid',
-      gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))`,
-      gap: 2,
-      marginTop: 4,
-      padding: 2,
-      borderRadius: 5,
-      background: 'rgba(255,255,255,0.05)',
-      border: '1px solid rgba(255,255,255,0.08)',
-    }}>
-      {options.map((option) => {
-        const active = option.id === value
-        return (
-          <button
-            key={option.id}
-            onClick={() => onChange(option.id)}
-            style={{
-              minWidth: 0,
-              padding: '4px 3px',
-              borderRadius: 3,
-              border: 'none',
-              background: active ? 'rgba(68,136,255,0.32)' : 'transparent',
-              color: active ? '#9ec2ff' : 'rgba(255,255,255,0.45)',
-              fontSize: 8,
-              fontFamily: "'Courier New', monospace",
-              fontWeight: 700,
-              letterSpacing: '0.04em',
-              cursor: 'pointer',
-            }}
-          >
-            {option.label.toUpperCase()}
-          </button>
-        )
-      })}
-    </div>
+    <Elevated offset={1} className="grid gap-0.5 mt-1 p-0.5 rounded-md" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}>
+      {options.map((option) => (
+        <Button
+          key={option.id}
+          variant={option.id === value ? 'secondary' : 'ghost'}
+          size="sm"
+          className="text-[8px] px-1 h-6 tracking-wide"
+          onClick={() => onChange(option.id)}
+        >
+          {option.label.toUpperCase()}
+        </Button>
+      ))}
+    </Elevated>
   )
 }
 
@@ -438,35 +371,18 @@ function Toggle({
 }) {
   return (
     <div
-      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+      className="flex justify-between items-center cursor-pointer py-0.5"
       onClick={() => onChange(!value)}
     >
-      <span style={{ opacity: 0.7 }}>{label}</span>
-      <div style={{
-        width: 28,
-        height: 14,
-        borderRadius: 7,
-        background: value ? '#4488ff' : 'rgba(255,255,255,0.15)',
-        position: 'relative',
-        transition: 'background 0.15s',
-        flexShrink: 0,
-      }}>
-        <div style={{
-          position: 'absolute',
-          top: 2,
-          left: value ? 16 : 2,
-          width: 10,
-          height: 10,
-          borderRadius: '50%',
-          background: '#fff',
-          transition: 'left 0.15s',
-        }} />
+      <span className="opacity-70">{label}</span>
+      <div className={`w-7 h-3.5 rounded-full relative transition-colors shrink-0 ${value ? 'bg-blue-500' : 'bg-foreground/15'}`}>
+        <div className={`absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white transition-[left] ${value ? 'left-3.5' : 'left-0.5'}`} />
       </div>
     </div>
   )
 }
 
-function Slider({
+function InspectorSlider({
   label,
   value,
   min,
@@ -482,19 +398,15 @@ function Slider({
   onChange: (value: number) => void
 }) {
   return (
-    <label style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'center' }}>
-      <span style={{ opacity: 0.7 }}>{label}</span>
-      <span style={{ color: 'rgba(255,255,255,0.85)', fontVariantNumeric: 'tabular-nums' }}>{formatSliderValue(value, step)}</span>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(event) => onChange(Number(event.currentTarget.value))}
-        style={{ gridColumn: '1 / -1', width: '100%' }}
-      />
-    </label>
+    <SliderComfortable
+      label={label}
+      value={value}
+      min={min}
+      max={max}
+      step={step}
+      onChange={onChange}
+      formatValue={(v) => formatSliderValue(v, step)}
+    />
   )
 }
 

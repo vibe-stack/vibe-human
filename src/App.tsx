@@ -5,6 +5,8 @@ import * as THREE from 'three/webgpu'
 import { Activity, Smile, Box, Layers, Scissors, Shirt, Orbit } from 'lucide-react'
 import { useSnapshot } from 'valtio'
 import { Group, Panel, Separator } from 'react-resizable-panels'
+import { cn } from './lib/utils'
+import "./index.css"
 
 declare module '@react-three/fiber' {
   // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- Module augmentation extends Three Fiber's intrinsic JSX map.
@@ -85,38 +87,17 @@ function CharacterRenderModeTabs() {
   const { characterRenderMode } = useSnapshot(appState)
 
   return (
-    <div style={{
-      position: 'absolute',
-      left: 12,
-      bottom: 12,
-      zIndex: 12,
-      display: 'flex',
-      gap: 2,
-      padding: 3,
-      background: 'rgba(8,8,16,0.72)',
-      border: '1px solid rgba(255,255,255,0.1)',
-      borderRadius: 7,
-      backdropFilter: 'blur(12px)',
-      WebkitBackdropFilter: 'blur(12px)',
-    }}>
+    <div className="absolute left-3 bottom-3 z-12 flex gap-0.5 p-0.5 bg-[rgba(8,8,16,0.72)] border border-white/10 rounded-[7px] backdrop-blur-md">
       {CHARACTER_RENDER_MODES.map((mode) => {
         const active = characterRenderMode === mode.id
         return (
           <button
             key={mode.id}
             onClick={() => setCharacterRenderMode(mode.id)}
-            style={{
-              padding: '5px 9px',
-              border: 'none',
-              borderRadius: 5,
-              background: active ? 'rgba(255,255,255,0.14)' : 'transparent',
-              color: active ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.42)',
-              fontFamily: "'Courier New', monospace",
-              fontSize: 9,
-              fontWeight: 700,
-              letterSpacing: '0.08em',
-              cursor: 'pointer',
-            }}
+            className={cn(
+              'px-2.25 py-1.25 border-0 rounded-[5px] font-mono text-[9px] font-bold tracking-[0.08em] cursor-pointer',
+              active ? 'bg-white/[0.14] text-white/92' : 'bg-transparent text-white/42',
+            )}
           >
             {mode.label.toUpperCase()}
           </button>
@@ -135,24 +116,13 @@ function ClothingOrbitToggle() {
       onClick={() => { clothingStore.previewOptions.orbitControlsEnabled = !clothingStore.previewOptions.orbitControlsEnabled }}
       title={previewOptions.orbitControlsEnabled ? 'Disable orbit controls' : 'Enable orbit controls'}
       aria-label={previewOptions.orbitControlsEnabled ? 'Disable orbit controls' : 'Enable orbit controls'}
-      style={{
-        position: 'absolute',
-        right: 12,
-        bottom: 12,
-        zIndex: 12,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        width: 34,
-        height: 34,
-        border: '1px solid rgba(255,255,255,0.12)',
-        borderRadius: 8,
-        background: previewOptions.orbitControlsEnabled ? 'rgba(68,136,255,0.24)' : 'rgba(8,8,16,0.78)',
-        color: previewOptions.orbitControlsEnabled ? '#9fc1ff' : 'rgba(255,255,255,0.55)',
-        backdropFilter: 'blur(12px)',
-        WebkitBackdropFilter: 'blur(12px)',
-        cursor: 'pointer',
-      }}
+      className={cn(
+        'absolute right-3 bottom-3 z-12 flex items-center justify-center w-8.5 h-8.5',
+        'border border-white/12 rounded-[8px] backdrop-blur-md cursor-pointer',
+        previewOptions.orbitControlsEnabled
+          ? 'bg-[rgba(68,136,255,0.24)] text-[#9fc1ff]'
+          : 'bg-[rgba(8,8,16,0.78)] text-white/55',
+      )}
     >
       <Orbit size={16} strokeWidth={1.9} />
     </button>
@@ -184,53 +154,28 @@ export default function App() {
   }, [])
 
   return (
-    <div style={{ width: '100vw', height: '100vh', background: '#080810', display: 'flex', flexDirection: 'column' }}>
-      <nav style={{
-        position: 'fixed',
-        top: isMobile ? 'auto' : 0,
-        bottom: isMobile ? 0 : 'auto',
-        left: isMobile ? 0 : 0,
-        right: isMobile ? 0 : 'auto',
-        display: 'flex',
-        justifyContent: isMobile ? 'space-around' : 'flex-start',
-        gap: 2,
-        padding: isMobile ? '7px 10px calc(7px + env(safe-area-inset-bottom, 0px))' : '6px 8px',
-        background: 'rgba(8, 8, 16, 0.84)',
-        backdropFilter: 'blur(14px)',
-        WebkitBackdropFilter: 'blur(14px)',
-        border: '1px solid rgba(255,255,255,0.08)',
-        borderTop: isMobile ? '1px solid rgba(255,255,255,0.08)' : 'none',
-        borderLeft: isMobile ? 'none' : 'none',
-        borderRight: isMobile ? 'none' : '1px solid rgba(255,255,255,0.08)',
-        borderRadius: isMobile ? 0 : '0 0 10px 0',
-        zIndex: 30,
-      }}>
+    <div className="dark w-screen h-screen bg-[#080810] flex flex-col">
+      <nav
+        className={cn(
+          'fixed flex gap-0.5 bg-[rgba(8,8,16,0.84)] backdrop-blur-[14px] z-30',
+          isMobile
+            ? 'bottom-0 left-0 right-0 justify-around px-2.5 pt-1.75 border-y border-white/8 rounded-none'
+            : 'top-0 left-0 justify-start px-2 py-1.5 border-b border-r border-white/8 rounded-br-[10px]',
+        )}
+        style={isMobile ? { paddingBottom: 'calc(7px + env(safe-area-inset-bottom, 0px))' } : undefined}
+      >
         {panels.map(({ key, label, Icon, active, toggle }) => (
           <button
             key={key}
             onClick={toggle}
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: 3,
-              padding: isMobile ? '4px 6px' : '5px 14px',
-              background: active ? 'rgba(255,255,255,0.09)' : 'transparent',
-              border: 'none',
-              borderRadius: 6,
-              cursor: 'pointer',
-              color: active ? 'rgba(255,255,255,0.88)' : 'rgba(255,255,255,0.32)',
-              transition: 'background 0.15s, color 0.15s',
-              flex: isMobile ? 1 : 'none',
-            }}
+            className={cn(
+              'flex flex-col items-center gap-0.75 border-0 rounded-[6px] cursor-pointer transition-[background,color] duration-150',
+              isMobile ? 'px-1.5 py-1 flex-1' : 'px-3.5 py-1.25',
+              active ? 'bg-white/9 text-white/88' : 'bg-transparent text-white/32',
+            )}
           >
             <Icon size={15} strokeWidth={1.6} />
-            <span style={{
-              fontSize: 8,
-              fontFamily: "'Courier New', monospace",
-              letterSpacing: '0.1em',
-              fontWeight: 700,
-            }}>
+            <span className="text-[8px] font-mono tracking-widest font-bold">
               {label.toUpperCase()}
             </span>
           </button>
@@ -238,14 +183,8 @@ export default function App() {
       </nav>
 
       {isMobile ? (
-        <div style={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          paddingBottom: '74px',
-          minHeight: 0,
-        }}>
-          <div style={{ position: 'relative', flex: '0 0 42vh', minHeight: 240 }}>
+        <div className="flex-1 flex flex-col pb-18.5 min-h-0">
+          <div className="relative flex-[0_0_42vh] min-h-60">
             <Canvas
               camera={{ position: [0, 0, 2.0], fov }}
               gl={async (props) => {
@@ -256,7 +195,7 @@ export default function App() {
                 renderer.toneMappingExposure = 1.05
                 return renderer as never
               }}
-              style={{ width: '100%', height: '100%' }}
+              className="w-full h-full"
             >
               <FovUpdater />
               <CanvasResizeUpdater watch={showClothing} />
@@ -288,19 +227,13 @@ export default function App() {
             {showClothing && <ClothingOrbitToggle />}
             {showHair && <BrushToolbar />}
           </div>
-          <div style={{
-            flex: 1,
-            minHeight: 0,
-            overflowY: 'auto',
-            background: 'rgba(10, 10, 16, 0.97)',
-            borderTop: '1px solid rgba(255,255,255,0.07)',
-          }}>
+          <div className="flex-1 min-h-0 overflow-y-auto bg-[rgba(10,10,16,0.97)] border-t border-white/[0.07]">
             {showClothing && (
               <>
-                <div style={{ position: 'sticky', top: 0, zIndex: 21 }}>
+                <div className="sticky top-0 z-21">
                   <ClothingToolbar />
                 </div>
-                <div style={{ height: 300, borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                <div className="h-75 border-b border-white/8">
                   <ClothingPatternEditor2D hideToolbar />
                 </div>
               </>
@@ -312,30 +245,19 @@ export default function App() {
             {showHair && <GroomPanel />}
             {showClothing && <ClothingInspector />}
             {!anyPanelActive && (
-              <div style={{
-                minHeight: '100%',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-                opacity: 0.2,
-                userSelect: 'none',
-              }}>
-                <span style={{ fontSize: 18 }}>◧</span>
-                <span style={{ fontSize: 9, fontFamily: "'Courier New', monospace", letterSpacing: '0.12em', fontWeight: 700 }}>
-                  SELECT A PANEL
-                </span>
+              <div className="min-h-full flex flex-col items-center justify-center gap-2 opacity-20 select-none">
+                <span className="text-[18px]">◧</span>
+                <span className="text-[9px] font-mono tracking-[0.12em] font-bold">SELECT A PANEL</span>
               </div>
             )}
           </div>
         </div>
       ) : (
-      <Group orientation="horizontal" style={{ flex: 1 }}>
+      <Group orientation="horizontal" className="flex-1">
         {/* Canvas panel — always the same R3F canvas; clothing 2D editor sits alongside it */}
-        <Panel defaultSize="70%" minSize="30%" style={{ position: 'relative', display: 'flex' }}>
+        <Panel defaultSize="70%" minSize="30%" className="relative flex">
           {/* 3D viewport — always rendered */}
-          <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
+          <div className="flex-1 relative min-w-0">
             <Canvas
               camera={{ position: [0, 0, 2.0], fov }}
               gl={async (props) => {
@@ -346,7 +268,7 @@ export default function App() {
                 renderer.toneMappingExposure = 1.05
                 return renderer as never
               }}
-              style={{ width: '100%', height: '100%' }}
+              className="w-full h-full"
             >
               <FovUpdater />
               <CanvasResizeUpdater watch={showClothing} />
@@ -389,39 +311,15 @@ export default function App() {
 
           {/* 2D pattern editor — injected to the right of the 3D canvas when clothing is active */}
           {showClothing && (
-            <div style={{
-              width: '42%',
-              minWidth: 380,
-              maxWidth: 700,
-              flexShrink: 0,
-              borderLeft: '1px solid rgba(255,255,255,0.08)',
-              display: 'flex',
-              flexDirection: 'column',
-              overflow: 'hidden',
-            }}>
+            <div className="w-[42%] min-w-95 max-w-175 shrink-0 border-l border-white/8 flex flex-col overflow-hidden">
               <ClothingPatternEditor2D />
             </div>
           )}
         </Panel>
 
         {/* Resize handle */}
-        <Separator
-          style={{
-            width: 4,
-            background: 'rgba(255,255,255,0.07)',
-            cursor: 'col-resize',
-            flexShrink: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <div style={{
-            width: 1,
-            height: 32,
-            borderRadius: 1,
-            background: 'rgba(255,255,255,0.18)',
-          }} />
+        <Separator className="w-1 bg-white/[0.07] cursor-col-resize shrink-0 flex items-center justify-center">
+          <div className="w-px h-8 rounded-[1px] bg-white/18" />
         </Separator>
 
         {/* Sidebar panel */}
@@ -429,16 +327,9 @@ export default function App() {
           defaultSize="15%"
           minSize="15%"
           maxSize="55%"
-          style={{ overflow: 'hidden' }}
+          className="overflow-hidden"
         >
-          <div style={{
-            height: '100%',
-            display: 'flex',
-            flexDirection: 'column',
-            background: 'rgba(10, 10, 16, 0.97)',
-            borderLeft: '1px solid rgba(255,255,255,0.07)',
-            overflow: 'hidden',
-          }}>
+          <div className="h-full flex flex-col bg-[rgba(10,10,16,0.97)] border-l border-white/[0.07] overflow-hidden">
             {showExpressions && <ControlPanel />}
             {showTest && <TestPanel />}
             {showModeling && <CharacterModelingPanel />}
@@ -446,20 +337,9 @@ export default function App() {
             {showHair && <GroomPanel />}
             {showClothing && <ClothingInspector />}
             {!anyPanelActive && (
-              <div style={{
-                flex: 1,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-                opacity: 0.2,
-                userSelect: 'none',
-              }}>
-                <span style={{ fontSize: 18 }}>◧</span>
-                <span style={{ fontSize: 9, fontFamily: "'Courier New', monospace", letterSpacing: '0.12em', fontWeight: 700 }}>
-                  SELECT A PANEL
-                </span>
+              <div className="flex-1 flex flex-col items-center justify-center gap-2 opacity-20 select-none">
+                <span className="text-[18px]">◧</span>
+                <span className="text-[9px] font-mono tracking-[0.12em] font-bold">SELECT A PANEL</span>
               </div>
             )}
           </div>
