@@ -10,6 +10,11 @@ import type {
 } from '../simulation/types'
 
 const PATTERN_UNIT_SCALE = 0.004
+const PARTICLE_MASS = 0.018
+// Bending stencils whose opposite vertices sit closer to the hinge edge than
+// this fraction of the edge length act mostly in-plane (they would fight the
+// stretch constraints instead of resisting folds), so they are skipped.
+const MIN_BEND_STENCIL_HEIGHT = 0.3
 
 export const QUALITY_PRESETS: Record<CompilerOptions['quality'], {
   spacing: number
@@ -48,6 +53,10 @@ export function buildPanelSimMesh(
 ): CompiledPanelSimMesh {
   const preset = QUALITY_PRESETS[options.quality]
   const stretchCompliance = panel.stretchCompliance ?? preset.stretchCompliance
+  const bendCompliance = panel.bendCompliance ?? preset.bendCompliance
+  // Heavier fabrics carry more inertia per particle; compliance stays in the
+  // same units, so denim swings less and sags more than silk.
+  const particleMass = PARTICLE_MASS * Math.max(0.1, panel.density ?? 1)
   const bounds = boundsOf(panel)
 
   // Target particle spacing in pattern (mm) space, derived from the quality
@@ -94,7 +103,7 @@ export function buildPanelSimMesh(
     const particle = particleOffset + particleIndices.length
     particleIndices.push(particle)
     positions.push(world.x, world.y, world.z)
-    invMass.push(1 / 0.018)
+    invMass.push(1 / particleMass)
     panelIds.push(panel.id)
     particleFrictions.push(panel.friction ?? 1)
     panelUvs.push(u, v)
@@ -123,6 +132,8 @@ export function buildPanelSimMesh(
 
   const edgeSeen = new Set<string>()
   const edgeKey = (a: number, b: number) => (a < b ? `${a}:${b}` : `${b}:${a}`)
+  // Opposite (apex) vertices per triangulation edge, for bending stencils.
+  const edgeApices = new Map<string, number[]>()
 
   for (let t = 0; t < mesh.triangles.length; t += 3) {
     const a = mesh.triangles[t]
@@ -135,8 +146,11 @@ export function buildPanelSimMesh(
       [b, c, a], // edge (b,c), apex a
       [c, a, b], // edge (c,a), apex b
     ]
-    for (const [e0, e1] of edges) {
+    for (const [e0, e1, apex] of edges) {
       const key = edgeKey(e0, e1)
+      const apices = edgeApices.get(key)
+      if (apices) apices.push(apex)
+      else edgeApices.set(key, [apex])
       if (edgeSeen.has(key)) continue
       edgeSeen.add(key)
       stretchConstraints.push({
@@ -147,6 +161,29 @@ export function buildPanelSimMesh(
         kind: 'stretch',
       })
     }
+  }
+
+  // Bending: for every interior edge (a,b) shared by triangles (a,b,c) and
+  // (a,b,d), keep |c−d| at its flat rest length. Folding along the hinge
+  // shortens it, so the constraint resists bending in either direction without
+  // the acos singularity a dihedral-angle constraint has at the flat rest state.
+  for (const [key, apices] of edgeApices) {
+    if (apices.length !== 2) continue
+    const [la, lb] = key.split(':').map(Number)
+    const [lc, ld] = apices
+    const edgeLength = restOfLocal(la, lb)
+    if (edgeLength <= 1e-9) continue
+    if (
+      heightOverEdge(positions, la, lb, lc) < MIN_BEND_STENCIL_HEIGHT * edgeLength
+      || heightOverEdge(positions, la, lb, ld) < MIN_BEND_STENCIL_HEIGHT * edgeLength
+    ) continue
+    bendDistanceConstraints.push({
+      a: localToGlobal(lc),
+      b: localToGlobal(ld),
+      rest: restOfLocal(lc, ld),
+      compliance: bendCompliance,
+      kind: 'bend',
+    })
   }
 
   const pinConstraints = buildPinConstraints(panel, seamSamplePoints)
@@ -171,6 +208,17 @@ export function buildPanelSimMesh(
     pinConstraints,
     seamSamplePoints,
   }
+}
+
+function heightOverEdge(positions: number[], a: number, b: number, c: number) {
+  const ax = positions[a * 3], ay = positions[a * 3 + 1], az = positions[a * 3 + 2]
+  const abx = positions[b * 3] - ax, aby = positions[b * 3 + 1] - ay, abz = positions[b * 3 + 2] - az
+  const acx = positions[c * 3] - ax, acy = positions[c * 3 + 1] - ay, acz = positions[c * 3 + 2] - az
+  const cx = aby * acz - abz * acy
+  const cy = abz * acx - abx * acz
+  const cz = abx * acy - aby * acx
+  const edge = Math.hypot(abx, aby, abz)
+  return edge > 1e-12 ? Math.hypot(cx, cy, cz) / edge : 0
 }
 
 function buildPinConstraints(

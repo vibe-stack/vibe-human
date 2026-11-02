@@ -153,9 +153,15 @@ export function buildTriangleBVH(vertices: Float32Array, indices: Uint32Array): 
 // Recompute every node AABB from current vertex positions. O(nodes). Call once
 // per frame after the avatar re-skins. `vertices` may be a new array (same
 // topology/length) — we rebind it.
-export function refitTriangleBVH(bvh: TriangleBVH, vertices: Float32Array) {
+//
+// `sweptFrom` (optional, same layout) makes every leaf bound the union of the
+// triangle at both poses, so one refit per fixed step stays conservative for
+// every interpolated substep pose in between (the triangle's swept volume is
+// inside the hull of its two end poses).
+export function refitTriangleBVH(bvh: TriangleBVH, vertices: Float32Array, sweptFrom?: Float32Array) {
   bvh.vertices = vertices
   const { bounds, leftChild, rightChild, triStart, triCount, triOrder, indices, refitOrder } = bvh
+  const passes = sweptFrom && sweptFrom.length === vertices.length ? 2 : 1
   for (let oi = 0; oi < refitOrder.length; oi += 1) {
     const node = refitOrder[oi]
     const b = node * 6
@@ -167,12 +173,15 @@ export function refitTriangleBVH(bvh: TriangleBVH, vertices: Float32Array) {
       const end = start + triCount[node]
       for (let i = start; i < end; i += 1) {
         const t = triOrder[i]
-        for (let k = 0; k < 3; k += 1) {
-          const v = indices[t * 3 + k] * 3
-          const x = vertices[v], y = vertices[v + 1], z = vertices[v + 2]
-          if (x < minX) minX = x; if (x > maxX) maxX = x
-          if (y < minY) minY = y; if (y > maxY) maxY = y
-          if (z < minZ) minZ = z; if (z > maxZ) maxZ = z
+        for (let pass = 0; pass < passes; pass += 1) {
+          const source = pass === 0 ? vertices : sweptFrom!
+          for (let k = 0; k < 3; k += 1) {
+            const v = indices[t * 3 + k] * 3
+            const x = source[v], y = source[v + 1], z = source[v + 2]
+            if (x < minX) minX = x; if (x > maxX) maxX = x
+            if (y < minY) minY = y; if (y > maxY) maxY = y
+            if (z < minZ) minZ = z; if (z > maxZ) maxZ = z
+          }
         }
       }
       bounds[b] = minX; bounds[b + 1] = minY; bounds[b + 2] = minZ

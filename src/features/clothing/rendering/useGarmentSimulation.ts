@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, type MutableRefObject } from 'react'
 import { useFrame } from '@react-three/fiber'
-import * as THREE from 'three/webgpu'
 import type { PatternDocument, PatternPanel } from '../document/types'
 import { compileGarmentRuntime } from '../compiler/compileGarmentRuntime'
 import { QUALITY_PRESETS as COMPLIANCE_PRESETS } from '../compiler/buildPanelSimMesh'
@@ -12,7 +11,6 @@ import type {
   CollisionRegion,
   GarmentRuntime,
   MeshSurfaceColliderSnapshot,
-  RenderPanelRuntime,
   SolverParams,
 } from '../simulation/types'
 import {
@@ -27,11 +25,15 @@ import {
 import { getAvatarCollisionSource } from '../avatar-collision/AvatarCollisionSource'
 import type { AvatarCollisionMode } from '../state/clothingTypes'
 import { setCollisionAvatarStats, setCollisionRuntimeStats } from '../state/clothingActions'
+import { applyDocumentPlacements, quatFromEuler, refreshSeamPlacementRest, rotateVec } from '../simulation/placement'
+import { createRenderPanelEntry, updateRenderPanels, type RenderPanelEntry } from './renderPanels'
+import { KinematicBodyCollider } from '../simulation/collision/kinematicBodyCollider'
+
+export { computeVertexNormalsFlat } from './renderPanels'
 
 const FIXED_DT = 1 / 60
 const MAX_SUBSTEPS = 4
 const CLOTH_GROUND_Y = -3.15
-const PATTERN_UNIT_SCALE = 0.004
 
 const SOLVER_PRESETS: Record<CompileQuality, SolverParams> = {
   low: { gravity: -9.81, damping: 0.08, substeps: 1, iterations: 4, dt: FIXED_DT, groundY: CLOTH_GROUND_Y, maxVelocity: 6, selfCollisionRadius: 0.012, selfCollisionStiffness: 0.32, sewingTime: 0.65, gravityDelayTime: 0.05, gravityRampTime: 0.2 },
@@ -39,23 +41,6 @@ const SOLVER_PRESETS: Record<CompileQuality, SolverParams> = {
   high: { gravity: -9.81, damping: 0.06, substeps: 3, iterations: 8, dt: FIXED_DT, groundY: CLOTH_GROUND_Y, maxVelocity: 7, selfCollisionRadius: 0.016, selfCollisionStiffness: 0.5, sewingTime: 0.65, gravityDelayTime: 0.05, gravityRampTime: 0.2 },
   ultra: { gravity: -9.81, damping: 0.05, substeps: 4, iterations: 10, dt: FIXED_DT, groundY: CLOTH_GROUND_Y, maxVelocity: 8, selfCollisionRadius: 0.018, selfCollisionStiffness: 0.58, sewingTime: 0.65, gravityDelayTime: 0.05, gravityRampTime: 0.2 },
 }
-
-type RenderPanelEntry = {
-  panelId: string
-  panel: RenderPanelRuntime
-  geometry: THREE.BufferGeometry
-  positionArray: Float32Array
-  normalArray: Float32Array
-  smoothScratch: Float32Array
-  vertexCount: number
-  indices: Uint32Array
-  neighborOffsets: Uint32Array
-  neighbors: Uint32Array
-}
-
-const VISUAL_SMOOTHING_PASSES = 3
-const VISUAL_SMOOTHING_ALPHA = 0.28
-const VISUAL_SMOOTHING_SHRINK = -0.08
 
 export function useGarmentSimulation(args: {
   document: PatternDocument
@@ -216,7 +201,7 @@ export function useGarmentSimulation(args: {
       ? panelDamping.reduce((sum, value) => sum + value, 0) / panelDamping.length
       : SOLVER_PRESETS[quality].damping
     solverRef.current = new XPBDClothSolver(nextMesh, { ...SOLVER_PRESETS[quality], damping })
-    updateRenderPanels(compileResult.value, renderPanels, nextMesh.positions)
+    updateRenderPanels(renderPanels, nextMesh.positions)
     accumRef.current = 0
 
     // Snapshot the current placements so the gizmo-delta effect can diff against them.
@@ -252,7 +237,7 @@ export function useGarmentSimulation(args: {
 
     if (!runningRef.current) {
       frameRef.current = solver.settle(getBodyProxySnapshot())
-      updateRenderPanels(runtime, renderPanelsRef.current, frameRef.current.positions)
+      updateRenderPanels(renderPanelsRef.current, frameRef.current.positions)
     }
   }, [liveParamsKey, quality])
 
@@ -286,7 +271,7 @@ export function useGarmentSimulation(args: {
       prevPlacementsRef.current[panelId] = { position: { ...curr.position }, rotation: { ...curr.rotation } }
     }
     refreshSeamPlacementRest(runtime.simMesh)
-    updateRenderPanels(runtime, renderPanelsRef.current, runtime.simMesh.positions)
+    updateRenderPanels(renderPanelsRef.current, runtime.simMesh.positions)
   }, [placementKey])
 
   useFrame((_, delta) => {
@@ -315,8 +300,8 @@ export function useGarmentSimulation(args: {
         steps += 1
       }
     }
-    updateRenderPanels(runtime, renderPanelsRef.current, frameRef.current?.positions ?? runtime.simMesh.positions)
-  })
+    updateRenderPanels(renderPanelsRef.current, frameRef.current?.positions ?? runtime.simMesh.positions)
+  }, -1) // after HumanModel (-2): the skeleton for this frame is already posed
 
   const grab = useMemo(() => ({
     start(particle: number, x: number, y: number, z: number) {
@@ -429,10 +414,32 @@ function updateColliderSnapshotForStep(
     spatialHashCellCount: meshCollider ? meshCollider.cellKeys.length : 0,
   })
 
+  // The solver collides against the kinematic collider (substep-interpolated,
+  // contacts inside the constraint loop, body-relative friction); the mesh
+  // snapshot is still published for the debug view.
+  const kinematic = meshCollider ? kinematicColliderFor(meshCollider, collision) : null
   setBodyProxySnapshot({
     proxies: [],
     meshColliders: meshCollider ? [meshCollider] : undefined,
+    kinematicColliders: kinematic ? [kinematic] : undefined,
   })
+}
+
+// One kinematic collider per skinned collider topology (its index buffer is
+// stable for as long as the topology is cached).
+const kinematicColliders = new WeakMap<Uint32Array, KinematicBodyCollider>()
+
+function kinematicColliderFor(meshCollider: MeshSurfaceColliderSnapshot, collision: Parameters<typeof useGarmentSimulation>[0]['collision']) {
+  let collider = kinematicColliders.get(meshCollider.indices)
+  const thickness = collision.skinOffset + collision.garmentThickness
+  if (!collider) {
+    collider = new KinematicBodyCollider(meshCollider.indices, meshCollider.vertices.length / 3, { thickness, friction: collision.bodyFriction })
+    kinematicColliders.set(meshCollider.indices, collider)
+  }
+  collider.thickness = thickness
+  collider.friction = collision.bodyFriction
+  collider.pushPose(meshCollider.vertices)
+  return collider
 }
 
 function timed<T>(enabled: boolean, label: string, fn: () => T) {
@@ -512,9 +519,13 @@ function applyLiveSolverParams(solver: XPBDClothSolver, document: PatternDocumen
     return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : fallback
   }
 
-  solver.setStretchCompliance(avg((panel) => panel.stretchCompliance, preset.stretchCompliance))
-  solver.setShearCompliance(avg((panel) => panel.shearCompliance, preset.shearCompliance))
-  solver.setBendCompliance(avg((panel) => panel.bendCompliance, preset.bendCompliance))
+  // Per panel, not averaged: averaging made every panel of a mixed-fabric
+  // garment behave like the mean fabric the moment any knob was touched.
+  const perPanel = (pick: (panel: PatternPanel) => number | undefined, fallback: number) =>
+    Object.fromEntries(panels.map((panel) => [panel.id, pick(panel) ?? fallback]))
+  solver.setPanelCompliance('stretch', perPanel((panel) => panel.stretchCompliance, preset.stretchCompliance))
+  solver.setPanelCompliance('shear', perPanel((panel) => panel.shearCompliance, preset.shearCompliance))
+  solver.setPanelCompliance('bend', perPanel((panel) => panel.bendCompliance, preset.bendCompliance))
   solver.setDamping(avg((panel) => panel.damping, SOLVER_PRESETS[quality].damping))
   solver.setSolverIterations(SOLVER_PRESETS[quality].substeps, SOLVER_PRESETS[quality].iterations)
   applyPanelFrictions(solver.mesh, document)
@@ -612,70 +623,6 @@ function reprojectDrape(previous: GarmentRuntime['simMesh'], next: GarmentRuntim
   }
 }
 
-function applyDocumentPlacements(runtimeMesh: GarmentRuntime['simMesh'], document: PatternDocument) {
-  const { positions, prevPositions, velocities, panelIds, panelLocalPositions, particleCount } = runtimeMesh
-  for (let particle = 0; particle < particleCount; particle += 1) {
-    const panel = document.panels[panelIds[particle]]
-    if (!panel) continue
-    const localX = panelLocalPositions[particle * 2]
-    const localY = panelLocalPositions[particle * 2 + 1]
-    const world = applyPanelPlacement(localX, localY, panel)
-    const offset = particle * 3
-    positions[offset] = world.x
-    positions[offset + 1] = world.y
-    positions[offset + 2] = world.z
-    prevPositions[offset] = world.x
-    prevPositions[offset + 1] = world.y
-    prevPositions[offset + 2] = world.z
-    velocities[offset] = 0
-    velocities[offset + 1] = 0
-    velocities[offset + 2] = 0
-  }
-}
-
-function refreshSeamPlacementRest(runtimeMesh: GarmentRuntime['simMesh']) {
-  const positions = runtimeMesh.positions
-  for (const seam of runtimeMesh.seamConstraints) {
-    const ia = seam.a * 3
-    const ib = seam.b * 3
-    seam.rest = Math.hypot(
-      positions[ib] - positions[ia],
-      positions[ib + 1] - positions[ia + 1],
-      positions[ib + 2] - positions[ia + 2],
-    )
-    seam.targetRest = seam.targetRest ?? 0
-  }
-}
-
-function applyPanelPlacement(patternX: number, patternY: number, panel: PatternPanel) {
-  const bounds = panelBounds(panel)
-  const localX = ((patternX - bounds.minX) / bounds.width - 0.5) * bounds.width * PATTERN_UNIT_SCALE
-  const localY = (0.5 - (patternY - bounds.minY) / bounds.height) * bounds.height * PATTERN_UNIT_SCALE
-  const q = quatFromEuler(panel.placement.rotation.x, panel.placement.rotation.y, panel.placement.rotation.z)
-  const rotated = rotateVec(localX, localY, 0, q.x, q.y, q.z, q.w)
-  return {
-    x: rotated.x + panel.placement.position.x,
-    y: rotated.y + panel.placement.position.y,
-    z: rotated.z + panel.placement.position.z,
-  }
-}
-
-function panelBounds(panel: PatternPanel) {
-  const points = Object.values(panel.points)
-  if (!points.length) return { minX: -140, minY: -140, width: 280, height: 280 }
-  let minX = Infinity
-  let minY = Infinity
-  let maxX = -Infinity
-  let maxY = -Infinity
-  for (const point of points) {
-    if (point.x < minX) minX = point.x
-    if (point.y < minY) minY = point.y
-    if (point.x > maxX) maxX = point.x
-    if (point.y > maxY) maxY = point.y
-  }
-  return { minX, minY, width: maxX - minX || 1, height: maxY - minY || 1 }
-}
-
 function quatMul(
   a: { x: number; y: number; z: number; w: number },
   b: { x: number; y: number; z: number; w: number },
@@ -724,195 +671,5 @@ function applyPlacementDelta(
     velocities[off] = 0
     velocities[off + 1] = 0
     velocities[off + 2] = 0
-  }
-}
-
-function quatFromEuler(x: number, y: number, z: number) {
-  const c1 = Math.cos(x / 2)
-  const s1 = Math.sin(x / 2)
-  const c2 = Math.cos(y / 2)
-  const s2 = Math.sin(y / 2)
-  const c3 = Math.cos(z / 2)
-  const s3 = Math.sin(z / 2)
-  return {
-    x: s1 * c2 * c3 + c1 * s2 * s3,
-    y: c1 * s2 * c3 - s1 * c2 * s3,
-    z: c1 * c2 * s3 + s1 * s2 * c3,
-    w: c1 * c2 * c3 - s1 * s2 * s3,
-  }
-}
-
-function rotateVec(x: number, y: number, z: number, qx: number, qy: number, qz: number, qw: number) {
-  const tx = 2 * (qy * z - qz * y)
-  const ty = 2 * (qz * x - qx * z)
-  const tz = 2 * (qx * y - qy * x)
-  return {
-    x: x + qw * tx + (qy * tz - qz * ty),
-    y: y + qw * ty + (qz * tx - qx * tz),
-    z: z + qw * tz + (qx * ty - qy * tx),
-  }
-}
-
-function createRenderPanelEntry(panel: GarmentRuntime['renderPanels'][number]): RenderPanelEntry {
-  const vertexCount = panel.panelUvs.length / 2
-  const positionArray = new Float32Array(vertexCount * 3)
-  const normalArray = new Float32Array(vertexCount * 3)
-  const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.BufferAttribute(positionArray, 3))
-  geometry.setAttribute('normal', new THREE.BufferAttribute(normalArray, 3))
-  geometry.setAttribute('uv', new THREE.BufferAttribute(panel.panelUvs, 2))
-  geometry.setIndex(new THREE.BufferAttribute(panel.indices, 1))
-  const adjacency = buildAdjacency(vertexCount, panel.indices)
-  return {
-    panelId: panel.panelId,
-    panel,
-    geometry,
-    positionArray,
-    normalArray,
-    smoothScratch: new Float32Array(vertexCount * 3),
-    vertexCount,
-    indices: panel.indices,
-    neighborOffsets: adjacency.offsets,
-    neighbors: adjacency.neighbors,
-  }
-}
-
-function updateRenderPanels(_runtime: GarmentRuntime, entries: RenderPanelEntry[], positions: Float32Array) {
-  for (const entry of entries) {
-    const { panel, vertexCount } = entry
-    const array = entry.positionArray
-    const simTriangles = panel.embedding.simTriangles
-    const barycentrics = panel.embedding.barycentrics
-    for (let vertex = 0; vertex < vertexCount; vertex += 1) {
-      const base = vertex * 3
-      const ia = simTriangles[base] * 3
-      const ib = simTriangles[base + 1] * 3
-      const ic = simTriangles[base + 2] * 3
-      const wa = barycentrics[base]
-      const wb = barycentrics[base + 1]
-      const wc = barycentrics[base + 2]
-      array[base] = positions[ia] * wa + positions[ib] * wb + positions[ic] * wc
-      array[base + 1] = positions[ia + 1] * wa + positions[ib + 1] * wb + positions[ic + 1] * wc
-      array[base + 2] = positions[ia + 2] * wa + positions[ib + 2] * wb + positions[ic + 2] * wc
-    }
-    smoothVisualMeshPositions(array, entry.smoothScratch, entry.neighborOffsets, entry.neighbors, VISUAL_SMOOTHING_PASSES, VISUAL_SMOOTHING_ALPHA)
-    smoothVisualMeshPositions(array, entry.smoothScratch, entry.neighborOffsets, entry.neighbors, 1, VISUAL_SMOOTHING_SHRINK)
-    computeVertexNormalsFlat(array, entry.indices, entry.normalArray, vertexCount)
-    ;(entry.geometry.getAttribute('position') as THREE.BufferAttribute).needsUpdate = true
-    ;(entry.geometry.getAttribute('normal') as THREE.BufferAttribute).needsUpdate = true
-    // Invalidate the cached bounding sphere so raycasting uses current positions.
-    entry.geometry.boundingSphere = null
-  }
-}
-
-// Specialized, allocation-free replacement for THREE's computeVertexNormals on a
-// fixed indexed topology. Replicates THREE exactly: area-weighted face normal
-// (C-B)x(A-B) accumulated per vertex, then per-vertex normalize (zero-length
-// stays zero, matching Vector3.normalize()).
-export function computeVertexNormalsFlat(
-  positions: Float32Array,
-  indices: Uint32Array,
-  normals: Float32Array,
-  vertexCount: number,
-) {
-  const normalLen = vertexCount * 3
-  for (let i = 0; i < normalLen; i += 1) normals[i] = 0
-
-  for (let i = 0; i < indices.length; i += 3) {
-    const vA = indices[i]
-    const vB = indices[i + 1]
-    const vC = indices[i + 2]
-    const iA = vA * 3
-    const iB = vB * 3
-    const iC = vC * 3
-
-    const cbx = positions[iC] - positions[iB]
-    const cby = positions[iC + 1] - positions[iB + 1]
-    const cbz = positions[iC + 2] - positions[iB + 2]
-    const abx = positions[iA] - positions[iB]
-    const aby = positions[iA + 1] - positions[iB + 1]
-    const abz = positions[iA + 2] - positions[iB + 2]
-
-    const nx = cby * abz - cbz * aby
-    const ny = cbz * abx - cbx * abz
-    const nz = cbx * aby - cby * abx
-
-    normals[iA] += nx; normals[iA + 1] += ny; normals[iA + 2] += nz
-    normals[iB] += nx; normals[iB + 1] += ny; normals[iB + 2] += nz
-    normals[iC] += nx; normals[iC + 1] += ny; normals[iC + 2] += nz
-  }
-
-  for (let i = 0; i < normalLen; i += 3) {
-    const x = normals[i]
-    const y = normals[i + 1]
-    const z = normals[i + 2]
-    const len = Math.sqrt(x * x + y * y + z * z) || 1
-    const inv = 1 / len
-    normals[i] = x * inv
-    normals[i + 1] = y * inv
-    normals[i + 2] = z * inv
-  }
-}
-
-function buildAdjacency(vertexCount: number, indices: Uint32Array) {
-  const neighborSets = Array.from({ length: vertexCount }, () => new Set<number>())
-  for (let i = 0; i < indices.length; i += 3) {
-    const a = indices[i]
-    const b = indices[i + 1]
-    const c = indices[i + 2]
-    neighborSets[a].add(b); neighborSets[a].add(c)
-    neighborSets[b].add(a); neighborSets[b].add(c)
-    neighborSets[c].add(a); neighborSets[c].add(b)
-  }
-  const offsets = new Uint32Array(vertexCount + 1)
-  let total = 0
-  for (let i = 0; i < vertexCount; i += 1) {
-    offsets[i] = total
-    total += neighborSets[i].size
-  }
-  offsets[vertexCount] = total
-  const neighbors = new Uint32Array(total)
-  let cursor = 0
-  for (let i = 0; i < vertexCount; i += 1) {
-    for (const n of neighborSets[i]) neighbors[cursor++] = n
-  }
-  return { offsets, neighbors }
-}
-
-function smoothVisualMeshPositions(
-  positions: Float32Array,
-  scratch: Float32Array,
-  neighborOffsets: Uint32Array,
-  neighbors: Uint32Array,
-  passes: number,
-  alpha: number,
-) {
-  if (passes <= 0 || alpha <= 0) return
-  const vertexCount = neighborOffsets.length - 1
-  for (let pass = 0; pass < passes; pass += 1) {
-    scratch.set(positions)
-    for (let vertex = 0; vertex < vertexCount; vertex += 1) {
-      const start = neighborOffsets[vertex]
-      const end = neighborOffsets[vertex + 1]
-      const neighborCount = end - start
-      if (neighborCount === 0) continue
-      let avgX = 0
-      let avgY = 0
-      let avgZ = 0
-      for (let i = start; i < end; i += 1) {
-        const n = neighbors[i] * 3
-        avgX += scratch[n]
-        avgY += scratch[n + 1]
-        avgZ += scratch[n + 2]
-      }
-      const inv = 1 / neighborCount
-      avgX *= inv
-      avgY *= inv
-      avgZ *= inv
-      const base = vertex * 3
-      positions[base] = scratch[base] + (avgX - scratch[base]) * alpha
-      positions[base + 1] = scratch[base + 1] + (avgY - scratch[base + 1]) * alpha
-      positions[base + 2] = scratch[base + 2] + (avgZ - scratch[base + 2]) * alpha
-    }
   }
 }

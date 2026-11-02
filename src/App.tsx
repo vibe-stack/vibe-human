@@ -1,8 +1,8 @@
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { Canvas, extend, useThree, type ThreeToJSXElements } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import * as THREE from 'three/webgpu'
-import { Activity, Smile, Box, Layers, Scissors, Shirt, Orbit, FileArchive } from 'lucide-react'
+import { Activity, Smile, Box, Layers, Scissors, Shirt, Orbit, FileArchive, FlaskConical } from 'lucide-react'
 import { useSnapshot } from 'valtio'
 import { Group, Panel, Separator } from 'react-resizable-panels'
 import { cn } from './lib/utils'
@@ -28,7 +28,9 @@ import { setCurrentExportScene } from './features/export/exportSession'
 import { clothingStore } from './features/clothing/state/clothingStore'
 import { loadDemoGarment, requestCollisionAvatarBuild } from './features/clothing/state/clothingActions'
 import { createDemoGarment } from './features/clothing/demo/createDemoGarment'
-import { appState, setCharacterRenderMode, toggleShowExpressions, toggleShowHair, toggleShowModeling, toggleShowSkinning, toggleShowTest, toggleShowClothing, toggleShowExport, type CharacterRenderMode } from './appState'
+import { appState, setCharacterRenderMode, setShowClothLab, toggleShowExpressions, toggleShowHair, toggleShowModeling, toggleShowSkinning, toggleShowTest, toggleShowClothing, toggleShowExport, type CharacterRenderMode } from './appState'
+
+const ClothLab = lazy(() => import('./features/cloth-lab/ClothLab'))
 
 function FovUpdater() {
   const { camera, invalidate } = useThree()
@@ -145,6 +147,25 @@ function ClothingOrbitToggle() {
 }
 
 export default function App() {
+  const { showClothLab } = useSnapshot(appState)
+
+  useEffect(() => {
+    const syncFromHash = () => setShowClothLab(window.location.hash === '#cloth-lab')
+    window.addEventListener('hashchange', syncFromHash)
+    return () => window.removeEventListener('hashchange', syncFromHash)
+  }, [])
+
+  if (showClothLab) {
+    return (
+      <Suspense fallback={<div className="w-screen h-screen bg-[#0b0c10]" />}>
+        <ClothLab onExit={() => setShowClothLab(false)} />
+      </Suspense>
+    )
+  }
+  return <Studio />
+}
+
+function Studio() {
   const { fov, isTransforming, showExpressions, showHair, showModeling, showSkinning, showTest, showClothing, showExport, modelingValues } = useSnapshot(appState)
   const { previewOptions } = useSnapshot(clothingStore)
   const [isMobile, setIsMobile] = useState(false)
@@ -188,6 +209,18 @@ export default function App() {
         )}
         style={isMobile ? { paddingBottom: 'calc(7px + env(safe-area-inset-bottom, 0px))' } : undefined}
       >
+        <button
+          type="button"
+          onClick={() => setShowClothLab(true)}
+          title="Open the cloth simulation test lab"
+          className={cn(
+            'flex flex-col items-center gap-0.75 border-0 rounded-[6px] cursor-pointer transition-[background,color] duration-150 bg-transparent text-white/32 hover:text-white/70',
+            isMobile ? 'px-1.5 py-1 flex-1' : 'px-3.5 py-1.25',
+          )}
+        >
+          <FlaskConical size={15} strokeWidth={1.6} />
+          <span className="text-[8px] font-mono tracking-widest font-bold">CLOTH LAB</span>
+        </button>
         {panels.map(({ key, label, Icon, active, toggle }) => (
           <button
             key={key}

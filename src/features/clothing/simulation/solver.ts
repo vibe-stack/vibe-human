@@ -1,9 +1,20 @@
-import type { ClothFrame, ClothSimMesh, ColliderSnapshot, DistanceConstraint, SolverParams } from './types'
+import type { ClothFrame, ClothSimMesh, ColliderSnapshot, DistanceConstraint, SkinAttachment, SolverParams } from './types'
 import { solveBendConstraintsFlat } from './constraints/solveBendConstraints'
 import { solveDistanceConstraintsFlat } from './constraints/solveDistanceConstraints'
 import { solvePinConstraints } from './constraints/solvePinConstraints'
 import { solveCollisionConstraints } from './collision/solveCollisionConstraints'
 import { ClothSelfCollisionSolver } from './collision/solveSelfCollisionConstraints'
+import type { KinematicBodyCollider } from './collision/kinematicBodyCollider'
+import {
+  applyContactVelocities,
+  applyKinematicFriction,
+  createBodyCollisionStats,
+  detectKinematicContacts,
+  KinematicContactCache,
+  projectKinematicContacts,
+  resolveSkinVertexContacts,
+  type BodyCollisionStats,
+} from './collision/solveKinematicCollisions'
 
 type DistanceSet = {
   a: Uint32Array
@@ -12,8 +23,16 @@ type DistanceSet = {
   targetRest: Float32Array
   hasTargetRest: Uint8Array
   compliance: Float32Array
+  /** Accumulated XPBD multipliers, reset at the start of every substep. */
+  lambda?: Float32Array
+  /** Panel index of each constraint (from its first particle), for per-panel fabric. */
+  group?: Uint16Array
   count: number
 }
+
+export type ComplianceKind = 'stretch' | 'shear' | 'bend'
+
+const ATTACH_SCRATCH = new Float32Array(14)
 
 type BendSet = {
   a: Uint32Array
@@ -28,7 +47,7 @@ export class XPBDClothSolver {
   readonly mesh: ClothSimMesh
   readonly params: SolverParams
   private colliders: ColliderSnapshot | null = null
-  private elapsed = 0
+  private elapsedTime = 0
   private stretchFlat: DistanceSet
   private shearFlat: DistanceSet
   private bendDistanceFlat: DistanceSet
@@ -49,6 +68,15 @@ export class XPBDClothSolver {
   private seamTouchedList: Uint32Array
   private seamTouchedCount = 0
   private selfCollision: ClothSelfCollisionSolver
+  private readonly panelIndex: Map<string, number>
+  /** Contact state against animated bodies (broad phase, persistent contacts, toggles). */
+  readonly contactCache: KinematicContactCache
+  private attachments: SkinAttachment[] = []
+  private attachmentLambda = new Float32Array(0)
+  /** Body-collision diagnostics from the most recent step. */
+  readonly bodyStats: BodyCollisionStats = createBodyCollisionStats()
+  /** Milliseconds spent per phase in the most recent step. */
+  readonly profile = { constraints: 0, selfCollision: 0, bodyCollision: 0, other: 0 }
 
   constructor(
     mesh: ClothSimMesh,
@@ -56,10 +84,22 @@ export class XPBDClothSolver {
   ) {
     this.mesh = mesh
     this.params = params
-    this.stretchFlat = flattenDistanceConstraints(mesh.stretchConstraints)
-    this.shearFlat = flattenDistanceConstraints(mesh.shearConstraints)
-    this.bendDistanceFlat = flattenDistanceConstraints(mesh.bendDistanceConstraints)
-    this.seamFlat = flattenDistanceConstraints(mesh.seamConstraints)
+    this.panelIndex = new Map()
+    const particleGroup = new Uint16Array(mesh.particleCount)
+    for (let i = 0; i < mesh.particleCount; i += 1) {
+      const id = mesh.panelIds[i]
+      let index = this.panelIndex.get(id)
+      if (index === undefined) {
+        index = this.panelIndex.size
+        this.panelIndex.set(id, index)
+      }
+      particleGroup[i] = index
+    }
+    this.stretchFlat = flattenDistanceConstraints(mesh.stretchConstraints, particleGroup)
+    this.shearFlat = flattenDistanceConstraints(mesh.shearConstraints, particleGroup)
+    this.bendDistanceFlat = flattenDistanceConstraints(mesh.bendDistanceConstraints, particleGroup)
+    this.seamFlat = flattenDistanceConstraints(mesh.seamConstraints, particleGroup)
+    this.contactCache = new KinematicContactCache(mesh)
     this.bendFlat = flattenBendConstraints(mesh.bendConstraints)
     this.seamAccumX = new Float32Array(mesh.particleCount)
     this.seamAccumY = new Float32Array(mesh.particleCount)
@@ -91,6 +131,54 @@ export class XPBDClothSolver {
   setBendCompliance(value: number) {
     this.bendDistanceFlat.compliance.fill(value)
     this.bendFlat.compliance.fill(value)
+  }
+
+  /**
+   * Per-panel compliance. Panels missing from `values` keep their current value.
+   * Unlike the fill-all setters above this keeps mixed fabrics distinct (a silk
+   * skirt and a denim jacket in one outfit).
+   */
+  setPanelCompliance(kind: ComplianceKind, values: Record<string, number>) {
+    const sets = kind === 'stretch' ? [this.stretchFlat] : kind === 'shear' ? [this.shearFlat] : [this.bendDistanceFlat]
+    for (const set of sets) {
+      if (!set.group) continue
+      for (const [panelId, value] of Object.entries(values)) {
+        const group = this.panelIndex.get(panelId)
+        if (group === undefined || !Number.isFinite(value)) continue
+        for (let i = 0; i < set.count; i += 1) {
+          if (set.group[i] === group) set.compliance[i] = value
+        }
+      }
+    }
+  }
+
+  /** Seconds simulated since construction or the last resetAssembly(). */
+  get elapsed() {
+    return this.elapsedTime
+  }
+
+  /**
+   * Restart the sewing / gravity-ramp timeline. Pass `skipSewing` to treat the
+   * garment as already assembled (e.g. after restoring a draped state).
+   */
+  resetAssembly(skipSewing = false) {
+    this.elapsedTime = skipSewing ? Math.max(this.params.sewingTime ?? 1.2, 0) + (this.params.gravityRampTime ?? 0.45) + 1 : 0
+    this.contactCache.clear()
+  }
+
+  /** Forget cached skin contacts (call after the body teleports). */
+  clearContacts() {
+    this.contactCache.clear()
+  }
+
+  /** Bind particles to animated skin points (waistbands, cuffs). Replaces previous bindings. */
+  setSkinAttachments(attachments: SkinAttachment[]) {
+    this.attachments = attachments
+    this.attachmentLambda = new Float32Array(attachments.length)
+  }
+
+  get skinAttachments(): readonly SkinAttachment[] {
+    return this.attachments
   }
 
   /** Set base velocity damping (0..1). */
@@ -129,36 +217,118 @@ export class XPBDClothSolver {
 
   step(snapshot?: ColliderSnapshot | null): ClothFrame {
     if (snapshot !== undefined) this.colliders = snapshot
-    const dt = this.params.dt / this.params.substeps
+    const substeps = this.params.substeps
+    const dt = this.params.dt / substeps
+    const kinematic = this.colliders?.kinematicColliders ?? []
+    this.bodyStats.recovered = 0
+    this.bodyStats.gathers = 0
+    const profile = this.profile
+    profile.constraints = profile.selfCollision = profile.bodyCollision = profile.other = 0
+    const stepStart = performance.now()
 
-    for (let substep = 0; substep < this.params.substeps; substep += 1) {
+    for (let substep = 0; substep < substeps; substep += 1) {
       const sewingProgress = this.sewingProgress()
       const gravityScale = this.gravityProgress()
       const damping = this.dampingForAssembly(sewingProgress)
+      // Animated colliders are interpolated across the fixed step so a fast limb
+      // advances 1/substeps of its motion per substep instead of all at once.
+      for (const collider of kinematic) collider.setSubstep(substep / substeps, (substep + 1) / substeps)
       this.integrate(dt, damping, this.params.gravity * gravityScale)
       this.clampSubstepDisplacement(sewingProgress)
       const seamRestScale = 1 - sewingProgress
       const seamStiffness = this.seamAssemblyStiffness(sewingProgress)
       const bendBlend = this.bendAssemblyBlend(sewingProgress)
+      this.resetLambdas()
+      let mark = performance.now()
+      const hasBody = kinematic.length > 0
+      if (hasBody) detectKinematicContacts(this.mesh, kinematic, this.contactCache, 1 / substeps, this.bodyStats)
+      profile.bodyCollision += performance.now() - mark
+      mark = performance.now()
       for (let iteration = 0; iteration < this.params.iterations; iteration += 1) {
         solveDistanceConstraintsFlat(this.mesh.positions, this.mesh.invMass, this.stretchFlat, dt, 0)
         solveDistanceConstraintsFlat(this.mesh.positions, this.mesh.invMass, this.shearFlat, dt, 0)
+        if (bendBlend > 0) {
+          solveDistanceConstraintsFlat(this.mesh.positions, this.mesh.invMass, this.bendDistanceFlat, dt, 0, bendBlend)
+        }
         solveDistanceConstraintsFlat(this.mesh.positions, this.mesh.invMass, this.seamFlat, dt, seamRestScale, seamStiffness)
         if (bendBlend > 0 && (iteration & 1) === 0) {
           solveBendConstraintsFlat(this.mesh.positions, this.mesh.invMass, this.bendFlat, dt * bendBlend)
         }
         solvePinConstraints(this.mesh)
+        this.solveSkinAttachments(kinematic, dt)
         this.applyGrabPin(dt)
+        // Contacts converge with the cloth constraints instead of overriding them.
+        if (hasBody) projectKinematicContacts(this.mesh, this.contactCache)
       }
-      this.solveSelfCollision(sewingProgress)
-      solveCollisionConstraints(this.mesh, this.colliders)
+      profile.constraints += performance.now() - mark
+      mark = performance.now()
+      this.solveSelfCollision(sewingProgress, substep === substeps - 1)
+      profile.selfCollision += performance.now() - mark
+      mark = performance.now()
+      // Legacy proxies / patches still apply; a mesh collider that also has a
+      // kinematic counterpart is not collided twice.
+      solveCollisionConstraints(this.mesh, hasBody ? this.legacyColliders() : this.colliders)
+      if (hasBody) {
+        projectKinematicContacts(this.mesh, this.contactCache)
+        applyKinematicFriction(this.mesh, this.contactCache)
+        if (substep === substeps - 1) resolveSkinVertexContacts(this.mesh, kinematic, this.contactCache, this.bodyStats)
+      }
+      profile.bodyCollision += performance.now() - mark
       if (sewingProgress >= 1) this.weldSeamPairs()
       this.deriveVelocities(dt, this.velocityRetentionForAssembly(sewingProgress))
+      if (hasBody) applyContactVelocities(this.mesh, this.contactCache, dt)
       this.applyGround()
-      this.elapsed += dt
+      this.elapsedTime += dt
     }
+    profile.other = performance.now() - stepStart - profile.constraints - profile.selfCollision - profile.bodyCollision
 
     return { positions: this.mesh.positions }
+  }
+
+  private legacyColliders(): ColliderSnapshot | null {
+    const colliders = this.colliders
+    if (!colliders || !colliders.meshColliders?.length) return colliders
+    return { ...colliders, meshColliders: undefined }
+  }
+
+  private resetLambdas() {
+    this.stretchFlat.lambda?.fill(0)
+    this.shearFlat.lambda?.fill(0)
+    this.bendDistanceFlat.lambda?.fill(0)
+    this.seamFlat.lambda?.fill(0)
+    this.attachmentLambda.fill(0)
+  }
+
+  private solveSkinAttachments(colliders: readonly KinematicBodyCollider[], dt: number) {
+    const attachments = this.attachments
+    if (attachments.length === 0 || colliders.length === 0) return
+    const collider = colliders[0]
+    if (!collider.ready) return
+    const { positions, invMass } = this.mesh
+    const dtSq = dt * dt
+    const lambdas = this.attachmentLambda
+    for (let i = 0; i < attachments.length; i += 1) {
+      const attachment = attachments[i]
+      const w = invMass[attachment.particle]
+      if (w === 0) continue
+      const o = attachment.particle * 3
+      collider.evaluate(attachment.triangle, attachment.u, attachment.v, attachment.w, positions[o], positions[o + 1], positions[o + 2], ATTACH_SCRATCH)
+      const tx = ATTACH_SCRATCH[0] + ATTACH_SCRATCH[3] * attachment.offset
+      const ty = ATTACH_SCRATCH[1] + ATTACH_SCRATCH[4] * attachment.offset
+      const tz = ATTACH_SCRATCH[2] + ATTACH_SCRATCH[5] * attachment.offset
+      const dx = positions[o] - tx
+      const dy = positions[o + 1] - ty
+      const dz = positions[o + 2] - tz
+      const length = Math.sqrt(dx * dx + dy * dy + dz * dz)
+      if (length < 1e-9) continue
+      const alpha = attachment.compliance / dtSq
+      const deltaLambda = (-length - alpha * lambdas[i]) / (w + alpha)
+      lambdas[i] += deltaLambda
+      const scale = (w * deltaLambda) / length
+      positions[o] += dx * scale
+      positions[o + 1] += dy * scale
+      positions[o + 2] += dz * scale
+    }
   }
 
   refreshSeamRests() {
@@ -317,9 +487,13 @@ export class XPBDClothSolver {
   }
 
   private clampSubstepDisplacement(sewingProgress: number) {
-    const skin = this.colliders?.meshColliders?.[0]?.skin ?? 0.022
-    const thickness = this.colliders?.meshColliders?.[0]?.thickness ?? 0.008
-    const baseLimit = Math.max(0.02, (skin + thickness) * 1.35)
+    const kinematic = this.colliders?.kinematicColliders?.[0]
+    const skin = kinematic ? 0 : this.colliders?.meshColliders?.[0]?.skin ?? 0.022
+    const thickness = kinematic ? kinematic.thickness : this.colliders?.meshColliders?.[0]?.thickness ?? 0.008
+    // With an animated body the cloth must be allowed to move as fast as the
+    // skin that carries it; the guard only exists to stop explosions.
+    const bodyTravel = kinematic ? (kinematic.maxStepDisplacement / this.params.substeps) * 1.5 : 0
+    const baseLimit = Math.max(0.02, (skin + thickness) * 1.35, bodyTravel)
     const sewingTighten = 0.6 + 0.4 * sewingProgress
     const limit = baseLimit * sewingTighten
     const limitSq = limit * limit
@@ -349,7 +523,7 @@ export class XPBDClothSolver {
     }
   }
 
-  private solveSelfCollision(sewingProgress: number) {
+  private solveSelfCollision(sewingProgress: number, lastSubstep: boolean) {
     const radius = this.params.selfCollisionRadius ?? 0
     const stiffness = this.params.selfCollisionStiffness ?? 0
     if (radius <= 0 || stiffness <= 0) return
@@ -358,14 +532,16 @@ export class XPBDClothSolver {
     this.selfCollision.solve(this.mesh, {
       radius: radius * (0.65 + 0.35 * ramp),
       stiffness: stiffness * ramp,
-      surfaceContacts: false,
+      // Particle-vs-triangle cloth contacts are costly; once per step keeps
+      // layers apart without paying for them every substep.
+      surfaceContacts: lastSubstep && (this.params.selfCollisionSurfaceContacts ?? false),
     })
   }
 
   private sewingProgress() {
     const duration = this.params.sewingTime ?? 1.2
     if (duration <= 0) return 1
-    return smooth01(this.elapsed / duration)
+    return smooth01(this.elapsedTime / duration)
   }
 
   private gravityProgress() {
@@ -373,7 +549,7 @@ export class XPBDClothSolver {
     const delay = this.params.gravityDelayTime ?? sewingDuration * 0.85
     const duration = this.params.gravityRampTime ?? 0.45
     if (duration <= 0) return 1
-    return smooth01((this.elapsed - delay) / duration)
+    return smooth01((this.elapsedTime - delay) / duration)
   }
 
   private dampingForAssembly(sewingProgress: number) {
@@ -401,7 +577,7 @@ export class XPBDClothSolver {
   }
 }
 
-function flattenDistanceConstraints(source: DistanceConstraint[]): DistanceSet {
+function flattenDistanceConstraints(source: DistanceConstraint[], particleGroup?: Uint16Array): DistanceSet {
   const count = source.length
   const a = new Uint32Array(count)
   const b = new Uint32Array(count)
@@ -409,10 +585,13 @@ function flattenDistanceConstraints(source: DistanceConstraint[]): DistanceSet {
   const targetRest = new Float32Array(count)
   const hasTargetRest = new Uint8Array(count)
   const compliance = new Float32Array(count)
+  const lambda = new Float32Array(count)
+  const group = particleGroup ? new Uint16Array(count) : undefined
   for (let i = 0; i < count; i += 1) {
     const c = source[i]
     a[i] = c.a
     b[i] = c.b
+    if (group && particleGroup) group[i] = particleGroup[c.a]
     rest[i] = c.rest
     if (c.targetRest !== undefined) {
       hasTargetRest[i] = 1
@@ -420,7 +599,7 @@ function flattenDistanceConstraints(source: DistanceConstraint[]): DistanceSet {
     }
     compliance[i] = c.compliance
   }
-  return { a, b, rest, targetRest, hasTargetRest, compliance, count }
+  return { a, b, rest, targetRest, hasTargetRest, compliance, lambda, group, count }
 }
 
 function flattenBendConstraints(source: ClothSimMesh['bendConstraints']): BendSet {

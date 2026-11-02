@@ -59,6 +59,8 @@ export type PatternPanel = {
   bendCompliance?: number
   damping?: number
   friction?: number
+  /** Areal density relative to a 150 g/m² cotton reference (1 = cotton). */
+  density?: number
   placement: PatternPlacement
   pins?: PanelPin[]
   grain?: GrainDirection

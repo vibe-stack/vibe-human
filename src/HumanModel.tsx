@@ -863,6 +863,8 @@ export default function HumanModel() {
     }
   }, [scene])
 
+  // Priority -2: runs before the garment simulation (-1), so cloth always
+  // collides against this frame's skeleton (animation → skeleton → cloth).
   useFrame((_, delta) => {
     const bones = bonesRef.current
     const rest = restRef.current
@@ -1017,7 +1019,7 @@ export default function HumanModel() {
 
       setBoneDebug(getBoneDebug(selectedBone, rest))
     }
-  })
+  }, -2)
 
   // Apply TSL skin materials, overriding the placeholder GLB materials.
   useEffect(() => {

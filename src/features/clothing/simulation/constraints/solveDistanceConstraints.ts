@@ -31,7 +31,8 @@ export function solveDistanceConstraintsFlat(
   seamStiffness = 1,
 ) {
   const dtSq = dt * dt
-  const { a, b, rest, targetRest, hasTargetRest, compliance, count } = set
+  const { a, b, rest, targetRest, hasTargetRest, compliance, count, lambda } = set
+  const stiffness = seamStiffness < 0 ? 0 : seamStiffness > 1 ? 1 : seamStiffness
   for (let i = 0; i < count; i += 1) {
     const aIdx = a[i]
     const bIdx = b[i]
@@ -57,21 +58,30 @@ export function solveDistanceConstraintsFlat(
     const length = Math.sqrt(lengthSq)
     const C = length - r
     const alpha = compliance[i] / dtSq
-    const lambda = (-C / (wsum + alpha)) * (seamStiffness < 0 ? 0 : seamStiffness > 1 ? 1 : seamStiffness)
+    // True XPBD: accumulate λ across the iterations of one substep so the
+    // effective stiffness is set by the compliance, not by the iteration count.
+    // (Without λ the same compliance gets stiffer the more iterations you run.)
+    let deltaLambda: number
+    if (lambda) {
+      deltaLambda = ((-C - alpha * lambda[i]) / (wsum + alpha)) * stiffness
+      lambda[i] += deltaLambda
+    } else {
+      deltaLambda = (-C / (wsum + alpha)) * stiffness
+    }
     const invLength = 1 / length
     const gx = dx * invLength
     const gy = dy * invLength
     const gz = dz * invLength
 
     if (wa > 0) {
-      positions[ia] -= wa * lambda * gx
-      positions[ia + 1] -= wa * lambda * gy
-      positions[ia + 2] -= wa * lambda * gz
+      positions[ia] -= wa * deltaLambda * gx
+      positions[ia + 1] -= wa * deltaLambda * gy
+      positions[ia + 2] -= wa * deltaLambda * gz
     }
     if (wb > 0) {
-      positions[ib] += wb * lambda * gx
-      positions[ib + 1] += wb * lambda * gy
-      positions[ib + 2] += wb * lambda * gz
+      positions[ib] += wb * deltaLambda * gx
+      positions[ib + 1] += wb * deltaLambda * gy
+      positions[ib + 2] += wb * deltaLambda * gz
     }
   }
 }

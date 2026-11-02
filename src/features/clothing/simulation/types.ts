@@ -1,5 +1,6 @@
 import type { PatternDocument, PatternPlacement } from '../document/types'
 import type { TriangleBVH } from './collision/triangleBVH'
+import type { KinematicBodyCollider } from './collision/kinematicBodyCollider'
 
 export type ClothConstraintKind = 'stretch' | 'shear' | 'bend' | 'seam' | 'pin'
 
@@ -9,7 +10,7 @@ export type DistanceConstraint = {
   rest: number
   targetRest?: number
   compliance: number
-  kind: Extract<ClothConstraintKind, 'stretch' | 'shear' | 'seam'>
+  kind: Extract<ClothConstraintKind, 'stretch' | 'shear' | 'bend' | 'seam'>
 }
 
 export type BendConstraint = {
@@ -229,6 +230,28 @@ export type ColliderSnapshot = {
   proxies: ColliderProxy[]
   meshColliders?: MeshSurfaceColliderSnapshot[]
   lowResMeshPatches?: CollisionMeshPatchSnapshot[]
+  /**
+   * Animated body colliders that carry start/end-of-step poses. Preferred over
+   * meshColliders for skinned characters: substep-interpolated, body-relative
+   * friction, smooth-normal inside/outside test.
+   */
+  kinematicColliders?: KinematicBodyCollider[]
+}
+
+/**
+ * Binds a cloth particle to a point on an animated body surface (elastic
+ * waistbands, cuffs, straps). The target is the skin point (triangle +
+ * barycentrics) lifted `offset` metres along the skin normal.
+ */
+export type SkinAttachment = {
+  particle: number
+  triangle: number
+  u: number
+  v: number
+  w: number
+  offset: number
+  /** XPBD compliance (m/N); 0 = rigid. */
+  compliance: number
 }
 
 export type SolverParams = {
@@ -244,6 +267,12 @@ export type SolverParams = {
   sewingTime?: number
   gravityDelayTime?: number
   gravityRampTime?: number
+  /**
+   * Particle-vs-triangle cloth contacts in addition to particle pairs. Needed
+   * for layered outfits: on a ~4 cm lattice, a shirt hem passes between the
+   * particles of the trousers underneath without it.
+   */
+  selfCollisionSurfaceContacts?: boolean
 }
 
 export type ClothFrame = {
