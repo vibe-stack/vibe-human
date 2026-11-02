@@ -56,6 +56,7 @@ type AppState = {
   showTest: boolean
   showClothing: boolean
   showExport: boolean
+  showClothLab: boolean
   characterRenderMode: CharacterRenderMode
   poseTestEnabled: boolean
   poseTestStatus: string
@@ -107,6 +108,7 @@ export const appState = proxy<AppState>({
   showTest: false,
   showClothing: false,
   showExport: false,
+  showClothLab: typeof window !== 'undefined' && window.location.hash === '#cloth-lab',
   characterRenderMode: 'solid',
   poseTestEnabled: false,
   poseTestStatus: 'Idle',
@@ -320,4 +322,13 @@ export function toggleShowClothing() {
 
 export function toggleShowExport() {
   activatePanel('showExport')
+}
+
+/** The cloth simulation lab is a separate full-screen view (deep link: #cloth-lab). */
+export function setShowClothLab(open: boolean) {
+  appState.showClothLab = open
+  const hash = open ? '#cloth-lab' : ''
+  if (window.location.hash !== hash) {
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${hash}`)
+  }
 }
